@@ -1,0 +1,35 @@
+name: Build
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+  schedule:
+    - cron: "0 6 * * *"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+
+      # Builds in the same SDK container the script uses locally, so a green run
+      # here means the same thing it means on a developer's machine.
+      - run: sh test/run.sh
+
+  latest:
+    # Daily canary: catches a Jellyfin release breaking the plugin before users do.
+    if: github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - run: JELLYFIN_IMAGE=jellyfin/jellyfin:latest sh test/run.sh

@@ -1,0 +1,15 @@
+---
+name: "Inventory"
+guid: "ed020473-559f-42c1-850f-53349b29d838"
+targetAbi: "12.0.0.0"
+framework: "net10.0"
+overview: "A sortable, filterable table of everything in your libraries."
+description: >
+  Inventory adds one table to the dashboard that lists every item in your
+  libraries with the attributes that matter for storage and quality: size,
+  size per hour of runtime, bitrate, codecs, resolution, HDR and Dolby Vision
+  format, audio layout and languages. Pick the columns you want per media type.
+category: "General"
+owner: "ivenos"
+artifacts:
+- "Jellyfin.Plugin.Inventory.dll"

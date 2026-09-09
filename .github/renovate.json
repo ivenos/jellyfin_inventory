@@ -1,0 +1,58 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": [
+    "config:recommended"
+  ],
+  "description": [
+    "Managed here: GitHub Actions and the three analyzer packages. Actions are pinned to a major tag, so an update is a new major and merges itself once the build and the integration test are green; for the analyzers only a patch does, since a new rule set turns warnings into a failing build.",
+    "Deliberately not managed: Jellyfin.Controller and Jellyfin.Model. They pin which server ABI the plugin is built against, not a library to keep current, and they only move together with targetAbi in build.yaml. The Docker images in test/run.sh are pinned to the same release and are likewise moved by hand."
+  ],
+  "dependencyDashboard": false,
+  "labels": [
+    "dependencies"
+  ],
+  "packageRules": [
+    {
+      "matchManagers": [
+        "github-actions"
+      ],
+      "groupName": "GitHub Actions",
+      "commitMessagePrefix": "ci:"
+    },
+    {
+      "matchManagers": [
+        "github-actions"
+      ],
+      "matchUpdateTypes": [
+        "major",
+        "minor",
+        "patch"
+      ],
+      "automerge": true
+    },
+    {
+      "matchManagers": [
+        "nuget"
+      ],
+      "groupName": "Analyzers",
+      "commitMessagePrefix": "ci:"
+    },
+    {
+      "matchManagers": [
+        "nuget"
+      ],
+      "matchUpdateTypes": [
+        "patch"
+      ],
+      "automerge": true
+    },
+    {
+      "description": "Mirrors the server release, see build.yaml. Last, so the rules above cannot re-enable it.",
+      "matchPackageNames": [
+        "Jellyfin.Controller",
+        "Jellyfin.Model"
+      ],
+      "enabled": false
+    }
+  ]
+}

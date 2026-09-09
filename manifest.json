@@ -1,0 +1,11 @@
+[
+  {
+    "guid": "ed020473-559f-42c1-850f-53349b29d838",
+    "name": "Inventory",
+    "description": "Inventory adds one table to the dashboard that lists every item in your libraries with the attributes that matter for storage and quality: size, size per hour of runtime, bitrate, codecs, resolution, HDR and Dolby Vision format, audio layout and languages. Pick the columns you want per media type.",
+    "overview": "A sortable, filterable table of everything in your libraries.",
+    "owner": "ivenos",
+    "category": "General",
+    "versions": []
+  }
+]

@@ -1,0 +1,110 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  release:
+    types: [released]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+
+jobs:
+  build:
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Read the version from the tag
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          printf '%s\n' "$version" \
+            | grep -Eq '^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$' || {
+            echo "tag $GITHUB_REF_NAME does not name a three part version of digits" >&2
+            exit 1
+          }
+          echo "VERSION=$version.0" >> "$GITHUB_ENV"
+
+      # Passed to the build rather than written into Directory.Build.props, so a version
+      # that does not arrive fails the build instead of shipping as 0.0.0.0.
+      - name: Build
+        run: |
+          docker run --rm -u "$(id -u):$(id -g)" -e HOME=/tmp \
+            -v "$PWD:/src" -w /src mcr.microsoft.com/dotnet/sdk:10.0 \
+            dotnet build -c Release --nologo \
+            -p:Version="$VERSION" -p:AssemblyVersion="$VERSION" -p:FileVersion="$VERSION"
+
+      # A folder without meta.json is dated to the server's own version, and every later
+      # release is then deleted as if it were the older copy.
+      - name: Package
+        run: |
+          python3 .github/make-meta.py --version "$VERSION" --out meta.json
+          dll=Jellyfin.Plugin.Inventory/bin/Release/net10.0/Jellyfin.Plugin.Inventory.dll
+          # zip only fails where nothing at all matched, not where one name did not.
+          [ -f "$dll" ] || { echo "the build left no assembly at $dll" >&2; exit 1; }
+          zip -j "inventory_$VERSION.zip" meta.json "$dll"
+
+      - name: Publish release
+        uses: softprops/action-gh-release@v3
+        with:
+          files: inventory_*.zip
+          fail_on_unmatched_files: true
+          # Published by hand once the notes are written.
+          draft: true
+
+  manifest:
+    if: github.event_name == 'release'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: main
+          fetch-depth: 0
+
+      # Runs on publish rather than on the tag, because the asset the manifest
+      # points at does not exist while the release is still a draft.
+      - name: Add the release to manifest.json
+        env:
+          TAG: ${{ github.event.release.tag_name }}
+          NOTES: ${{ github.event.release.body }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="${TAG#v}.0"
+          url="${{ github.server_url }}/${{ github.repository }}/releases/download/$TAG/inventory_$version.zip"
+          curl -fsSL "$url" -o package.zip
+          # From the tagged commit, not from main: main may already carry the abi of the next
+          # Jellyfin, which would lock this release out of the servers it was built for.
+          abi=$(git show "$TAG:build.yaml" | sed -n 's|^targetAbi: "\(.*\)"|\1|p')
+          checksum=$(md5sum package.zip | cut -d' ' -f1)
+          rm package.zip
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          # Written onto whatever main carries at the moment of the push, so a release published
+          # next to another one adds its entry rather than rebasing into a conflict with it.
+          for attempt in 1 2 3; do
+            git fetch --quiet origin main
+            git reset --quiet --hard origin/main
+            python3 .github/update-manifest.py \
+              --version "$version" \
+              --target-abi "$abi" \
+              --source-url "$url" \
+              --checksum "$checksum" \
+              --timestamp "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+              --changelog="$NOTES"
+            git add manifest.json
+            git diff --staged --quiet && exit 0
+            git commit --quiet -m "chore: add $TAG to the plugin manifest"
+            git push && exit 0
+            sleep $((attempt * 10))
+          done
+          echo "manifest.json could not be pushed after three tries" >&2
+          exit 1

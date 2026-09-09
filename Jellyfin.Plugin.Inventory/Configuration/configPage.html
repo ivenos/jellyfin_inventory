@@ -1,0 +1,1010 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>Inventory</title>
+</head>
+<body>
+<div id="InventoryPage" data-role="page" class="page type-interior pluginConfigurationPage" data-require="emby-input,emby-button,emby-select">
+    <div data-role="content">
+        <div class="content-primary">
+            <style>
+                .invBar { display: flex; flex-wrap: wrap; gap: .5em; align-items: center; margin-bottom: 1em; }
+                .invTypes { display: flex; flex-wrap: wrap; gap: .4em; flex: 1 1 auto; }
+                .invType {
+                    padding: .45em 1em; border-radius: 2em; cursor: pointer; border: none;
+                    font-size: inherit; font-family: inherit; white-space: nowrap;
+                    background: var(--jf-palette-action-hover, rgba(255,255,255,.08));
+                    color: var(--jf-palette-text-primary, inherit);
+                }
+                .invType.selected {
+                    background: var(--jf-palette-primary-main, #00a4dc);
+                    color: var(--jf-palette-primary-contrastText, #000);
+                }
+                .invType .invCount { opacity: .7; margin-left: .5em; }
+                .invLevels { display: flex; gap: .6em; align-items: center; margin-bottom: 1em; }
+                .invLevels label { color: var(--jf-palette-text-secondary, inherit); }
+                .invLevels select { width: auto; min-width: 12em; }
+                .invTable th.dragging { opacity: .4; }
+                .invTable th.dropBefore { box-shadow: inset 2px 0 0 var(--jf-palette-primary-main, #00a4dc); }
+                .invTable th.dropAfter { box-shadow: inset -2px 0 0 var(--jf-palette-primary-main, #00a4dc); }
+                .invSearch { max-width: 20em; }
+                .invPanel {
+                    border: 1px solid var(--jf-palette-divider, rgba(255,255,255,.15));
+                    border-radius: var(--jf-shape-borderRadius, 4px);
+                    padding: 1em; margin-bottom: 1em;
+                    background: var(--jf-palette-background-paper, rgba(255,255,255,.03));
+                }
+                .invGroups { display: flex; flex-wrap: wrap; gap: 2em; }
+                .invGroup h4 { margin: 0 0 .5em; color: var(--jf-palette-text-secondary, inherit); font-weight: 500; }
+                .invGroup label { display: block; padding: .15em 0; cursor: pointer; }
+                .invGroup input { margin-right: .5em; accent-color: var(--jf-palette-primary-main, #00a4dc); }
+                .invScroll { max-height: 70vh; overflow: auto; border-radius: var(--jf-shape-borderRadius, 4px); }
+                table.invTable { border-collapse: collapse; width: 100%; font-size: .92em; }
+                .invTable th, .invTable td {
+                    padding: .5em .75em; text-align: start; white-space: nowrap;
+                    border-bottom: 1px solid var(--jf-palette-divider, rgba(255,255,255,.1));
+                }
+                .invTable th {
+                    position: sticky; top: 0; z-index: 1; cursor: pointer; user-select: none; font-weight: 600;
+                    background: var(--jf-palette-background-paper, #202020);
+                    color: var(--jf-palette-text-secondary, inherit);
+                    /* The collapsed border belongs to the table and scrolls away under the header. */
+                    border-bottom: none;
+                    box-shadow: inset 0 -1px 0 var(--jf-palette-divider, rgba(127,127,127,.35));
+                }
+                .invTable th:hover, .invTable th:focus-visible { color: var(--jf-palette-text-primary, inherit); }
+                .invTable th.sorted { color: var(--jf-palette-primary-main, #00a4dc); }
+                .invTable tbody tr:hover { background: var(--jf-palette-action-hover, rgba(255,255,255,.06)); }
+                .invTable .num { text-align: end; font-variant-numeric: tabular-nums; }
+                .invTable td.name { white-space: normal; min-width: 16em; }
+                .invTable td.name a { color: inherit; text-decoration: none; }
+                .invTable td.name a:hover { color: var(--jf-palette-primary-main, #00a4dc); text-decoration: underline; }
+                .invTable td.path { max-width: 28em; overflow: hidden; text-overflow: ellipsis; }
+                .invTable tr[data-depth="1"] { background: var(--jf-palette-action-hover, rgba(127,127,127,.05)); }
+                .invTable tr[data-depth="2"] { background: var(--jf-palette-action-selected, rgba(127,127,127,.09)); }
+                .invTwisty {
+                    border: none; background: none; cursor: pointer; padding: 0 .4em 0 0;
+                    color: var(--jf-palette-text-secondary, inherit); font-size: .8em;
+                    width: 2em; min-width: 24px; min-height: 24px;
+                }
+                .invTwisty:hover { color: var(--jf-palette-primary-main, #00a4dc); }
+                .invTwisty:focus-visible, .invType:focus-visible, .invTable th:focus-visible {
+                    outline: 2px solid var(--jf-palette-primary-main, #00a4dc); outline-offset: -2px;
+                }
+                .invIndent { display: inline-block; }
+                .invFoot { display: flex; flex-wrap: wrap; gap: 1em; align-items: center; margin-top: 1em; }
+                .invTotals { flex: 1 1 auto; color: var(--jf-palette-text-secondary, inherit); }
+                .invPager { display: flex; gap: .5em; align-items: center; }
+                .invEmpty { padding: 2em; text-align: center; color: var(--jf-palette-text-secondary, inherit); }
+            </style>
+
+            <h2 class="sectionTitle" id="invTitle">Inventory</h2>
+
+            <div class="invBar">
+                <div class="invTypes" id="invTypes"></div>
+                <input is="emby-input" type="search" id="invSearch" class="invSearch" />
+                <button is="emby-button" type="button" id="invColumnsBtn" class="raised"
+                        aria-expanded="false" aria-controls="invColumnsPanel">
+                    <span id="invColumnsLabel"></span>
+                </button>
+                <button is="emby-button" type="button" id="invCsv" class="raised"><span>CSV</span></button>
+                <button is="emby-button" type="button" id="invOds" class="raised"><span>ODS</span></button>
+            </div>
+
+            <div class="invLevels" id="invLevels" style="display:none">
+                <label class="selectLabel" for="invExpand" id="invExpandLabel"></label>
+                <select is="emby-select" id="invExpand" class="emby-select-withcolor emby-select"></select>
+            </div>
+
+            <div class="invPanel" id="invColumnsPanel" style="display:none">
+                <div class="invGroups" id="invGroups"></div>
+            </div>
+
+            <div class="invScroll">
+                <table class="invTable">
+                    <thead><tr id="invHead"></tr></thead>
+                    <tbody id="invBody"></tbody>
+                </table>
+            </div>
+            <div class="invEmpty" id="invEmpty" style="display:none" role="status" aria-live="polite"></div>
+
+            <div class="invFoot">
+                <div class="invTotals" id="invTotals" role="status" aria-live="polite"></div>
+                <div class="invPager">
+                    <button is="emby-button" type="button" id="invPrev" class="raised"><span id="invPrevLabel"></span></button>
+                    <span id="invPage"></span>
+                    <button is="emby-button" type="button" id="invNext" class="raised"><span id="invNextLabel"></span></button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script type="text/javascript">
+        (function () {
+            var page = document.querySelector('#InventoryPage');
+            var showing = false;
+            // Jellyfin keeps the chosen interface language on the root element and updates it live.
+            var culture = document.documentElement.getAttribute('lang') || 'en-US';
+            try { (0).toLocaleString(culture); } catch (e) { culture = 'en-US'; }
+            var plural = new Intl.PluralRules(culture);
+            var state = { type: null, level: null, levels: [], expandTo: 0, sortBy: null, descending: false, start: 0, limit: 100, search: '', total: 0 };
+            var schema = { mediaTypes: [], columns: [], strings: {} };
+            // Every response is checked against this, so a slower earlier one cannot paint over a later.
+            var generation = 0;
+
+            function t(key, fallback) {
+                return schema.strings[key] || fallback || key;
+            }
+
+            function url(path, params) {
+                params = params || {};
+                params.culture = culture;
+                return ApiClient.getUrl('Inventory/' + path, params);
+            }
+
+            function decimal(value, digits) {
+                return Number(value).toLocaleString(culture, {
+                    minimumFractionDigits: digits,
+                    maximumFractionDigits: digits
+                });
+            }
+
+            function bytes(v) {
+                if (v === null || v === undefined) { return ''; }
+                var units = ['B', 'KB', 'MB', 'GB', 'TB', 'PB'], i = 0, n = Number(v);
+                while (n >= 1024 && i < units.length - 1) { n /= 1024; i++; }
+                var digits = i === 0 ? 0 : (n < 10 ? 2 : 1);
+                // Rounding can carry the value over the next unit, and nobody writes 1024.0 MB.
+                if (i < units.length - 1 && Number(n.toFixed(digits)) >= 1024) { n /= 1024; i++; digits = 2; }
+                return decimal(n, digits) + ' ' + units[i];
+            }
+
+            function bitrate(v) {
+                // A 128 kbit/s track and a 32 kbit/s audiobook both read as 0.03 Mbit/s otherwise.
+                var kbit = Number(v) / 1000;
+                return Math.round(kbit) < 1000
+                    ? decimal(Math.round(kbit), 0) + ' kbit/s'
+                    : decimal(kbit / 1000, 2) + ' Mbit/s';
+            }
+
+            function duration(seconds) {
+                if (!seconds) { return ''; }
+                var whole = Math.round(seconds);
+                if (whole < 60) { return decimal(whole, 0) + ' s'; }
+                var h = Math.floor(whole / 3600), m = Math.round((whole % 3600) / 60);
+                if (m === 60) { h++; m = 0; }
+                return h > 0 ? decimal(h, 0) + ' h ' + decimal(m, 0) + ' min' : decimal(m, 0) + ' min';
+            }
+
+            function format(value, kind) {
+                if (value === null || value === undefined || value === '') { return ''; }
+                // A column whose children disagree arrives as the worded marker, so every branch
+                // that would otherwise compute with it prints it instead.
+                switch (kind) {
+                    case 'Bytes': return typeof value === 'number' ? bytes(value) : String(value);
+                    case 'BytesPerHour': return typeof value === 'number' ? bytes(value) + '/h' : String(value);
+                    case 'Duration': return typeof value === 'number' ? duration(value) : String(value);
+                    case 'Bitrate': return typeof value === 'number' ? bitrate(value) : String(value);
+                    case 'FrameRate': return typeof value === 'number'
+                        ? Number(value).toLocaleString(culture, { maximumFractionDigits: 3 })
+                        : String(value);
+                    // The server sends UTC and the export writes the UTC day, so the table shows
+                    // that day too rather than a different one either side of midnight.
+                    case 'Date':
+                        var day = new Date(value);
+                        return isNaN(day.getTime()) ? String(value) : day.toLocaleDateString(culture, { timeZone: 'UTC' });
+                    case 'Boolean': return typeof value === 'boolean' ? (value ? t('Yes') : t('No')) : String(value);
+                    case 'Number': return typeof value === 'number' ? Number(value).toLocaleString(culture) : String(value);
+                    case 'Plain': return typeof value === 'number'
+                        ? Number(value).toLocaleString(culture, { useGrouping: false })
+                        : String(value);
+                    default: return String(value);
+                }
+            }
+
+            function isNumeric(kind) {
+                return ['Bytes', 'BytesPerHour', 'Duration', 'Bitrate', 'FrameRate', 'Number', 'Plain'].indexOf(kind) !== -1;
+            }
+
+            function applyStaticLabels() {
+                page.querySelector('#invTitle').textContent = t('Title', 'Inventory');
+                page.querySelector('#invSearch').setAttribute('placeholder', t('Search', 'Search'));
+                page.querySelector('#invSearch').setAttribute('aria-label', t('Search', 'Search'));
+                page.querySelector('#invColumnsLabel').textContent = t('Columns', 'Columns');
+                page.querySelector('#invPrevLabel').textContent = t('Previous', 'Previous');
+                page.querySelector('#invNextLabel').textContent = t('Next', 'Next');
+                page.querySelector('#invEmpty').textContent = t('Empty', 'Nothing here.');
+                page.querySelector('.invTable').setAttribute('aria-label', t('Title', 'Inventory'));
+            }
+
+            var typeKeys = null;
+
+            function renderTypes() {
+                var host = page.querySelector('#invTypes');
+                var keys = schema.mediaTypes.map(function (type) {
+                    return type.MediaType + ':' + type.Label + ':' + type.Count;
+                }).join(',');
+
+                if (typeKeys === keys) {
+                    markType(host);
+                    return;
+                }
+
+                typeKeys = keys;
+                host.innerHTML = '';
+                schema.mediaTypes.forEach(function (type) {
+                    var button = document.createElement('button');
+                    button.type = 'button';
+                    button.className = 'invType';
+                    button.setAttribute('data-type', type.MediaType);
+                    var caption = document.createElement('span');
+                    caption.textContent = type.Label;
+                    var count = document.createElement('span');
+                    count.className = 'invCount';
+                    count.textContent = type.Count.toLocaleString(culture);
+                    button.appendChild(caption);
+                    button.appendChild(document.createTextNode(' '));
+                    button.appendChild(count);
+                    button.addEventListener('click', function () { selectType(type.MediaType); });
+                    host.appendChild(button);
+                });
+                markType(host);
+            }
+
+            function markType(host) {
+                Array.prototype.slice.call(host.children).forEach(function (button) {
+                    var selected = button.getAttribute('data-type') === state.type;
+                    button.className = 'invType' + (selected ? ' selected' : '');
+                    button.setAttribute('aria-pressed', selected ? 'true' : 'false');
+                });
+            }
+
+            function renderExpandBar() {
+                var host = page.querySelector('#invLevels');
+                if (state.levels.length < 2 || state.search) {
+                    host.style.display = 'none';
+                    return;
+                }
+
+                host.style.display = '';
+                page.querySelector('#invExpandLabel').textContent = t('ExpandTo');
+
+                var select = page.querySelector('#invExpand');
+                select.innerHTML = '';
+                state.levels.forEach(function (level, index) {
+                    var option = document.createElement('option');
+                    option.value = String(index);
+                    option.textContent = level.Label;
+                    select.appendChild(option);
+                });
+                select.value = String(state.expandTo);
+            }
+
+            function setExpansion(depth) {
+                state.expandTo = depth;
+                var level = state.levels[depth].Level;
+                // The schema is read once per visit, and coming back to the tab reads this field.
+                schema.mediaTypes.forEach(function (type) {
+                    if (type.MediaType === state.type) { type.ExpandedTo = level; }
+                });
+
+                ApiClient.ajax({
+                    type: 'POST',
+                    url: url('Expand', { mediaType: state.type, level: level })
+                }).catch(function () { /* the view is already updated; remembering is best effort */ });
+
+                // Drawing the page again is what discards a slower earlier chain.
+                load();
+            }
+
+            function setTwisty(twisty, isOpen) {
+                if (!twisty) { return; }
+                twisty.setAttribute('data-open', isOpen ? '1' : '0');
+                twisty.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
+                twisty.setAttribute('aria-label', isOpen ? t('Collapse', 'Collapse') : t('Expand', 'Expand'));
+                var glyph = twisty.querySelector('span') || twisty;
+                glyph.textContent = isOpen ? '\u25bc' : '\u25b6';
+            }
+
+            // One request per level rather than one per row: expanding a page of series would
+            // otherwise fire a request for every series, and again for every season.
+            function children(level, ids) {
+                // A page of series carries far more season ids than fit in a request line.
+                var batches = [];
+                for (var i = 0; i < ids.length; i += 50) {
+                    batches.push(ids.slice(i, i + 50));
+                }
+
+                return Promise.all(batches.map(function (batch) {
+                    return ApiClient.getJSON(url('Items', {
+                        mediaType: state.type,
+                        level: level,
+                        parentIds: batch.join(','),
+                        columnLevel: state.levels[0].Level,
+                        sortBy: state.sortBy || '',
+                        descending: state.descending
+                    }));
+                })).then(function (results) {
+                    var rows = [];
+                    results.forEach(function (result) { rows = rows.concat(result.Rows); });
+                    return rows;
+                });
+            }
+
+            function expandLevel(depth) {
+                var mine = generation;
+                var body = page.querySelector('#invBody');
+                var parents = Array.prototype.slice.call(body.querySelectorAll('tr'))
+                    .filter(function (tr) {
+                        var twisty = tr.querySelector('.invTwisty');
+                        return Number(tr.getAttribute('data-depth')) === depth - 1
+                            && twisty && twisty.getAttribute('data-open') !== '1';
+                    });
+
+                if (!parents.length || !state.levels[depth]) { return Promise.resolve(); }
+
+                parents.forEach(function (tr) {
+                    var twisty = tr.querySelector('.invTwisty');
+                    setTwisty(twisty, true);
+                    twisty.setAttribute('data-busy', '1');
+                });
+
+                return children(state.levels[depth].Level, parents.map(function (tr) {
+                    return tr.getAttribute('data-id');
+                })).then(function (rows) {
+                    parents.forEach(function (tr) {
+                        tr.querySelector('.invTwisty').removeAttribute('data-busy');
+                    });
+                    if (mine !== generation) { return; }
+
+                    var byParent = {};
+                    rows.forEach(function (row) {
+                        (byParent[row.ParentId] = byParent[row.ParentId] || []).push(row);
+                    });
+
+                    parents.forEach(function (tr) {
+                        var twisty = tr.querySelector('.invTwisty');
+                        if (twisty.getAttribute('data-open') !== '1') { return; }
+                        place(tr, byParent[tr.getAttribute('data-id')] || [], twisty, depth);
+                    });
+                }).catch(function () {
+                    parents.forEach(function (tr) {
+                        var twisty = tr.querySelector('.invTwisty');
+                        twisty.removeAttribute('data-busy');
+                        setTwisty(twisty, false);
+                    });
+                    if (mine !== generation) { return; }
+                    Dashboard.alert(t('LoadFailed', 'Could not load the inventory.'));
+                });
+            }
+
+            function expandTo(depth) {
+                // Read once for the chain, or a later level carries on against a newer table.
+                var mine = generation;
+                var chain = Promise.resolve();
+                for (var d = 1; d <= depth; d++) {
+                    chain = chain.then(function (level) {
+                        return mine === generation ? expandLevel(level) : undefined;
+                    }.bind(null, d));
+                }
+                return chain.catch(function () { });
+            }
+
+            function selectType(mediaType) {
+                var type = null;
+                schema.mediaTypes.forEach(function (candidate) {
+                    if (candidate.MediaType === mediaType) { type = candidate; }
+                });
+                if (!type) { return; }
+
+                state.type = mediaType;
+                state.levels = type.Levels;
+                pending = null;
+                state.total = 0;
+                state.level = type.Levels[0].Level;
+                state.expandTo = Math.max(0, type.Levels.map(function (l) { return l.Level; })
+                    .indexOf(type.ExpandedTo));
+                state.start = 0;
+                state.sortBy = null;
+                state.descending = false;
+                renderTypes();
+                renderExpandBar();
+                load();
+            }
+
+            function renderColumnPicker(active) {
+                var host = page.querySelector('#invGroups');
+                var chosen = active.map(function (c) { return c.Key; });
+
+                // Only the ticks move; rebuilding would take the focus off the box just toggled.
+                if (host.childElementCount) {
+                    mark(host, chosen);
+                    return;
+                }
+
+                var groups = [];
+                var byKey = {};
+                schema.columns.forEach(function (column) {
+                    if (!byKey[column.GroupKey]) {
+                        byKey[column.GroupKey] = { label: column.Group, columns: [] };
+                        groups.push(byKey[column.GroupKey]);
+                    }
+                    byKey[column.GroupKey].columns.push(column);
+                });
+
+                host.innerHTML = '';
+                groups.forEach(function (group) {
+                    var box = document.createElement('div');
+                    box.className = 'invGroup';
+                    var title = document.createElement('h4');
+                    title.textContent = group.label;
+                    box.appendChild(title);
+
+                    group.columns.forEach(function (column) {
+                        var label = document.createElement('label');
+                        var input = document.createElement('input');
+                        input.type = 'checkbox';
+                        input.setAttribute('data-key', column.Key);
+                        input.addEventListener('change', function () {
+                            // Built from the order the table has rather than from the boxes, which
+                            // stand in the order the picker offers them and would undo a reordering.
+                            var keys = columnKeys().slice();
+                            var at = keys.indexOf(column.Key);
+                            if (input.checked) {
+                                if (at === -1) { insert(keys, column.Key); }
+                            } else if (at !== -1) {
+                                keys.splice(at, 1);
+                            }
+
+                            // The boxes only lock when the picker draws, so this can be the last.
+                            if (!keys.length) {
+                                input.checked = true;
+                                return;
+                            }
+
+                            if (state.sortBy && keys.indexOf(state.sortBy) === -1) {
+                                state.sortBy = null;
+                                state.descending = false;
+                            }
+
+                            saveColumns(keys);
+                        });
+                        label.appendChild(input);
+                        label.appendChild(document.createTextNode(column.Label));
+                        box.appendChild(label);
+                    });
+
+                    host.appendChild(box);
+                });
+
+                mark(host, chosen);
+            }
+
+            // Behind the last chosen column the picker offers before it.
+            function insert(keys, key) {
+                var offered = schema.columns.map(function (c) { return c.Key; });
+                var at = 0;
+                keys.forEach(function (chosen, index) {
+                    if (offered.indexOf(chosen) < offered.indexOf(key)) { at = index + 1; }
+                });
+                keys.splice(at, 0, key);
+            }
+
+            function mark(host, chosen) {
+                Array.prototype.slice.call(host.querySelectorAll('input')).forEach(function (box) {
+                    box.checked = chosen.indexOf(box.getAttribute('data-key')) !== -1;
+                });
+
+                // The table needs one column, so the last one left is held rather than snapping back.
+                var only = chosen.length === 1;
+                Array.prototype.slice.call(host.querySelectorAll('input')).forEach(function (box) {
+                    box.disabled = only && box.checked;
+                });
+            }
+
+            var pending = null;
+            var outstanding = 0;
+            var saving = Promise.resolve();
+
+            // The order the table will have once the request lands, so a second change made before
+            // it does builds on the first instead of undoing it.
+            function columnKeys() {
+                return pending || activeColumns.map(function (c) { return c.Key; });
+            }
+
+            function saveColumns(keys) {
+                pending = keys;
+                outstanding++;
+                // The level the columns on screen belong to: a queued request builds its address
+                // only once it runs, by which time the tab may have changed.
+                var level = columnLevel;
+                // Chained, because the server keeps whichever request arrives last.
+                saving = saving.then(function () {
+                    return ApiClient.ajax({
+                        type: 'POST',
+                        url: url('Columns', { level: level }),
+                        data: JSON.stringify(keys),
+                        contentType: 'application/json'
+                    }).then(function () {
+                        outstanding--;
+                        load();
+                    }).catch(function () {
+                        outstanding--;
+                        if (showing) { Dashboard.alert(t('LoadFailed', 'Could not load the inventory.')); }
+                        load();
+                    });
+                });
+            }
+
+            function cell(row, column, depth, expandable) {
+                var td = document.createElement('td');
+                if (isNumeric(column.Format)) { td.className = 'num'; }
+                if (column.Key === 'name' || column.Key === 'series') { td.className = 'name'; }
+                if (column.Key === 'path') { td.className = 'path'; td.title = row.Values[column.Key] || ''; }
+
+                if (column === firstColumn) {
+                    var indent = document.createElement('span');
+                    indent.className = 'invIndent';
+                    indent.style.width = (depth * 1.6) + 'em';
+                    td.appendChild(indent);
+
+                    if (expandable) {
+                        var twisty = document.createElement('button');
+                        twisty.type = 'button';
+                        twisty.className = 'invTwisty';
+                        var glyph = document.createElement('span');
+                        glyph.setAttribute('aria-hidden', 'true');
+                        twisty.appendChild(glyph);
+                        setTwisty(twisty, false);
+                        twisty.addEventListener('click', function () { toggle(twisty, row, depth); });
+                        td.appendChild(twisty);
+                    } else if (depth > 0 || anyExpandable) {
+                        var spacer = document.createElement('span');
+                        spacer.className = 'invIndent';
+                        spacer.style.width = '1.6em';
+                        spacer.style.minWidth = '24px';
+                        td.appendChild(spacer);
+                    }
+                }
+
+                var text = format(row.Values[column.Key], column.Format);
+                if (column.Key === 'name' && text) {
+                    var link = document.createElement('a');
+
+                    link.href = '#/details?id=' + row.Id + '&serverId=' + ApiClient.serverId();
+                    link.textContent = text;
+                    td.appendChild(link);
+                } else {
+                    td.appendChild(document.createTextNode(text));
+                }
+
+                return td;
+            }
+
+            var firstColumn = null;
+            var anyExpandable = false;
+            var activeColumns = [];
+            var columnLevel = null;
+
+            function buildRow(row, depth) {
+                var tr = document.createElement('tr');
+                tr.setAttribute('data-depth', depth);
+                tr.setAttribute('data-id', row.Id);
+                activeColumns.forEach(function (column) {
+                    tr.appendChild(cell(row, column, depth, column === firstColumn && row.Expandable && !state.search));
+                });
+                return tr;
+            }
+
+            function toggle(twisty, row, depth) {
+                var tr = twisty.closest('tr');
+                // Without this a second click during the request would collapse a row whose children
+                // have not arrived yet, and they would appear under a closed triangle.
+                if (twisty.getAttribute('data-busy') === '1') { return; }
+
+                if (twisty.getAttribute('data-open') === '1') {
+                    setTwisty(twisty, false);
+                    var next = tr.nextElementSibling;
+                    while (next && Number(next.getAttribute('data-depth')) > depth) {
+                        var following = next.nextElementSibling;
+                        next.remove();
+                        next = following;
+                    }
+                    return;
+                }
+
+                var below = state.levels[depth + 1];
+                if (!below) { return; }
+
+                var mine = generation;
+                setTwisty(twisty, true);
+                twisty.setAttribute('data-busy', '1');
+                children(below.Level, [row.Id]).then(function (rows) {
+                    twisty.removeAttribute('data-busy');
+                    if (mine !== generation || twisty.getAttribute('data-open') !== '1') { return; }
+                    place(tr, rows, twisty, depth + 1);
+                }).catch(function () {
+                    twisty.removeAttribute('data-busy');
+                    setTwisty(twisty, false);
+                    if (mine !== generation) { return; }
+                    Dashboard.alert(t('LoadFailed', 'Could not load the inventory.'));
+                });
+            }
+
+            function place(tr, rows, twisty, depth) {
+                if (!rows.length) {
+                    // Nothing below after all, so the row stops claiming it can be opened.
+                    twisty.remove();
+                    return;
+                }
+
+                var anchor = tr;
+                rows.forEach(function (child) {
+                    var childRow = buildRow(child, depth);
+                    anchor.after(childRow);
+                    anchor = childRow;
+                });
+            }
+
+            function renderTable(result) {
+                var head = page.querySelector('#invHead');
+                var body = page.querySelector('#invBody');
+                // Rebuilding the header throws away the element the caret sits on, and the focus
+                // would drop to the top of the dashboard.
+                var inside = head.contains(document.activeElement);
+                var idle = !document.activeElement || document.activeElement === document.body;
+                var held = inside
+                    ? refocus || document.activeElement.getAttribute('data-key')
+                    : (idle ? refocus : null);
+                head.innerHTML = '';
+                body.innerHTML = '';
+
+                activeColumns = result.Columns;
+                // Kept only while the table it describes is on screen and nothing is on its way:
+                // a third change would otherwise undo the second.
+                if (!outstanding || columnLevel !== state.level) { pending = null; }
+                columnLevel = state.level;
+                firstColumn = result.Columns[0];
+                anyExpandable = !state.search && result.Rows.some(function (row) { return row.Expandable; });
+
+                result.Columns.forEach(function (column) {
+                    var th = document.createElement('th');
+                    var sorted = column.Key === state.sortBy;
+                    th.textContent = column.Label;
+                    if (sorted) {
+                        var arrow = document.createElement('span');
+                        arrow.setAttribute('aria-hidden', 'true');
+                        arrow.textContent = state.descending ? ' \u25bc' : ' \u25b2';
+                        th.appendChild(arrow);
+                    }
+
+                    th.draggable = true;
+                    th.tabIndex = 0;
+                    th.setAttribute('data-key', column.Key);
+                    th.setAttribute('aria-sort', sorted ? (state.descending ? 'descending' : 'ascending') : 'none');
+                    th.title = t('ColumnHint', 'Enter sorts, Ctrl with an arrow key moves the column');
+                    th.className = (isNumeric(column.Format) ? 'num' : '') + (sorted ? ' sorted' : '');
+
+                    var sort = function () {
+                        state.descending = state.sortBy === column.Key ? !state.descending : isNumeric(column.Format);
+                        state.sortBy = column.Key;
+                        state.start = 0;
+                        load();
+                    };
+
+                    th.addEventListener('click', sort);
+                    th.addEventListener('keydown', function (e) {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                            e.preventDefault();
+                            refocus = column.Key;
+                            sort();
+                            return;
+                        }
+
+                        // Dragging a header is the other way to reorder, and it needs a mouse.
+                        if (e.ctrlKey && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) {
+                            e.preventDefault();
+                            move(column.Key, e.key === 'ArrowLeft' ? -1 : 1);
+                        }
+                    });
+                    attachReorder(th, column.Key);
+                    head.appendChild(th);
+                });
+
+                result.Rows.forEach(function (row) { body.appendChild(buildRow(row, 0)); });
+                page.querySelector('#invEmpty').style.display = result.Rows.length ? 'none' : '';
+
+                refocus = null;
+                if (held) {
+                    var back = head.querySelector('th[data-key="' + held + '"]');
+                    if (back) { back.focus(); }
+                }
+            }
+
+            var dragKey = null;
+            var refocus = null;
+
+            function attachReorder(th, key) {
+                th.addEventListener('dragstart', function (e) {
+                    dragKey = key;
+                    th.classList.add('dragging');
+                    e.dataTransfer.effectAllowed = 'move';
+                    // Not text/plain: dropped on the search box that would type the key into it.
+                    e.dataTransfer.setData('application/x-inventory-column', key);
+                });
+
+                th.addEventListener('dragend', function () {
+                    dragKey = null;
+                    clearDropMarks();
+                    th.classList.remove('dragging');
+                });
+
+                th.addEventListener('dragover', function (e) {
+                    if (!dragKey || dragKey === key) { return; }
+                    e.preventDefault();
+                    e.dataTransfer.dropEffect = 'move';
+                    clearDropMarks();
+                    th.classList.add(isAfter(key) ? 'dropAfter' : 'dropBefore');
+                });
+
+                th.addEventListener('drop', function (e) {
+                    e.preventDefault();
+                    clearDropMarks();
+                    if (!dragKey || dragKey === key) { return; }
+                    var keys = columnKeys().slice();
+                    var from = keys.indexOf(dragKey);
+                    if (from === -1) { return; }
+
+                    keys.splice(from, 1);
+                    keys.splice(keys.indexOf(key) + (isAfter(key) ? 1 : 0), 0, dragKey);
+                    dragKey = null;
+                    saveColumns(keys);
+                });
+            }
+
+            function move(key, by) {
+                var keys = columnKeys().slice();
+                var from = keys.indexOf(key);
+                var to = from + by;
+                if (from === -1 || to < 0 || to >= keys.length) { return; }
+
+                keys.splice(from, 1);
+                keys.splice(to, 0, key);
+                refocus = key;
+                saveColumns(keys);
+            }
+
+            function isAfter(key) {
+                var keys = columnKeys();
+                return keys.indexOf(dragKey) < keys.indexOf(key);
+            }
+
+            function clearDropMarks() {
+                Array.prototype.slice.call(page.querySelectorAll('#invHead th')).forEach(function (th) {
+                    th.classList.remove('dropBefore', 'dropAfter');
+                });
+            }
+
+            function renderFooter(result) {
+                var count = result.TotalCount;
+                var one = plural.select(count) === 'one';
+                page.querySelector('#invTotals').textContent = [
+                    (one ? t('ItemsOne') : t('ItemsMany')).replace('{0}', count.toLocaleString(culture)),
+                    bytes(result.TotalSize),
+                    duration(result.TotalDuration)
+                ].filter(Boolean).join(' · ');
+
+                var pages = Math.max(1, Math.ceil(count / state.limit));
+                var current = Math.floor(state.start / state.limit) + 1;
+                page.querySelector('#invPage').textContent = current + ' / ' + pages;
+                var prev = page.querySelector('#invPrev');
+                var next = page.querySelector('#invNext');
+                // Disabling the button under the caret drops the focus to the body, so where it
+                // sits has to be read first.
+                var held = document.activeElement;
+                prev.disabled = state.start === 0;
+                next.disabled = current >= pages;
+                if (held === prev && prev.disabled && !next.disabled) { next.focus(); }
+                if (held === next && next.disabled && !prev.disabled) { prev.focus(); }
+            }
+
+            function load() {
+                if (!state.type || !showing) { return; }
+                var mine = ++generation;
+                // Taken here, so a discarded answer does not hand the focus to a header the user
+                // has long since typed past.
+                var wanted = refocus;
+                refocus = null;
+                Dashboard.showLoadingMsg();
+                ApiClient.getJSON(url('Items', {
+                    mediaType: state.type,
+                    level: state.level,
+                    search: state.search,
+                    sortBy: state.sortBy || '',
+                    descending: state.descending,
+                    startIndex: state.start,
+                    limit: state.limit
+                })).then(function (result) {
+                    if (mine !== generation) { return; }
+                    Dashboard.hideLoadingMsg();
+                    refocus = wanted;
+                    state.total = result.TotalCount;
+                    renderTable(result);
+                    renderFooter(result);
+                    renderColumnPicker(result.Columns);
+                    if (state.expandTo > 0 && !state.search) { expandTo(state.expandTo); }
+                }).catch(function () {
+                    if (mine !== generation) { return; }
+                    Dashboard.hideLoadingMsg();
+                    Dashboard.alert(t('LoadFailed', 'Could not load the inventory.'));
+                });
+            }
+
+            var searchTimer;
+
+            function applySearch(value) {
+                clearTimeout(searchTimer);
+                if (state.search === value) { return; }
+                state.search = value;
+                state.start = 0;
+                state.total = 0;
+                renderExpandBar();
+                load();
+            }
+
+            page.querySelector('#invSearch').addEventListener('input', function (e) {
+                clearTimeout(searchTimer);
+                var value = e.target.value;
+                searchTimer = setTimeout(function () { applySearch(value); }, 250);
+            });
+
+            function download(extension) {
+                if (!state.type) { return; }
+                // Typing is answered late, and a click inside that pause would write a file filtered
+                // by the term the table is about to leave behind.
+                applySearch(page.querySelector('#invSearch').value);
+
+                // A tab opened to its episodes shows those; a search flattens it back again.
+                var opened = !state.search && state.levels[state.expandTo];
+                var level = opened ? opened.Level : state.level;
+                var target = url('Export', {
+                    mediaType: state.type,
+                    level: level,
+                    columnLevel: state.levels[0].Level,
+                    format: extension,
+                    search: state.search,
+                    sortBy: state.sortBy || '',
+                    descending: state.descending
+                });
+
+                var buttons = [page.querySelector('#invCsv'), page.querySelector('#invOds')];
+                // Disabling the button under the caret drops the focus to the body, and the next
+                // tab would start again at the top of the dashboard.
+                var held = buttons.indexOf(document.activeElement);
+                buttons.forEach(function (button) { button.disabled = true; });
+                Dashboard.showLoadingMsg();
+                fetch(target, { headers: { Authorization: 'MediaBrowser Token="' + ApiClient.accessToken() + '"' } })
+                    .then(function (response) {
+                        if (!response.ok) { throw new Error(response.status); }
+                        return response.blob();
+                    })
+                    .then(function (blob) {
+                        var link = document.createElement('a');
+                        link.href = URL.createObjectURL(blob);
+                        link.download = 'inventory-' + level.toLowerCase() + '.' + extension;
+                        document.body.appendChild(link);
+                        link.click();
+                        link.remove();
+                        // Revoking in the same turn can cut the download short in some browsers.
+                        setTimeout(function () { URL.revokeObjectURL(link.href); }, 60000);
+                        done(buttons, held);
+                    })
+                    .catch(function () {
+                        done(buttons, held);
+                        if (showing) { Dashboard.alert(t('LoadFailed', 'Could not load the inventory.')); }
+                    });
+            }
+
+            function done(buttons, held) {
+                buttons.forEach(function (button) { button.disabled = false; });
+                if (held >= 0) { buttons[held].focus(); }
+                Dashboard.hideLoadingMsg();
+            }
+
+            // A button keeps the focus ring after a click, which reads as "still active" on an
+            // action that is already over. Drop it for the mouse, keep it for the keyboard.
+            function released(handler) {
+                return function (e) {
+                    if (e.detail) { this.blur(); }
+                    handler.call(this, e);
+                };
+            }
+
+            page.querySelector('#invCsv').addEventListener('click', released(function () { download('csv'); }));
+            page.querySelector('#invOds').addEventListener('click', released(function () { download('ods'); }));
+
+            page.querySelector('#invExpand').addEventListener('change', function (e) {
+                setExpansion(Number(e.target.value));
+            });
+
+            page.querySelector('#invColumnsBtn').addEventListener('click', released(function () {
+                var panel = page.querySelector('#invColumnsPanel');
+                var opening = panel.style.display === 'none';
+                panel.style.display = opening ? '' : 'none';
+                this.setAttribute('aria-expanded', opening ? 'true' : 'false');
+            }));
+
+            page.querySelector('#invPrev').addEventListener('click', released(function () {
+                state.start = Math.max(0, state.start - state.limit);
+                load();
+            }));
+
+            page.querySelector('#invNext').addEventListener('click', released(function () {
+                if (state.start + state.limit < state.total) {
+                    state.start += state.limit;
+                    load();
+                }
+            }));
+
+            page.addEventListener('pageshow', function () {
+                showing = true;
+                var mine = ++generation;
+                // The box keeps its text while the view sits in the dom.
+                state.search = page.querySelector('#invSearch').value;
+                culture = document.documentElement.getAttribute('lang') || 'en-US';
+                try { (0).toLocaleString(culture); } catch (e) { culture = 'en-US'; }
+                plural = new Intl.PluralRules(culture);
+                // English until the strings arrive, rather than a row of blank buttons.
+                applyStaticLabels();
+                // The view stays in the DOM, so a message from last time would be read out again
+                // before anything has been asked for.
+                page.querySelector('#invEmpty').style.display = 'none';
+                Dashboard.showLoadingMsg();
+                ApiClient.getJSON(url('Schema')).then(function (result) {
+                    if (mine !== generation) { return; }
+                    schema.mediaTypes = result.MediaTypes;
+                    schema.columns = result.Columns;
+                    schema.strings = result.Strings || {};
+                    state.limit = result.PageSize || state.limit;
+                    page.querySelector('#invGroups').innerHTML = '';
+                    typeKeys = null;
+                    applyStaticLabels();
+                    Dashboard.hideLoadingMsg();
+
+                    var wanted = result.MediaTypes.filter(function (type) {
+                        return type.MediaType === state.type;
+                    })[0];
+
+                    if (wanted) {
+                        selectType(wanted.MediaType);
+                    } else if (result.MediaTypes.length) {
+                        selectType(result.MediaTypes[0].MediaType);
+                    } else {
+                        page.querySelector('#invEmpty').style.display = '';
+                    }
+
+                    var empty = !result.MediaTypes.length;
+                    page.querySelector('#invCsv').disabled = empty;
+                    page.querySelector('#invOds').disabled = empty;
+                }).catch(function () {
+                    if (mine !== generation) { return; }
+                    applyStaticLabels();
+                    Dashboard.hideLoadingMsg();
+                    Dashboard.alert(t('LoadFailed', 'Could not load the inventory.'));
+                });
+            });
+
+            // The view stays in the DOM when the user navigates away, so a pending timer or request
+            // would otherwise report over whatever page they went to.
+            page.addEventListener('viewhide', function () {
+                showing = false;
+                clearTimeout(searchTimer);
+                generation++;
+                Dashboard.hideLoadingMsg();
+            });
+        })();
+    </script>
+</div>
+</body>
+</html>

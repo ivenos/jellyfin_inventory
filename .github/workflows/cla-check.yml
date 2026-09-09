@@ -1,0 +1,35 @@
+name: CLA check
+
+# pull_request_target: with pull_request a contributor could disarm this check
+# from inside the same PR.
+on:
+  pull_request_target:
+    types: [opened, edited, synchronize, reopened]
+
+# Nothing is checked out and no token is needed, which is what makes that safe.
+permissions: {}
+
+# types: [edited] means every edit of the description starts a run.
+concurrency:
+  group: cla-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  cla:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    # Repo owner is implicitly covered. Bots are skipped by account type, so this
+    # keeps working if Renovate ever moves to the hosted app (renovate[bot]).
+    if: >-
+      github.event.pull_request.user.login != 'ivenos' &&
+      github.event.pull_request.user.type != 'Bot'
+    steps:
+      - name: Verify CLA checkbox is ticked
+        env:
+          PR_BODY: ${{ github.event.pull_request.body }}
+        run: |
+          if ! grep -qiE '\[x\].*I agree to the CLA' <<< "$PR_BODY"; then
+            echo "::error::CLA checkbox is not ticked. Please edit the PR description and check the box under 'Contributor License Agreement'."
+            exit 1
+          fi
+          echo "CLA confirmed."
