@@ -6,6 +6,15 @@
     "overview": "A sortable, filterable table of everything in your libraries.",
     "owner": "ivenos",
     "category": "General",
-    "versions": []
+    "versions": [
+      {
+        "version": "0.1.0.0",
+        "changelog": "### Added\n\n- One table in the dashboard listing everything in the libraries, from a whole series down to a single episode, with 38 columns across General, Video, Audio, Subtitles and Playback.\n- Folder rows total what is below them: size, runtime and item count add up, an attribute the children disagree on reads as Mixed, and playback folds from the episodes or tracks underneath.\n- A column selection per level and how far a tab opens, both remembered across restarts.\n- Search across every level of a tab, sorting on any column, and paging.\n- Export of the current view as CSV or ODS, in the language of the interface.\n- English, German, Spanish, French and Italian.\n",
+        "targetAbi": "12.0.0.0",
+        "sourceUrl": "https://github.com/ivenos/jellyfin_inventory/releases/download/v0.1.0/inventory_0.1.0.0.zip",
+        "checksum": "e2b9391683ff67814017f479f4539984",
+        "timestamp": "2026-09-09T09:23:39Z"
+      }
+    ]
   }
 ]
