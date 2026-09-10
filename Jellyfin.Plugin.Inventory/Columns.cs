@@ -11,7 +11,7 @@ namespace Jellyfin.Plugin.Inventory;
 public static class Columns
 {
     /// <summary>
-    /// The group whose values are read per user rather than from the item.
+    /// The group holding what is read from a playback record rather than from the item.
     /// </summary>
     public const string Playback = "Playback";
 
@@ -57,9 +57,12 @@ public static class Columns
         new("subtitleTracks", "Subtitles", ColumnFormat.Number, r => r.SubtitleTracks),
         new("subtitleLanguages", "Subtitles", ColumnFormat.Text, r => r.SubtitleLanguages),
 
-        new("lastPlayed", Playback, ColumnFormat.Date, r => r.LastPlayed),
-        new("playCount", Playback, ColumnFormat.Number, r => r.PlayCount),
-        new("played", Playback, ColumnFormat.Boolean, r => r.Played)
+        new("lastPlayed", Playback, ColumnFormat.Date, r => r.LastPlayed, Source: ColumnSource.User),
+        new("everyoneLastPlayed", Playback, ColumnFormat.Date, r => r.EveryoneLastPlayed, Source: ColumnSource.Everyone),
+        new("playCount", Playback, ColumnFormat.Number, r => r.PlayCount, Source: ColumnSource.User),
+        new("everyonePlayCount", Playback, ColumnFormat.Number, r => r.EveryonePlayCount, Source: ColumnSource.Everyone),
+        new("played", Playback, ColumnFormat.Boolean, r => r.Played, Source: ColumnSource.User),
+        new("everyonePlayed", Playback, ColumnFormat.Number, r => r.PlayedByCount, Source: ColumnSource.Everyone)
     ];
 
     private static readonly Dictionary<string, ColumnDefinition> _byKey =

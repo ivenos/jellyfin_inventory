@@ -26,14 +26,20 @@ public sealed class InventoryService : IDisposable
     private readonly ILibraryManager _libraryManager;
     private readonly IMediaSourceManager _mediaSourceManager;
     private readonly IUserDataManager _userDataManager;
+    private readonly IUserManager _userManager;
     private readonly ILogger<InventoryService> _logger;
     private readonly ConcurrentDictionary<BaseItemKind, Cached> _cache = new();
 
     // Playback is per user, so the shared rows are copied once per user and the copies carry it.
-    private readonly ConcurrentDictionary<(BaseItemKind Kind, Guid UserId), Cached> _perUser = new();
+    private readonly ConcurrentDictionary<(BaseItemKind Kind, Guid UserId, bool Everyone), Cached> _perUser = new();
+
+    // Reading playback for every user costs a query each, so the totals are copied onto their own set.
+    private readonly ConcurrentDictionary<BaseItemKind, Cached> _everyone = new();
 
     // Rows built before a library change are dropped the next time they are asked for.
     private int _generation;
+
+    private int _userStamp;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="InventoryService"/> class.
@@ -41,16 +47,19 @@ public sealed class InventoryService : IDisposable
     /// <param name="libraryManager">Instance of the <see cref="ILibraryManager"/> interface.</param>
     /// <param name="mediaSourceManager">Instance of the <see cref="IMediaSourceManager"/> interface.</param>
     /// <param name="userDataManager">Instance of the <see cref="IUserDataManager"/> interface.</param>
+    /// <param name="userManager">Instance of the <see cref="IUserManager"/> interface.</param>
     /// <param name="logger">Instance of the <see cref="ILogger{InventoryService}"/> interface.</param>
     public InventoryService(
         ILibraryManager libraryManager,
         IMediaSourceManager mediaSourceManager,
         IUserDataManager userDataManager,
+        IUserManager userManager,
         ILogger<InventoryService> logger)
     {
         _libraryManager = libraryManager;
         _mediaSourceManager = mediaSourceManager;
         _userDataManager = userDataManager;
+        _userManager = userManager;
         _logger = logger;
 
         _libraryManager.ItemAdded += OnLibraryChanged;
@@ -110,6 +119,7 @@ public sealed class InventoryService : IDisposable
     /// <param name="level">The level within it, or null for the outermost.</param>
     /// <param name="parentIds">When given, only the children of those items are returned.</param>
     /// <param name="user">The user whose playback data the rows carry, or null for none.</param>
+    /// <param name="everyone">Whether the rows carry the playback totals over every user.</param>
     /// <param name="columns">The columns to return.</param>
     /// <param name="search">An optional substring the name, series or path must contain.</param>
     /// <param name="sortBy">The column key to sort on.</param>
@@ -124,6 +134,7 @@ public sealed class InventoryService : IDisposable
         string? level,
         IReadOnlyList<Guid>? parentIds,
         User? user,
+        bool everyone,
         IReadOnlyList<ColumnDefinition> columns,
         string? search,
         string? sortBy,
@@ -146,13 +157,13 @@ public sealed class InventoryService : IDisposable
             // A search reaches through the whole tab: typing an episode name in the series view has
             // to find the episode, which is not on the level being listed.
             rows = Hierarchy.Levels(mediaType)!
-                .SelectMany(l => Rows(l, user))
+                .SelectMany(l => Rows(l, user, everyone))
                 .Where(r => Matches(r, search!))
                 .ToArray();
         }
         else
         {
-            rows = Rows(kind, user);
+            rows = Rows(kind, user, everyone);
 
             if (parentIds is { Count: > 0 })
             {
@@ -213,6 +224,7 @@ public sealed class InventoryService : IDisposable
         // Nothing can invalidate these once the handlers are gone.
         _cache.Clear();
         _perUser.Clear();
+        _everyone.Clear();
     }
 
     private static object? Present(InventoryRow row, ColumnDefinition column, string mixed)
@@ -256,6 +268,7 @@ public sealed class InventoryService : IDisposable
 
         Interlocked.Increment(ref _generation);
         _perUser.Clear();
+        _everyone.Clear();
     }
 
     private void OnUserDataSaved(object? sender, UserDataSaveEventArgs e)
@@ -272,26 +285,33 @@ public sealed class InventoryService : IDisposable
             return;
         }
 
+        // A play by anyone moves the totals, so they go whichever user wrote it.
+        foreach (var kind in levels)
+        {
+            _everyone.TryRemove(kind, out _);
+        }
+
         // By entry rather than by key, or a set another thread has just published is taken with it.
         foreach (var entry in _perUser)
         {
-            if (entry.Key.UserId == e.UserId && levels.Contains(entry.Key.Kind))
+            if ((entry.Key.UserId == e.UserId || entry.Key.Everyone) && levels.Contains(entry.Key.Kind))
             {
                 _perUser.TryRemove(entry);
             }
         }
     }
 
-    private IReadOnlyList<InventoryRow> Rows(BaseItemKind kind, User? user)
+    private IReadOnlyList<InventoryRow> Rows(BaseItemKind kind, User? user, bool everyone)
     {
         if (user is null)
         {
-            return Shared(kind);
+            return everyone ? Everyone(kind) : Shared(kind);
         }
 
-        return Build(_perUser, (kind, user.Id), _ =>
+        return Build(_perUser, (kind, user.Id, everyone), _ =>
         {
-            var rows = Shared(kind);
+            // Read inside the factory, or an invalidation landing in between is stamped away.
+            var basis = everyone ? Everyone(kind) : Shared(kind);
             var levels = Hierarchy.Of(kind);
             var leaf = levels is null ? kind : levels[^1];
 
@@ -300,9 +320,9 @@ public sealed class InventoryService : IDisposable
                 // Jellyfin keeps no playback record on a series, a season or an album, and folds
                 // what its own client shows there out of the children.
                 var toLeaves = levels![0] == kind;
-                var byParent = Rows(leaf, user).ToLookup(r => toLeaves ? r.AncestorId : r.ParentId);
+                var byParent = Rows(leaf, user, everyone).ToLookup(r => toLeaves ? r.AncestorId : r.ParentId);
 
-                return rows.Select(row =>
+                return basis.Select(row =>
                 {
                     var copy = row.Copy();
                     FoldPlayback(copy, byParent[row.Id].ToArray());
@@ -312,7 +332,7 @@ public sealed class InventoryService : IDisposable
 
             var playback = _userDataManager.GetUserDataBatch(Items(kind), user);
 
-            return rows.Select(row =>
+            return basis.Select(row =>
             {
                 if (!playback.TryGetValue(row.Id, out var data))
                 {
@@ -328,6 +348,78 @@ public sealed class InventoryService : IDisposable
         });
     }
 
+    private IReadOnlyList<InventoryRow> Everyone(BaseItemKind kind)
+    {
+        // A bit stands for a user by position, so the order has to hold across levels built at
+        // different moments, and nothing tells a plugin that an account came or went.
+        var users = _userManager.GetUsers().OrderBy(u => u.Id).ToArray();
+        var stamp = users.Aggregate(users.Length, (hash, user) => (hash * 31) + user.Id.GetHashCode());
+        if (Interlocked.Exchange(ref _userStamp, stamp) != stamp)
+        {
+            _everyone.Clear();
+        }
+
+        return Build(_everyone, kind, k => BuildEveryone(k, users));
+    }
+
+    private IReadOnlyList<InventoryRow> BuildEveryone(BaseItemKind kind, IReadOnlyList<User> users)
+    {
+        var rows = Shared(kind);
+        var levels = Hierarchy.Of(kind);
+        var leaf = levels is null ? kind : levels[^1];
+
+        if (leaf != kind)
+        {
+            var toLeaves = levels![0] == kind;
+            var byParent = Everyone(leaf).ToLookup(r => toLeaves ? r.AncestorId : r.ParentId);
+
+            return rows.Select(row =>
+            {
+                var copy = row.Copy();
+                FoldEveryone(copy, byParent[row.Id].ToArray());
+                return copy;
+            }).ToArray();
+        }
+
+        var items = Items(kind);
+        var copies = rows.Select(r => r.Copy()).ToArray();
+        var index = 0;
+
+        foreach (var user in users)
+        {
+            // Only the first 64 accounts get a bit, and the rest are left out of that column alone.
+            var bit = index < 64 ? 1UL << index : 0UL;
+            index++;
+
+            var playback = _userDataManager.GetUserDataBatch(items, user);
+            foreach (var copy in copies)
+            {
+                if (!playback.TryGetValue(copy.Id, out var data))
+                {
+                    continue;
+                }
+
+                if (data.PlayCount > 0)
+                {
+                    copy.EveryonePlayCount = (copy.EveryonePlayCount ?? 0) + data.PlayCount;
+                }
+
+                if (data.LastPlayedDate is { } played
+                    && (copy.EveryoneLastPlayed is null || played > copy.EveryoneLastPlayed))
+                {
+                    copy.EveryoneLastPlayed = played;
+                }
+
+                if (data.Played)
+                {
+                    copy.PlayedBy |= bit;
+                }
+            }
+        }
+
+        return copies;
+    }
+
     private static void FoldPlayback(InventoryRow row, IReadOnlyList<InventoryRow> children)
     {
         if (children.Count == 0)
@@ -339,6 +431,19 @@ public sealed class InventoryService : IDisposable
         row.PlayCount = plays > 0 ? plays : null;
         row.LastPlayed = children.Max(c => c.LastPlayed);
         row.Played = children.All(c => c.Played == true);
+    }
+
+    private static void FoldEveryone(InventoryRow row, IReadOnlyList<InventoryRow> children)
+    {
+        if (children.Count == 0)
+        {
+            return;
+        }
+
+        var plays = children.Sum(c => c.EveryonePlayCount ?? 0);
+        row.EveryonePlayCount = plays > 0 ? plays : null;
+        row.EveryoneLastPlayed = children.Max(c => c.EveryoneLastPlayed);
+        row.PlayedBy = children.Aggregate(ulong.MaxValue, (mask, c) => mask & c.PlayedBy);
     }
 
     private IReadOnlyList<InventoryRow> Shared(BaseItemKind kind) => Build(_cache, kind, BuildRows);

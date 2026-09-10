@@ -51,13 +51,13 @@ public class InventoryController : ControllerBase
         }
     }
 
-    // Playback is the only per user value, and reading it copies the whole set of rows, so a table
-    // that shows none of those columns is answered from the shared one.
+    // Reading a playback record copies the whole set of rows, and the totals cost a query per user
+    // on top, so a table that shows neither is answered from the shared set.
     private User? Reader(IReadOnlyList<ColumnDefinition> columns, string? sortBy)
-        => columns.Any(c => string.Equals(c.Group, Columns.Playback, StringComparison.Ordinal))
-            || string.Equals(Columns.Find(sortBy)?.Group, Columns.Playback, StringComparison.Ordinal)
-            ? Caller
-            : null;
+        => Uses(columns, sortBy, ColumnSource.User) ? Caller : null;
+
+    private static bool Uses(IReadOnlyList<ColumnDefinition> columns, string? sortBy, ColumnSource source)
+        => columns.Any(c => c.Source == source) || Columns.Find(sortBy)?.Source == source;
 
     /// <summary>
     /// Gets the table's shape: the populated media types with their levels, every available column,
@@ -83,7 +83,7 @@ public class InventoryController : ControllerBase
                 ExpandedTo = config.GetExpandLevel(t.MediaType)
             }),
             Columns = Columns.All.Select(c => Describe(c, culture)),
-            PageSize = Math.Clamp(config.PageSize, 1, 1000),
+            PageSize = Math.Clamp(config.PageSize, 1, PluginConfiguration.MaxPageSize),
             Strings = Translations.All(culture)
         });
     }
@@ -157,12 +157,13 @@ public class InventoryController : ControllerBase
             level,
             parents,
             Reader(columns, sortBy),
+            Uses(columns, sortBy, ColumnSource.Everyone),
             columns,
             search,
             sortBy,
             descending,
             expanding ? 0 : Math.Max(0, startIndex),
-            expanding ? int.MaxValue : Math.Clamp(limit ?? config.PageSize, 1, 1000),
+            expanding ? int.MaxValue : Math.Clamp(limit ?? config.PageSize, 1, PluginConfiguration.MaxPageSize),
             culture);
 
         return Ok(new
@@ -231,6 +232,7 @@ public class InventoryController : ControllerBase
             level,
             null,
             Reader(columns, sortBy),
+            Uses(columns, sortBy, ColumnSource.Everyone),
             columns,
             search,
             sortBy,
@@ -301,6 +303,38 @@ public class InventoryController : ControllerBase
 
             plugin.UpdateConfiguration(config);
             return Ok(new { Level = known.ToString(), Columns = chosen });
+        }
+    }
+
+    /// <summary>
+    /// Stores how many rows a page holds.
+    /// </summary>
+    /// <param name="size">The number of rows.</param>
+    /// <response code="200">The size was stored.</response>
+    /// <response code="400">The size is outside what the table will ask for.</response>
+    /// <returns>The stored size.</returns>
+    [HttpPost("PageSize")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    public ActionResult<object> SetPageSize([FromQuery] int size)
+    {
+        if (size < 1 || size > PluginConfiguration.MaxPageSize)
+        {
+            return BadRequest($"A page holds between 1 and {PluginConfiguration.MaxPageSize} rows.");
+        }
+
+        var plugin = Plugin.Instance;
+        if (plugin is null)
+        {
+            return Ok(new { PageSize = size });
+        }
+
+        lock (_configLock)
+        {
+            var config = plugin.Configuration;
+            config.PageSize = size;
+            plugin.UpdateConfiguration(config);
+            return Ok(new { PageSize = size });
         }
     }
 

@@ -78,7 +78,7 @@ check "the readme lists exactly the columns there are" \
 import json, pathlib, re
 root = pathlib.Path('$ROOT')
 groups = {}
-for key, group in re.findall(r'new\(\"([^\"]+)\",\s*(Playback|\"[A-Za-z]+\")',
+for key, group in re.findall(r'new\(\"([^\"]+)\",\s*([A-Za-z]+|\"[A-Za-z]+\")',
                              (root / 'Jellyfin.Plugin.Inventory/Columns.cs').read_text(encoding='utf-8')):
     strings = json.loads((root / 'Jellyfin.Plugin.Inventory/Strings/en.json').read_text(encoding='utf-8'))
     groups.setdefault(strings['group.' + group.strip('\"')], []).append(strings['column.' + key])
@@ -320,11 +320,12 @@ check "every column has a caption rather than falling back to its key" \
 named() { field "[r['Values'].get('$2') for r in json.load(sys.stdin)['Rows'] if r['Values'].get('name')=='$1'][0]"; }
 identify() { field "[r['Id'] for r in json.load(sys.stdin)['Rows'] if r['Values'].get('name')=='$1'][0]"; }
 
+# The second and third arguments name another user, for the counts that span all of them.
 play() {
     curl -sf -X POST "$BASE/UserPlayedItems/$1" \
-        -H "Authorization: MediaBrowser Token=\"$TOKEN\"" -H "$JSON" -d '{}' >/dev/null 2>&1 \
-      || curl -sf -X POST "$BASE/Users/$USER_ID/PlayedItems/$1" \
-        -H "Authorization: MediaBrowser Token=\"$TOKEN\"" -H "$JSON" -d '{}' >/dev/null 2>&1 \
+        -H "Authorization: MediaBrowser Token=\"${2:-$TOKEN}\"" -H "$JSON" -d '{}' >/dev/null 2>&1 \
+      || curl -sf -X POST "$BASE/Users/${3:-$USER_ID}/PlayedItems/$1" \
+        -H "Authorization: MediaBrowser Token=\"${2:-$TOKEN}\"" -H "$JSON" -d '{}' >/dev/null 2>&1 \
       || { echo "neither played endpoint answered; jellyfin may have renamed it" >&2; exit 1; }
 }
 
@@ -528,7 +529,7 @@ check "interface strings ship with the schema" \
 
 check "playback columns are offered" \
     "$(printf '%s\n' "$SCHEMA" | field "','.join(c['Key'] for c in json.load(sys.stdin)['Columns'] if c['GroupKey']=='Playback')")" \
-    "lastPlayed,playCount,played"
+    "lastPlayed,everyoneLastPlayed,playCount,everyonePlayCount,played,everyonePlayed"
 curl -sf -X POST "$BASE/Inventory/Columns?level=Movie" \
     -H "Authorization: MediaBrowser Token=\"$TOKEN\"" -H "$JSON" \
     -d '["name","size","lastPlayed","playCount","played"]' >/dev/null
@@ -589,7 +590,7 @@ check "a truth value is written in the language of the header beside it" \
         -H "Authorization: MediaBrowser Token=\"$TOKEN\"" | python3 -c "
 import csv, io, sys
 rows = list(csv.reader(io.StringIO(sys.stdin.buffer.read().decode('utf-8-sig')), delimiter=';'))
-played = rows[0].index('Gespielt')
+played = rows[0].index('Vollständig gesehen')
 values = {r[played] for r in rows[1:]}
 print('ok' if 'Ja' in values and not values & {'true', 'false'} else sorted(values))")" "ok"
 
@@ -706,6 +707,42 @@ check "playback belongs to whoever asks, not to whoever played it" \
         -H "Authorization: MediaBrowser Token=\"$SECOND_TOKEN\"" \
         | field "json.load(sys.stdin)['Rows'][0]['Values']['played']")" "False"
 
+curl -sf -X POST "$BASE/Inventory/Columns?level=Movie" \
+    -H "Authorization: MediaBrowser Token=\"$TOKEN\"" -H "$JSON" \
+    -d '["name","size","played","everyonePlayCount","everyoneLastPlayed","everyonePlayed"]' >/dev/null
+SHARED=$(curl -sf "$BASE/Inventory/Items?mediaType=Movie&sortBy=everyonePlayCount&descending=true&limit=1" \
+    -H "Authorization: MediaBrowser Token=\"$SECOND_TOKEN\"")
+check "the count across all users holds a play the asking user did not make" \
+    "$(printf '%s\n' "$SHARED" | field "json.load(sys.stdin)['Rows'][0]['Values']['everyonePlayCount']")" "1"
+check "and dates it, though the asking user has played nothing" \
+    "$(printf '%s\n' "$SHARED" | field "json.load(sys.stdin)['Rows'][0]['Values']['everyoneLastPlayed'] is not None")" "True"
+play "$MOVIE_ID" "$SECOND_TOKEN" "$SECOND_ID"
+BOTH_PLAYED=$(curl -sf "$BASE/Inventory/Items?mediaType=Movie&sortBy=everyonePlayCount&descending=true&limit=1" \
+    -H "Authorization: MediaBrowser Token=\"$SECOND_TOKEN\"")
+check "a second user playing the same film adds to it" \
+    "$(printf '%s\n' "$BOTH_PLAYED" | field "json.load(sys.stdin)['Rows'][0]['Values']['everyonePlayCount']")" "2"
+check "and both count as having played it to the end" \
+    "$(printf '%s\n' "$BOTH_PLAYED" | field "json.load(sys.stdin)['Rows'][0]['Values']['everyonePlayed']")" "2"
+curl -sf -X POST "$BASE/Inventory/Columns?level=Series" \
+    -H "Authorization: MediaBrowser Token=\"$TOKEN\"" -H "$JSON" \
+    -d '["name","playCount","everyonePlayCount","everyonePlayed"]' >/dev/null
+WHOLE=$(curl -sf "$BASE/Inventory/Items?mediaType=Series" \
+    -H "Authorization: MediaBrowser Token=\"$SECOND_TOKEN\"")
+check "a series totals the plays of its episodes across all users" \
+    "$(printf '%s\n' "$WHOLE" | named 'Harbour Lights' everyonePlayCount)" "3"
+check "while its own column stays with the user asking" \
+    "$(printf '%s\n' "$WHOLE" | named 'Harbour Lights' playCount)" "None"
+check "a series counts the user who has played every episode of it" \
+    "$(printf '%s\n' "$WHOLE" | named 'Harbour Lights' everyonePlayed)" "1"
+check "and nobody for a series with an episode left over" \
+    "$(printf '%s\n' "$WHOLE" | named 'Long Run' everyonePlayed)" "None"
+
+# Nothing tells a plugin that an account is gone, so the totals have to notice by themselves.
+curl -sf -X DELETE "$BASE/Users/$SECOND_ID" -H "Authorization: MediaBrowser Token=\"$TOKEN\"" >/dev/null
+check "a deleted account stops counting towards the totals" \
+    "$(api 'Inventory/Items?mediaType=Movie&sortBy=everyonePlayCount&descending=true&limit=1' \
+        | field "json.load(sys.stdin)['Rows'][0]['Values']['everyonePlayCount']")" "1"
+
 curl -sf -X POST "$BASE/Users/New" -H "Authorization: MediaBrowser Token=\"$TOKEN\"" -H "$JSON" \
     -d '{"Name":"viewer","Password":"viewertest"}' >/dev/null
 VIEWER=$(curl -sf -X POST "$BASE/Users/AuthenticateByName" -H "$JSON" -H "$CLIENT" \
@@ -742,6 +779,16 @@ check "an empty column level falls back to the level being listed" \
 check "unknown media type is rejected" \
     "$(curl -s -o /dev/null -w '%{http_code}' "$BASE/Inventory/Items?mediaType=Nonsense" \
         -H "Authorization: MediaBrowser Token=\"$TOKEN\"")" "400"
+check "a page size the table would never ask for is rejected" \
+    "$(curl -s -o /dev/null -w '%{http_code}' -X POST "$BASE/Inventory/PageSize?size=20000" \
+        -H "Authorization: MediaBrowser Token=\"$TOKEN\"")" "400"
+check "and so is one below a single row" \
+    "$(curl -s -o /dev/null -w '%{http_code}' -X POST "$BASE/Inventory/PageSize?size=0" \
+        -H "Authorization: MediaBrowser Token=\"$TOKEN\"")" "400"
+check "a page holds what was asked for" \
+    "$(curl -sf -X POST "$BASE/Inventory/PageSize?size=3" \
+        -H "Authorization: MediaBrowser Token=\"$TOKEN\"" >/dev/null \
+      && api 'Inventory/Items?mediaType=Movie' | field "len(json.load(sys.stdin)['Rows'])")" "3"
 check "the api needs a token" \
     "$(curl -s -o /dev/null -w '%{http_code}' "$BASE/Inventory/Schema")" "401"
 
@@ -792,6 +839,8 @@ curl -sf -X POST "$BASE/Inventory/Columns?level=Book" \
     -H "Authorization: MediaBrowser Token=\"$TOKEN\"" -H "$JSON" -d '["name","container"]' >/dev/null
 curl -sf -X POST "$BASE/Inventory/Expand?mediaType=Series&level=Season" \
     -H "Authorization: MediaBrowser Token=\"$TOKEN\"" >/dev/null
+curl -sf -X POST "$BASE/Inventory/PageSize?size=250" \
+    -H "Authorization: MediaBrowser Token=\"$TOKEN\"" >/dev/null
 docker restart "$CONTAINER" >/dev/null
 i=0
 until curl -sf --max-time 10 "$BASE/Inventory/Schema" \
@@ -804,6 +853,8 @@ check "a stored column selection survives a restart" \
     "$(api 'Inventory/Items?mediaType=Book&limit=1' | field "','.join(c['Key'] for c in json.load(sys.stdin)['Columns'])")" "name,container"
 check "so does how far a tab is expanded" \
     "$(api 'Inventory/Schema' | field "[t['ExpandedTo'] for t in json.load(sys.stdin)['MediaTypes'] if t['MediaType']=='Series'][0]")" "Season"
+check "and the page size the table starts with" \
+    "$(api 'Inventory/Schema' | field "json.load(sys.stdin)['PageSize']")" "250"
 
 echo
 echo "$PASS passed, $FAIL failed"

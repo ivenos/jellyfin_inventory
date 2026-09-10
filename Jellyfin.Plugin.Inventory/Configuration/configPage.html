@@ -76,6 +76,8 @@
                 .invFoot { display: flex; flex-wrap: wrap; gap: 1em; align-items: center; margin-top: 1em; }
                 .invTotals { flex: 1 1 auto; color: var(--jf-palette-text-secondary, inherit); }
                 .invPager { display: flex; gap: .5em; align-items: center; }
+                .invPager label { color: var(--jf-palette-text-secondary, inherit); }
+                .invPager select { width: auto; min-width: 6em; }
                 .invEmpty { padding: 2em; text-align: center; color: var(--jf-palette-text-secondary, inherit); }
             </style>
 
@@ -112,6 +114,8 @@
             <div class="invFoot">
                 <div class="invTotals" id="invTotals" role="status" aria-live="polite"></div>
                 <div class="invPager">
+                    <label class="selectLabel" for="invSize" id="invSizeLabel"></label>
+                    <select is="emby-select" id="invSize" class="emby-select-withcolor emby-select"></select>
                     <button is="emby-button" type="button" id="invPrev" class="raised"><span id="invPrevLabel"></span></button>
                     <span id="invPage"></span>
                     <button is="emby-button" type="button" id="invNext" class="raised"><span id="invNextLabel"></span></button>
@@ -212,6 +216,7 @@
                 page.querySelector('#invSearch').setAttribute('placeholder', t('Search', 'Search'));
                 page.querySelector('#invSearch').setAttribute('aria-label', t('Search', 'Search'));
                 page.querySelector('#invColumnsLabel').textContent = t('Columns', 'Columns');
+                page.querySelector('#invSizeLabel').textContent = t('RowsPerPage', 'Rows per page');
                 page.querySelector('#invPrevLabel').textContent = t('Previous', 'Previous');
                 page.querySelector('#invNextLabel').textContent = t('Next', 'Next');
                 page.querySelector('#invEmpty').textContent = t('Empty', 'Nothing here.');
@@ -279,6 +284,38 @@
                     select.appendChild(option);
                 });
                 select.value = String(state.expandTo);
+            }
+
+            // A size written into the configuration file by hand is offered alongside the usual ones
+            // rather than rounded away.
+            function renderPageSizes() {
+                var sizes = [50, 100, 250, 500, 1000, 5000, 10000];
+                if (sizes.indexOf(state.limit) === -1) {
+                    sizes.push(state.limit);
+                    sizes.sort(function (a, b) { return a - b; });
+                }
+
+                var select = page.querySelector('#invSize');
+                select.innerHTML = '';
+                sizes.forEach(function (size) {
+                    var option = document.createElement('option');
+                    option.value = String(size);
+                    option.textContent = size.toLocaleString(culture);
+                    select.appendChild(option);
+                });
+                select.value = String(state.limit);
+            }
+
+            function setPageSize(size) {
+                state.limit = size;
+                state.start = 0;
+
+                ApiClient.ajax({
+                    type: 'POST',
+                    url: url('PageSize', { size: size })
+                }).catch(function () { /* the view is already updated; remembering is best effort */ });
+
+                load();
             }
 
             function setExpansion(depth) {
@@ -928,6 +965,11 @@
                 setExpansion(Number(e.target.value));
             });
 
+            page.querySelector('#invSize').addEventListener('change', function (e) {
+                var size = Number(e.target.value);
+                if (size && size !== state.limit) { setPageSize(size); }
+            });
+
             page.querySelector('#invColumnsBtn').addEventListener('click', released(function () {
                 var panel = page.querySelector('#invColumnsPanel');
                 var opening = panel.style.display === 'none';
@@ -967,6 +1009,7 @@
                     schema.columns = result.Columns;
                     schema.strings = result.Strings || {};
                     state.limit = result.PageSize || state.limit;
+                    renderPageSizes();
                     page.querySelector('#invGroups').innerHTML = '';
                     typeKeys = null;
                     applyStaticLabels();

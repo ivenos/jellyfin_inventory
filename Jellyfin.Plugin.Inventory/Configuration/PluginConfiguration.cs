@@ -11,6 +11,11 @@ namespace Jellyfin.Plugin.Inventory.Configuration;
 public class PluginConfiguration : BasePluginConfiguration
 {
     /// <summary>
+    /// The largest page the table will ask for and the API will answer with.
+    /// </summary>
+    public const int MaxPageSize = 10000;
+
+    /// <summary>
     /// Gets or sets the per-level column selections. A level without an entry uses the defaults.
     /// </summary>
     public ColumnPreset[] Presets { get; set; } = [];

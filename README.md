@@ -33,11 +33,11 @@ unpacked into `config/plugins/Inventory/`.
 | Video | Video codec, Profile, Resolution, Height, Video bitrate, Framerate, Bit depth, HDR, Dolby Vision, Pixel format, Interlaced |
 | Audio | Audio codec, Layout, Channels, Audio bitrate, Sample rate, Spatial, Audio tracks, Audio languages |
 | Subtitles | Subtitle tracks, Subtitle languages |
-| Playback | Last played, Plays, Played |
+| Playback | Last played, Last played (all users), Plays, Plays (all users), Fully played, Fully played by |
 
 ## API
 
-Five endpoints under `/Inventory`, all requiring an administrator token.
+Six endpoints under `/Inventory`, all requiring an administrator token.
 `mediaType` names a tab, `level` one of the levels inside it; those and the
 column keys all come from `Schema`.
 
@@ -48,6 +48,7 @@ column keys all come from `Schema`.
 | `GET Export` | `mediaType`, `level`, `columnLevel`, `format`, `search`, `sortBy`, `descending`, `culture` | Every matching row as a `csv` or `ods` file |
 | `POST Columns` | `level`, and the column keys as a JSON array in the body | The stored selection |
 | `POST Expand` | `mediaType`, `level` | The stored level |
+| `POST PageSize` | `size` | The stored number of rows per page |
 
 ## Building
 
