@@ -21,13 +21,22 @@
                     background: var(--jf-palette-primary-main, #00a4dc);
                     color: var(--jf-palette-primary-contrastText, #000);
                 }
-                .invType .invCount { opacity: .7; margin-left: .5em; }
-                .invLevels { display: flex; gap: .6em; align-items: center; margin-bottom: 1em; }
+                .invType .invCount { opacity: .7; margin-left: .5em; display: inline-block;
+                    min-width: .95em; text-align: right; position: relative; }
+                .invType.invLoad .invCount { visibility: hidden; }
+                .invType.invLoad .invCount::after { content: ""; visibility: visible;
+                    position: absolute; inset: 0; margin: auto; width: .85em; height: .85em;
+                    border-radius: 50%; border: .12em solid transparent;
+                    border: .12em solid color-mix(in srgb, currentColor 22%, transparent);
+                    border-top-color: currentColor; animation: invSpin .8s linear infinite; }
+                .invLevels { display: flex; flex-wrap: wrap; gap: .6em; align-items: center; margin-bottom: 1em; }
                 .invLevels label { color: var(--jf-palette-text-secondary, inherit); }
                 .invLevels select { width: auto; min-width: 12em; }
                 .invTable th.dragging { opacity: .4; }
                 .invTable th.dropBefore { box-shadow: inset 2px 0 0 var(--jf-palette-primary-main, #00a4dc); }
                 .invTable th.dropAfter { box-shadow: inset -2px 0 0 var(--jf-palette-primary-main, #00a4dc); }
+                [dir="rtl"] .invTable th.dropBefore { box-shadow: inset -2px 0 0 var(--jf-palette-primary-main, #00a4dc); }
+                [dir="rtl"] .invTable th.dropAfter { box-shadow: inset 2px 0 0 var(--jf-palette-primary-main, #00a4dc); }
                 .invSearch { max-width: 20em; }
                 .invPanel {
                     border: 1px solid var(--jf-palette-divider, rgba(255,255,255,.15));
@@ -60,7 +69,10 @@
                 .invTable td.name { white-space: normal; min-width: 16em; }
                 .invTable td.name a { color: inherit; text-decoration: none; }
                 .invTable td.name a:hover { color: var(--jf-palette-primary-main, #00a4dc); text-decoration: underline; }
-                .invTable td.path { max-width: 28em; overflow: hidden; text-overflow: ellipsis; }
+                .invTable td.path span {
+                    display: inline-block; max-width: 28em; overflow: hidden;
+                    text-overflow: ellipsis; white-space: nowrap; vertical-align: bottom;
+                }
                 .invTable tr[data-depth="1"] { background: var(--jf-palette-action-hover, rgba(127,127,127,.05)); }
                 .invTable tr[data-depth="2"] { background: var(--jf-palette-action-selected, rgba(127,127,127,.09)); }
                 .invTwisty {
@@ -75,28 +87,55 @@
                 .invIndent { display: inline-block; }
                 .invFoot { display: flex; flex-wrap: wrap; gap: 1em; align-items: center; margin-top: 1em; }
                 .invTotals { flex: 1 1 auto; color: var(--jf-palette-text-secondary, inherit); }
-                .invPager { display: flex; gap: .5em; align-items: center; }
+                .invPager { display: flex; flex-wrap: wrap; gap: .5em; align-items: center; }
                 .invPager label { color: var(--jf-palette-text-secondary, inherit); }
                 .invPager select { width: auto; min-width: 6em; }
                 .invEmpty { padding: 2em; text-align: center; color: var(--jf-palette-text-secondary, inherit); }
+                /* The class that takes the native arrow away applies whether or not the web
+                   client got as far as inserting its own. */
+                .invSelect { position: relative; display: inline-flex; align-items: center; }
+                .invSelect > select { padding-inline-end: 1.9em; }
+                .invSelect::after {
+                    content: "\25be"; position: absolute; inset-inline-end: .55em;
+                    pointer-events: none; color: var(--jf-palette-text-secondary, inherit);
+                }
+                @keyframes invSpin { to { transform: rotate(360deg); } }
+                .invBusy { position: relative; }
+                .invBusy > span { visibility: hidden; }
+                /* Auto margins rather than half its own size, which the border would offset. */
+                .invBusy::after { content: ""; position: absolute; inset: 0; margin: auto;
+                    width: 1.1em; height: 1.1em; border-radius: 50%;
+                    border: .15em solid transparent;
+                    border: .15em solid color-mix(in srgb, currentColor 22%, transparent);
+                    border-top-color: currentColor;
+                    animation: invSpin .8s linear infinite; }
+                /* jellyfin-web carries no disabled state for these buttons. */
+                #InventoryPage button[disabled] { opacity: .5; pointer-events: none; }
+                .invTwisty[data-busy] { animation: invSpin .8s linear infinite; }
+                @media (prefers-reduced-motion: reduce) {
+                    .invBusy::after, .invType.invLoad .invCount::after,
+                    .invTwisty[data-busy] { animation-duration: 2.4s; }
+                }
             </style>
 
             <h2 class="sectionTitle" id="invTitle">Inventory</h2>
 
             <div class="invBar">
                 <div class="invTypes" id="invTypes"></div>
-                <input is="emby-input" type="search" id="invSearch" class="invSearch" />
-                <button is="emby-button" type="button" id="invColumnsBtn" class="raised"
+                <input is="emby-input" type="search" id="invSearch" class="invSearch emby-input" />
+                <button is="emby-button" type="button" id="invColumnsBtn" class="raised emby-button"
                         aria-expanded="false" aria-controls="invColumnsPanel">
                     <span id="invColumnsLabel"></span>
                 </button>
-                <button is="emby-button" type="button" id="invCsv" class="raised"><span>CSV</span></button>
-                <button is="emby-button" type="button" id="invOds" class="raised"><span>ODS</span></button>
+                <button is="emby-button" type="button" id="invCsv" class="raised emby-button"><span>CSV</span></button>
+                <button is="emby-button" type="button" id="invOds" class="raised emby-button"><span>ODS</span></button>
             </div>
 
             <div class="invLevels" id="invLevels" style="display:none">
                 <label class="selectLabel" for="invExpand" id="invExpandLabel"></label>
-                <select is="emby-select" id="invExpand" class="emby-select-withcolor emby-select"></select>
+                <div class="invSelect selectContainer selectContainer-inline">
+                    <select is="emby-select" id="invExpand" class="emby-select-withcolor emby-select"></select>
+                </div>
             </div>
 
             <div class="invPanel" id="invColumnsPanel" style="display:none">
@@ -115,10 +154,12 @@
                 <div class="invTotals" id="invTotals" role="status" aria-live="polite"></div>
                 <div class="invPager">
                     <label class="selectLabel" for="invSize" id="invSizeLabel"></label>
-                    <select is="emby-select" id="invSize" class="emby-select-withcolor emby-select"></select>
-                    <button is="emby-button" type="button" id="invPrev" class="raised"><span id="invPrevLabel"></span></button>
-                    <span id="invPage"></span>
-                    <button is="emby-button" type="button" id="invNext" class="raised"><span id="invNextLabel"></span></button>
+                    <div class="invSelect selectContainer selectContainer-inline">
+                        <select is="emby-select" id="invSize" class="emby-select-withcolor emby-select"></select>
+                    </div>
+                    <button is="emby-button" type="button" id="invPrev" class="raised emby-button"><span id="invPrevLabel"></span></button>
+                    <span id="invPage" aria-live="polite"></span>
+                    <button is="emby-button" type="button" id="invNext" class="raised emby-button"><span id="invNextLabel"></span></button>
                 </div>
             </div>
         </div>
@@ -136,6 +177,7 @@
             var schema = { mediaTypes: [], columns: [], strings: {} };
             // Every response is checked against this, so a slower earlier one cannot paint over a later.
             var generation = 0;
+            var visit = 0;
 
             function t(key, fallback) {
                 return schema.strings[key] || fallback || key;
@@ -186,8 +228,8 @@
                 // A column whose children disagree arrives as the worded marker, so every branch
                 // that would otherwise compute with it prints it instead.
                 switch (kind) {
-                    case 'Bytes': return typeof value === 'number' ? bytes(value) : String(value);
-                    case 'BytesPerHour': return typeof value === 'number' ? bytes(value) + '/h' : String(value);
+                    case 'Bytes':
+                    case 'BytesPerHour': return typeof value === 'number' ? bytes(value) : String(value);
                     case 'Duration': return typeof value === 'number' ? duration(value) : String(value);
                     case 'Bitrate': return typeof value === 'number' ? bitrate(value) : String(value);
                     case 'FrameRate': return typeof value === 'number'
@@ -260,7 +302,7 @@
             function markType(host) {
                 Array.prototype.slice.call(host.children).forEach(function (button) {
                     var selected = button.getAttribute('data-type') === state.type;
-                    button.className = 'invType' + (selected ? ' selected' : '');
+                    button.classList.toggle('selected', selected);
                     button.setAttribute('aria-pressed', selected ? 'true' : 'false');
                 });
             }
@@ -339,7 +381,9 @@
                 if (!twisty) { return; }
                 twisty.setAttribute('data-open', isOpen ? '1' : '0');
                 twisty.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
-                twisty.setAttribute('aria-label', isOpen ? t('Collapse', 'Collapse') : t('Expand', 'Expand'));
+                var what = twisty.getAttribute('data-name');
+                var says = isOpen ? t('Collapse', 'Collapse') : t('Expand', 'Expand');
+                twisty.setAttribute('aria-label', what ? says + ' ' + what : says);
                 var glyph = twisty.querySelector('span') || twisty;
                 glyph.textContent = isOpen ? '\u25bc' : '\u25b6';
             }
@@ -353,7 +397,14 @@
                     batches.push(ids.slice(i, i + 50));
                 }
 
-                return Promise.all(batches.map(function (batch) {
+                var rows = [];
+                var at = 0;
+                // Four at a time: ten thousand rows to a page would otherwise open two hundred
+                // requests at once. Which answers first does not matter, they are keyed by parent.
+                function worker() {
+                    if (at >= batches.length) { return Promise.resolve(); }
+                    var batch = batches[at];
+                    at++;
                     return ApiClient.getJSON(url('Items', {
                         mediaType: state.type,
                         level: level,
@@ -361,10 +412,13 @@
                         columnLevel: state.levels[0].Level,
                         sortBy: state.sortBy || '',
                         descending: state.descending
-                    }));
-                })).then(function (results) {
-                    var rows = [];
-                    results.forEach(function (result) { rows = rows.concat(result.Rows); });
+                    })).then(function (result) {
+                        rows = rows.concat(result.Rows);
+                        return worker();
+                    });
+                }
+
+                return Promise.all([worker(), worker(), worker(), worker()]).then(function () {
                     return rows;
                 });
             }
@@ -450,9 +504,9 @@
                 load();
             }
 
-            function renderColumnPicker(active) {
+            function renderColumnPicker() {
                 var host = page.querySelector('#invGroups');
-                var chosen = active.map(function (c) { return c.Key; });
+                var chosen = columnKeys();
 
                 // Only the ticks move; rebuilding would take the focus off the box just toggled.
                 if (host.childElementCount) {
@@ -593,6 +647,7 @@
                         var glyph = document.createElement('span');
                         glyph.setAttribute('aria-hidden', 'true');
                         twisty.appendChild(glyph);
+                        twisty.setAttribute('data-name', format(row.Values[column.Key], column.Format));
                         setTwisty(twisty, false);
                         twisty.addEventListener('click', function () { toggle(twisty, row, depth); });
                         td.appendChild(twisty);
@@ -612,6 +667,10 @@
                     link.href = '#/details?id=' + row.Id + '&serverId=' + ApiClient.serverId();
                     link.textContent = text;
                     td.appendChild(link);
+                } else if (column.Key === 'path' && text) {
+                    var full = document.createElement('span');
+                    full.textContent = text;
+                    td.appendChild(full);
                 } else {
                     td.appendChild(document.createTextNode(text));
                 }
@@ -639,6 +698,7 @@
                 // Without this a second click during the request would collapse a row whose children
                 // have not arrived yet, and they would appear under a closed triangle.
                 if (twisty.getAttribute('data-busy') === '1') { return; }
+                if (twisty.getAttribute('aria-disabled') === 'true') { return; }
 
                 if (twisty.getAttribute('data-open') === '1') {
                     setTwisty(twisty, false);
@@ -671,8 +731,9 @@
 
             function place(tr, rows, twisty, depth) {
                 if (!rows.length) {
-                    // Nothing below after all, so the row stops claiming it can be opened.
-                    twisty.remove();
+                    // Taking the control away would drop the focus and pull the title out of line.
+                    setTwisty(twisty, false);
+                    twisty.setAttribute('aria-disabled', 'true');
                     return;
                 }
 
@@ -742,7 +803,10 @@
                         // Dragging a header is the other way to reorder, and it needs a mouse.
                         if (e.ctrlKey && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) {
                             e.preventDefault();
-                            move(column.Key, e.key === 'ArrowLeft' ? -1 : 1);
+                            var back = document.documentElement.getAttribute('dir') === 'rtl'
+                                ? e.key === 'ArrowRight'
+                                : e.key === 'ArrowLeft';
+                            move(column.Key, back ? -1 : 1);
                         }
                     });
                     attachReorder(th, column.Key);
@@ -750,6 +814,7 @@
                 });
 
                 result.Rows.forEach(function (row) { body.appendChild(buildRow(row, 0)); });
+                page.querySelector('#invEmpty').textContent = t('Empty', 'Nothing here.');
                 page.querySelector('#invEmpty').style.display = result.Rows.length ? 'none' : '';
 
                 refocus = null;
@@ -828,7 +893,7 @@
                 var one = plural.select(count) === 'one';
                 page.querySelector('#invTotals').textContent = [
                     (one ? t('ItemsOne') : t('ItemsMany')).replace('{0}', count.toLocaleString(culture)),
-                    bytes(result.TotalSize),
+                    result.TotalSize ? bytes(result.TotalSize) : '',
                     duration(result.TotalDuration)
                 ].filter(Boolean).join(' · ');
 
@@ -853,7 +918,7 @@
                 // has long since typed past.
                 var wanted = refocus;
                 refocus = null;
-                Dashboard.showLoadingMsg();
+                busy(true);
                 ApiClient.getJSON(url('Items', {
                     mediaType: state.type,
                     level: state.level,
@@ -864,17 +929,33 @@
                     limit: state.limit
                 })).then(function (result) {
                     if (mine !== generation) { return; }
-                    Dashboard.hideLoadingMsg();
+                    busy(false);
                     refocus = wanted;
                     state.total = result.TotalCount;
                     renderTable(result);
                     renderFooter(result);
-                    renderColumnPicker(result.Columns);
+                    renderColumnPicker();
                     if (state.expandTo > 0 && !state.search) { expandTo(state.expandTo); }
                 }).catch(function () {
                     if (mine !== generation) { return; }
-                    Dashboard.hideLoadingMsg();
+                    busy(false);
+                    // The toast fades, and a first load that failed would leave nothing behind it.
+                    var blank = page.querySelector('#invEmpty');
+                    blank.textContent = t('LoadFailed', 'Could not load the inventory.');
+                    blank.style.display = '';
                     Dashboard.alert(t('LoadFailed', 'Could not load the inventory.'));
+                });
+            }
+
+            function busy(on) {
+                Array.prototype.slice.call(page.querySelectorAll('.invType')).forEach(function (button) {
+                    var mine = on && button.getAttribute('data-type') === state.type;
+                    button.classList.toggle('invLoad', mine);
+                    if (mine) {
+                        button.setAttribute('aria-busy', 'true');
+                    } else {
+                        button.removeAttribute('aria-busy');
+                    }
                 });
             }
 
@@ -882,6 +963,7 @@
 
             function applySearch(value) {
                 clearTimeout(searchTimer);
+                value = value.trim();
                 if (state.search === value) { return; }
                 state.search = value;
                 state.start = 0;
@@ -915,12 +997,17 @@
                     descending: state.descending
                 });
 
+                var mine = visit;
                 var buttons = [page.querySelector('#invCsv'), page.querySelector('#invOds')];
                 // Disabling the button under the caret drops the focus to the body, and the next
                 // tab would start again at the top of the dashboard.
                 var held = buttons.indexOf(document.activeElement);
                 buttons.forEach(function (button) { button.disabled = true; });
-                Dashboard.showLoadingMsg();
+                var pressed = page.querySelector(extension === 'csv' ? '#invCsv' : '#invOds');
+                pressed.classList.add('invBusy');
+                // The caption is what names the button, and the spinner hides it.
+                pressed.setAttribute('aria-label', pressed.textContent.trim());
+                pressed.setAttribute('aria-busy', 'true');
                 fetch(target, { headers: { Authorization: 'MediaBrowser Token="' + ApiClient.accessToken() + '"' } })
                     .then(function (response) {
                         if (!response.ok) { throw new Error(response.status); }
@@ -935,18 +1022,22 @@
                         link.remove();
                         // Revoking in the same turn can cut the download short in some browsers.
                         setTimeout(function () { URL.revokeObjectURL(link.href); }, 60000);
-                        done(buttons, held);
+                        done(buttons, held, pressed, mine);
                     })
                     .catch(function () {
-                        done(buttons, held);
+                        done(buttons, held, pressed, mine);
                         if (showing) { Dashboard.alert(t('LoadFailed', 'Could not load the inventory.')); }
                     });
             }
 
-            function done(buttons, held) {
+            function done(buttons, held, pressed, mine) {
+                // One that lands after the view was left was handed its buttons back on the way out.
+                if (mine !== visit) { return; }
+                pressed.classList.remove('invBusy');
+                pressed.removeAttribute('aria-label');
+                pressed.removeAttribute('aria-busy');
                 buttons.forEach(function (button) { button.disabled = false; });
                 if (held >= 0) { buttons[held].focus(); }
-                Dashboard.hideLoadingMsg();
             }
 
             // A button keeps the focus ring after a click, which reads as "still active" on an
@@ -991,9 +1082,10 @@
 
             page.addEventListener('pageshow', function () {
                 showing = true;
-                var mine = ++generation;
+                var mine = ++visit;
+                generation++;
                 // The box keeps its text while the view sits in the dom.
-                state.search = page.querySelector('#invSearch').value;
+                state.search = page.querySelector('#invSearch').value.trim();
                 culture = document.documentElement.getAttribute('lang') || 'en-US';
                 try { (0).toLocaleString(culture); } catch (e) { culture = 'en-US'; }
                 plural = new Intl.PluralRules(culture);
@@ -1004,16 +1096,19 @@
                 page.querySelector('#invEmpty').style.display = 'none';
                 Dashboard.showLoadingMsg();
                 ApiClient.getJSON(url('Schema')).then(function (result) {
-                    if (mine !== generation) { return; }
+                    if (mine !== visit) { return; }
+                    Dashboard.hideLoadingMsg();
                     schema.mediaTypes = result.MediaTypes;
                     schema.columns = result.Columns;
                     schema.strings = result.Strings || {};
+                    // An unsupported language is served English, so the strings set the plural rule.
+                    try { plural = new Intl.PluralRules(result.Culture); }
+                    catch (e) { plural = new Intl.PluralRules('en'); }
                     state.limit = result.PageSize || state.limit;
                     renderPageSizes();
                     page.querySelector('#invGroups').innerHTML = '';
                     typeKeys = null;
                     applyStaticLabels();
-                    Dashboard.hideLoadingMsg();
 
                     var wanted = result.MediaTypes.filter(function (type) {
                         return type.MediaType === state.type;
@@ -1031,9 +1126,9 @@
                     page.querySelector('#invCsv').disabled = empty;
                     page.querySelector('#invOds').disabled = empty;
                 }).catch(function () {
-                    if (mine !== generation) { return; }
-                    applyStaticLabels();
+                    if (mine !== visit) { return; }
                     Dashboard.hideLoadingMsg();
+                    applyStaticLabels();
                     Dashboard.alert(t('LoadFailed', 'Could not load the inventory.'));
                 });
             });
@@ -1044,6 +1139,14 @@
                 showing = false;
                 clearTimeout(searchTimer);
                 generation++;
+                visit++;
+                busy(false);
+                [page.querySelector('#invCsv'), page.querySelector('#invOds')].forEach(function (button) {
+                    button.classList.remove('invBusy');
+                    button.removeAttribute('aria-label');
+                    button.removeAttribute('aria-busy');
+                    button.disabled = false;
+                });
                 Dashboard.hideLoadingMsg();
             });
         })();

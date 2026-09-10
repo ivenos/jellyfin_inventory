@@ -1,0 +1,66 @@
+{
+  "Columns": [
+    { "Key": "name", "Label": "Name", "Group": "General", "GroupKey": "General", "Format": "Text" },
+    { "Key": "size", "Label": "Size", "Group": "General", "GroupKey": "General", "Format": "Bytes" },
+    { "Key": "duration", "Label": "Duration", "Group": "General", "GroupKey": "General", "Format": "Duration" },
+    { "Key": "sizePerHour", "Label": "Size/hour", "Group": "General", "GroupKey": "General", "Format": "BytesPerHour" },
+    { "Key": "totalBitrate", "Label": "Bitrate", "Group": "General", "GroupKey": "General", "Format": "Bitrate" },
+    { "Key": "dateAdded", "Label": "Date added", "Group": "General", "GroupKey": "General", "Format": "Date" },
+    { "Key": "interlaced", "Label": "Interlaced", "Group": "Video", "GroupKey": "Video", "Format": "Boolean" },
+    { "Key": "children", "Label": "Items", "Group": "General", "GroupKey": "General", "Format": "Number" },
+    { "Key": "year", "Label": "Year", "Group": "General", "GroupKey": "General", "Format": "Plain" }
+  ],
+  "Rows": [
+    {
+      "Id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "ParentId": null,
+      "Expandable": false,
+      "Values": {
+        "name": "Exactly one gibibyte",
+        "size": 1073741824,
+        "duration": 45,
+        "sizePerHour": 4000000000,
+        "totalBitrate": 128000,
+        "dateAdded": "2024-03-01T23:30:00.0000000Z",
+        "interlaced": true,
+        "children": 1234567,
+        "year": 2024
+      }
+    },
+    {
+      "Id": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "ParentId": null,
+      "Expandable": false,
+      "Values": {
+        "name": "One byte short of it",
+        "size": 1073741823,
+        "duration": 3599,
+        "sizePerHour": null,
+        "totalBitrate": 1500000,
+        "dateAdded": null,
+        "interlaced": false,
+        "children": 0,
+        "year": null
+      }
+    },
+    {
+      "Id": "cccccccccccccccccccccccccccccccc",
+      "ParentId": null,
+      "Expandable": false,
+      "Values": {
+        "name": "Children that disagree",
+        "size": "Mixed",
+        "duration": "Mixed",
+        "sizePerHour": "Mixed",
+        "totalBitrate": "Mixed",
+        "dateAdded": "Mixed",
+        "interlaced": "Mixed",
+        "children": 2,
+        "year": "Mixed"
+      }
+    }
+  ],
+  "TotalCount": 3,
+  "TotalSize": 2147483647,
+  "TotalDuration": 3644
+}

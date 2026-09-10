@@ -24,7 +24,13 @@ body:
     id: versions
     attributes:
       label: Versions
-      placeholder: "e.g. Jellyfin 12.0.1, Inventory 1.1.0"
+      placeholder: "e.g. Jellyfin 12.0.1, Inventory 0.1.0"
+
+  - type: input
+    id: browser
+    attributes:
+      label: Browser
+      placeholder: "e.g. Firefox 145, Safari 18"
 
   - type: textarea
     id: logs

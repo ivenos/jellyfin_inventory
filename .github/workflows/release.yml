@@ -49,13 +49,18 @@ jobs:
           [ -f "$dll" ] || { echo "the build left no assembly at $dll" >&2; exit 1; }
           zip -j "inventory_$VERSION.zip" meta.json "$dll"
 
+      # A draft, published by hand. One made through the web interface publishes as it tags,
+      # and must not be turned back into a draft here.
       - name: Publish release
-        uses: softprops/action-gh-release@v3
-        with:
-          files: inventory_*.zip
-          fail_on_unmatched_files: true
-          # Published by hand once the notes are written.
-          draft: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" "inventory_$VERSION.zip" --clobber
+          else
+            gh release create "$GITHUB_REF_NAME" "inventory_$VERSION.zip" \
+              --draft --title "$GITHUB_REF_NAME"
+          fi
 
   manifest:
     if: github.event_name == 'release'
@@ -76,12 +81,21 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          printf '%s\n' "${TAG#v}" | grep -Eq '^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$' || {
+            echo "tag $TAG does not name a three part version of digits" >&2
+            exit 1
+          }
           version="${TAG#v}.0"
           url="${{ github.server_url }}/${{ github.repository }}/releases/download/$TAG/inventory_$version.zip"
-          curl -fsSL "$url" -o package.zip
+          # The tag push builds the archive, and both can be triggered by the same click.
+          for attempt in 1 2 3 4 5; do
+            curl -fsSL "$url" -o package.zip && break
+            [ "$attempt" = 5 ] && { echo "no archive at $url" >&2; exit 1; }
+            sleep $((attempt * 20))
+          done
           # From the tagged commit, not from main: main may already carry the abi of the next
           # Jellyfin, which would lock this release out of the servers it was built for.
-          abi=$(git show "$TAG:build.yaml" | sed -n 's|^targetAbi: "\(.*\)"|\1|p')
+          abi=$(git show "$TAG:build.yaml" | sed -n 's|^targetAbi:[[:space:]]*"\(.*\)"|\1|p')
           checksum=$(md5sum package.zip | cut -d' ' -f1)
           rm package.zip
 

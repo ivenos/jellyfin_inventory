@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Numerics;
 
 namespace Jellyfin.Plugin.Inventory;
 
@@ -231,16 +230,16 @@ public class InventoryRow
     public int? EveryonePlayCount { get; set; }
 
     /// <summary>
-    /// Gets or sets the users who have played the item to the end, a bit each in the order the
-    /// server lists them. A folder keeps the users who have played everything below it, so the
-    /// sets are intersected rather than added.
+    /// Gets or sets the users who have played the item to the end, by their place in the order the
+    /// server lists them, ascending. A folder keeps the users who have played everything below it,
+    /// so the sets are intersected rather than added.
     /// </summary>
-    public ulong PlayedBy { get; set; }
+    public IReadOnlyList<int> PlayedBy { get; set; } = [];
 
     /// <summary>
     /// Gets how many users have played the item to the end.
     /// </summary>
-    public int? PlayedByCount => BitOperations.PopCount(PlayedBy) is var count and > 0 ? count : null;
+    public int? PlayedByCount => PlayedBy.Count > 0 ? PlayedBy.Count : null;
 
     /// <summary>
     /// Gets or sets a value indicating whether every item below carries both a size and a runtime.

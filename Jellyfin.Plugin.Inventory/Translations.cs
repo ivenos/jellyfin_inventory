@@ -67,7 +67,12 @@ public static class Translations
         return strings;
     }
 
-    private static string Resolve(string? culture)
+    /// <summary>
+    /// Resolves a requested culture to the one whose strings are actually served for it.
+    /// </summary>
+    /// <param name="culture">The requested culture, such as "de" or "de-DE".</param>
+    /// <returns>The culture the strings come from.</returns>
+    public static string Resolve(string? culture)
     {
         if (string.IsNullOrWhiteSpace(culture))
         {

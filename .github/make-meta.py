@@ -13,7 +13,7 @@ parser.add_argument("--root", default=".")
 parser.add_argument("--out", required=True)
 args = parser.parse_args()
 
-if not re.match(r"^\d+\.\d+\.\d+\.\d+$", args.version):
+if not re.fullmatch(r"\d+\.\d+\.\d+\.\d+", args.version):
     raise SystemExit(f"--version is {args.version!r}, which is not four numbers")
 
 root = pathlib.Path(args.root)

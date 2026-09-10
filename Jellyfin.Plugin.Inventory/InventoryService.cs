@@ -102,11 +102,15 @@ public sealed class InventoryService : IDisposable
         return types;
     }
 
-    private int Count(BaseItemKind kind) => _libraryManager.GetCount(new InternalItemsQuery
+    // Jellyfin keeps an extra in the general query, so it is counted and taken off again.
+    private int Count(BaseItemKind kind) => Total(kind, []) - Total(kind, Enum.GetValues<ExtraType>());
+
+    private int Total(BaseItemKind kind, ExtraType[] extras) => _libraryManager.GetCount(new InternalItemsQuery
     {
         IncludeItemTypes = [kind],
         Recursive = true,
-        IsVirtualItem = false
+        IsVirtualItem = false,
+        ExtraTypes = extras
     });
 
     // The default options join images, provider ids and every user's playback into each item.
@@ -146,6 +150,13 @@ public sealed class InventoryService : IDisposable
     {
         var kind = Hierarchy.Resolve(mediaType, level)
             ?? throw new ArgumentException($"Unknown media type '{mediaType}' or level '{level}'.", nameof(mediaType));
+
+        // The account list is what notices one that came or went, and a request that spans three
+        // levels would otherwise ask the database for it three times over.
+        if (everyone)
+        {
+            Users();
+        }
 
         IReadOnlyList<InventoryRow> rows;
         var spanning = !string.IsNullOrWhiteSpace(search)
@@ -191,11 +202,16 @@ public sealed class InventoryService : IDisposable
             rows = counted;
         }
 
-        var sortColumn = Columns.Find(sortBy) ?? columns[0];
-        var order = sortColumn.Sort ?? sortColumn.Value;
-        var sorted = rows.OrderBy(
-            r => SortKey(order(r)),
-            descending ? NullsLastComparer.Descending : NullsLastComparer.Ascending);
+        // No column reproduces the season and episode order the children arrive in.
+        var sortColumn = Columns.Find(sortBy) ?? (parentIds is null ? columns[0] : null);
+        IEnumerable<InventoryRow> sorted = rows;
+        if (sortColumn is not null)
+        {
+            var order = sortColumn.Sort ?? sortColumn.Value;
+            sorted = rows.OrderBy(
+                r => SortKey(order(r)),
+                descending ? NullsLastComparer.Descending : NullsLastComparer.Ascending);
+        }
 
         var mixed = Translations.Get(culture, "Mixed");
         var page = sorted.Skip(startIndex).Take(limit)
@@ -203,8 +219,7 @@ public sealed class InventoryService : IDisposable
                 r.Id,
                 r.ParentId,
                 r.Expandable,
-                columns.ToDictionary(c => c.Key, c => Present(r, c, mixed))))
-            .ToArray();
+                columns.ToDictionary(c => c.Key, c => Present(r, c, mixed))));
 
         return new InventoryPage(
             page,
@@ -273,8 +288,8 @@ public sealed class InventoryService : IDisposable
 
     private void OnUserDataSaved(object? sender, UserDataSaveEventArgs e)
     {
-        // Progress fires every few seconds while something plays and moves no column this table shows.
-        if (e.SaveReason == UserDataSaveReason.PlaybackProgress)
+        // The report that passes the resume threshold is also the one that marks it played.
+        if (e.SaveReason == UserDataSaveReason.PlaybackProgress && e.UserData is not { Played: true })
         {
             return;
         }
@@ -349,17 +364,27 @@ public sealed class InventoryService : IDisposable
     }
 
     private IReadOnlyList<InventoryRow> Everyone(BaseItemKind kind)
+        => Build(_everyone, kind, k => BuildEveryone(k, Users()));
+
+    // A bit stands for a user by position, so the order has to hold across levels built at
+    // different moments, and nothing tells a plugin that an account came or went.
+    private User[] Users()
     {
-        // A bit stands for a user by position, so the order has to hold across levels built at
-        // different moments, and nothing tells a plugin that an account came or went.
         var users = _userManager.GetUsers().OrderBy(u => u.Id).ToArray();
         var stamp = users.Aggregate(users.Length, (hash, user) => (hash * 31) + user.Id.GetHashCode());
         if (Interlocked.Exchange(ref _userStamp, stamp) != stamp)
         {
             _everyone.Clear();
+            foreach (var entry in _perUser)
+            {
+                if (entry.Key.Everyone)
+                {
+                    _perUser.TryRemove(entry);
+                }
+            }
         }
 
-        return Build(_everyone, kind, k => BuildEveryone(k, users));
+        return users;
     }
 
     private IReadOnlyList<InventoryRow> BuildEveryone(BaseItemKind kind, IReadOnlyList<User> users)
@@ -383,17 +408,15 @@ public sealed class InventoryService : IDisposable
 
         var items = Items(kind);
         var copies = rows.Select(r => r.Copy()).ToArray();
+        var watchers = new List<int>?[copies.Length];
         var index = 0;
 
         foreach (var user in users)
         {
-            // Only the first 64 accounts get a bit, and the rest are left out of that column alone.
-            var bit = index < 64 ? 1UL << index : 0UL;
-            index++;
-
             var playback = _userDataManager.GetUserDataBatch(items, user);
-            foreach (var copy in copies)
+            for (var at = 0; at < copies.Length; at++)
             {
+                var copy = copies[at];
                 if (!playback.TryGetValue(copy.Id, out var data))
                 {
                     continue;
@@ -412,8 +435,18 @@ public sealed class InventoryService : IDisposable
 
                 if (data.Played)
                 {
-                    copy.PlayedBy |= bit;
+                    (watchers[at] ??= []).Add(index);
                 }
+            }
+
+            index++;
+        }
+
+        for (var at = 0; at < copies.Length; at++)
+        {
+            if (watchers[at] is { } set)
+            {
+                copies[at].PlayedBy = set;
             }
         }
 
@@ -443,7 +476,37 @@ public sealed class InventoryService : IDisposable
         var plays = children.Sum(c => c.EveryonePlayCount ?? 0);
         row.EveryonePlayCount = plays > 0 ? plays : null;
         row.EveryoneLastPlayed = children.Max(c => c.EveryoneLastPlayed);
-        row.PlayedBy = children.Aggregate(ulong.MaxValue, (mask, c) => mask & c.PlayedBy);
+        row.PlayedBy = children.Select(c => c.PlayedBy).Aggregate(Shared);
+    }
+
+    // Both sides list their users in the order the server gave them, so one pass down the two is enough.
+    private static IReadOnlyList<int> Shared(IReadOnlyList<int> left, IReadOnlyList<int> right)
+    {
+        if (left.Count == 0 || right.Count == 0)
+        {
+            return [];
+        }
+
+        var both = new List<int>(Math.Min(left.Count, right.Count));
+        for (int a = 0, b = 0; a < left.Count && b < right.Count;)
+        {
+            if (left[a] == right[b])
+            {
+                both.Add(left[a]);
+                a++;
+                b++;
+            }
+            else if (left[a] < right[b])
+            {
+                a++;
+            }
+            else
+            {
+                b++;
+            }
+        }
+
+        return both;
     }
 
     private IReadOnlyList<InventoryRow> Shared(BaseItemKind kind) => Build(_cache, kind, BuildRows);
@@ -549,7 +612,8 @@ public sealed class InventoryService : IDisposable
             (ItemSortBy.SortName, SortOrder.Ascending)
         ],
         DtoOptions = Lean()
-    });
+    // A trailer or a making of belongs to the film it sits with, not to a row of its own.
+    }).Where(item => item.ExtraType is null).ToArray();
 
     private static void Fold(InventoryRow row, IReadOnlyList<InventoryRow> children)
     {
@@ -618,6 +682,16 @@ public sealed class InventoryService : IDisposable
             Library = _libraryManager.GetCollectionFolders(item, roots).FirstOrDefault()?.Name
         };
 
+        if (item is Video video && video.AdditionalParts.Length > 0)
+        {
+            // A stacked film keeps its later parts as items of their own, and carries only the first.
+            var parts = video.GetAdditionalParts().ToArray();
+            var bytes = (item.Size ?? 0) + parts.Sum(p => p.Size ?? 0);
+            row.Size = bytes > 0 ? bytes : null;
+            var ticks = (item.RunTimeTicks ?? 0) + parts.Sum(p => p.RunTimeTicks ?? 0);
+            row.Duration = ticks > 0 ? ticks / (double)TimeSpan.TicksPerSecond : null;
+        }
+
         if (item is Episode episode)
         {
             row.SeriesName = episode.SeriesName;
@@ -648,10 +722,11 @@ public sealed class InventoryService : IDisposable
     // dimensions on the item rather than on a stream. Both are only read where nothing was found.
     private static void ApplyFile(InventoryRow row, BaseItem item)
     {
-        // A folder that happens to carry a dot, such as "Show 2.0", must not be read as a format.
+        // A folder that happens to carry a dot, such as "Show 2.0" or "Dune 2.10", is not a format.
         if (string.IsNullOrEmpty(row.Container)
             && Path.GetExtension(item.Path) is { Length: > 2 } suffix
-            && suffix[1..].All(char.IsLetterOrDigit))
+            && suffix[1..].All(char.IsAsciiLetterOrDigit)
+            && suffix[1..].Any(char.IsAsciiLetter))
         {
             row.Container = suffix[1..].ToLowerInvariant();
         }
@@ -674,7 +749,7 @@ public sealed class InventoryService : IDisposable
             row.VideoBitrate = video.BitRate;
             row.Width = video.Width is > 0 ? video.Width : null;
             row.Height = video.Height is > 0 ? video.Height : null;
-            row.FrameRate = video.AverageFrameRate ?? video.RealFrameRate;
+            row.FrameRate = video.ReferenceFrameRate;
             row.BitDepth = video.BitDepth;
             row.PixelFormat = video.PixelFormat;
             row.Interlaced = video.IsInterlaced;

@@ -15,21 +15,30 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  versions:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      jellyfin: ${{ steps.list.outputs.jellyfin }}
+    steps:
+      - uses: actions/checkout@v7
+      - id: list
+        # Inside the echo the exit status would be the echo's, and an empty matrix passes.
+        run: |
+          releases=$(python3 test/versions.py --json)
+          echo "jellyfin=$releases" >> "$GITHUB_OUTPUT"
+
   test:
+    needs: versions
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        jellyfin: ${{ fromJSON(needs.versions.outputs.jellyfin) }}
     steps:
       - uses: actions/checkout@v7
 
       # Builds in the same SDK container the script uses locally, so a green run
       # here means the same thing it means on a developer's machine.
-      - run: sh test/run.sh
-
-  latest:
-    # Daily canary: catches a Jellyfin release breaking the plugin before users do.
-    if: github.event_name == 'schedule'
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    steps:
-      - uses: actions/checkout@v7
-      - run: JELLYFIN_IMAGE=jellyfin/jellyfin:latest sh test/run.sh
+      - run: JELLYFIN_IMAGE=jellyfin/jellyfin:${{ matrix.jellyfin }} sh test/run.sh

@@ -1,10 +1,13 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
+using System.IO;
 using System.Linq;
+using System.Threading.Tasks;
 using Jellyfin.Database.Implementations.Entities;
 using Jellyfin.Plugin.Inventory.Configuration;
 using MediaBrowser.Common.Api;
+using MediaBrowser.Common.Configuration;
 using MediaBrowser.Controller.Library;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
@@ -24,16 +27,19 @@ public class InventoryController : ControllerBase
     private static readonly object _configLock = new();
     private readonly InventoryService _inventory;
     private readonly IUserManager _userManager;
+    private readonly IApplicationPaths _paths;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="InventoryController"/> class.
     /// </summary>
     /// <param name="inventory">Instance of the <see cref="InventoryService"/>.</param>
     /// <param name="userManager">Instance of the <see cref="IUserManager"/> interface.</param>
-    public InventoryController(InventoryService inventory, IUserManager userManager)
+    /// <param name="paths">Instance of the <see cref="IApplicationPaths"/> interface.</param>
+    public InventoryController(InventoryService inventory, IUserManager userManager, IApplicationPaths paths)
     {
         _inventory = inventory;
         _userManager = userManager;
+        _paths = paths;
     }
 
     private static PluginConfiguration Configuration => Plugin.Instance?.Configuration ?? new PluginConfiguration();
@@ -84,6 +90,7 @@ public class InventoryController : ControllerBase
             }),
             Columns = Columns.All.Select(c => Describe(c, culture)),
             PageSize = Math.Clamp(config.PageSize, 1, PluginConfiguration.MaxPageSize),
+            Culture = Translations.Resolve(culture),
             Strings = Translations.All(culture)
         });
     }
@@ -104,7 +111,7 @@ public class InventoryController : ControllerBase
     /// <param name="startIndex">The first row to return.</param>
     /// <param name="limit">How many rows to return.</param>
     /// <response code="200">The requested page.</response>
-    /// <response code="400">The media type, level or column level is not known.</response>
+    /// <response code="400">The media type, level, column level or sort column is not known.</response>
     /// <returns>The page of rows.</returns>
     [HttpGet("Items")]
     [ProducesResponseType(StatusCodes.Status200OK)]
@@ -135,6 +142,11 @@ public class InventoryController : ControllerBase
         if (Hierarchy.Level(selection) is null)
         {
             return BadRequest($"'{columnLevel}' is not a level.");
+        }
+
+        if (!string.IsNullOrEmpty(sortBy) && Columns.Find(sortBy) is null)
+        {
+            return BadRequest($"'{sortBy}' is not a column.");
         }
 
         var columns = Columns.Resolve(config.GetColumns(selection), selection);
@@ -189,12 +201,12 @@ public class InventoryController : ControllerBase
     /// <param name="sortBy">The column that decides the row order.</param>
     /// <param name="descending">Whether that order is reversed.</param>
     /// <response code="200">The spreadsheet.</response>
-    /// <response code="400">The media type, level, column level or format is not known.</response>
+    /// <response code="400">The media type, level, column level, format or sort column is not known.</response>
     /// <returns>A file download.</returns>
     [HttpGet("Export")]
     [ProducesResponseType(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
-    public ActionResult GetExport(
+    public async Task<ActionResult> GetExport(
         [FromQuery] string mediaType,
         [FromQuery] string? level,
         [FromQuery] string? columnLevel,
@@ -224,6 +236,11 @@ public class InventoryController : ControllerBase
             return BadRequest($"'{columnLevel}' is not a level.");
         }
 
+        if (!string.IsNullOrEmpty(sortBy) && Columns.Find(sortBy) is null)
+        {
+            return BadRequest($"'{sortBy}' is not a column.");
+        }
+
         var columns = Columns.Resolve(Configuration.GetColumns(selection), selection);
         var headers = columns.Select(c => Translations.Get(culture, "column." + c.Key)).ToArray();
 
@@ -244,14 +261,36 @@ public class InventoryController : ControllerBase
         var name = Translations.Get(culture, "level." + exported);
         var yes = Translations.Get(culture, "Yes");
         var no = Translations.Get(culture, "No");
-        var file = isOds
-            ? Export.Ods(columns, headers, page.Rows, name, yes, no)
-            : Export.Csv(columns, headers, page.Rows, Locale(culture), yes, no);
+        var attachment = $"attachment; filename=inventory-{exported.ToLowerInvariant()}.{(isOds ? "ods" : "csv")}";
 
-        return File(
-            file,
-            isOds ? "application/vnd.oasis.opendocument.spreadsheet" : "text/csv",
-            $"inventory-{exported.ToLowerInvariant()}.{(isOds ? "ods" : "csv")}");
+        // Written to a file first: a spreadsheet is filled in by seeking back over it, and a
+        // failure halfway through still becomes an error rather than half a download.
+        Directory.CreateDirectory(_paths.TempDirectory);
+        using var spool = new FileStream(
+            Path.Combine(_paths.TempDirectory, $"inventory-{Guid.NewGuid():N}.{(isOds ? "ods" : "csv")}"),
+            new FileStreamOptions
+            {
+                Mode = FileMode.CreateNew,
+                Access = FileAccess.ReadWrite,
+                Options = FileOptions.DeleteOnClose | FileOptions.Asynchronous,
+            });
+
+        if (isOds)
+        {
+            Export.Ods(spool, columns, headers, page.Rows, name, yes, no, HttpContext.RequestAborted);
+        }
+        else
+        {
+            Export.Csv(spool, columns, headers, page.Rows, Locale(culture), yes, no, HttpContext.RequestAborted);
+        }
+
+        // Set once the file exists: the error page inherits whatever headers are already on the response.
+        Response.ContentType = isOds ? "application/vnd.oasis.opendocument.spreadsheet" : "text/csv; charset=utf-8";
+        Response.Headers.ContentDisposition = attachment;
+        Response.ContentLength = spool.Length;
+        spool.Position = 0;
+        await spool.CopyToAsync(Response.Body, HttpContext.RequestAborted).ConfigureAwait(false);
+        return new EmptyResult();
     }
 
     /// <summary>

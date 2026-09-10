@@ -6,6 +6,7 @@ using System.IO.Compression;
 using System.Linq;
 using System.Security;
 using System.Text;
+using System.Threading;
 using System.Xml;
 
 namespace Jellyfin.Plugin.Inventory;
@@ -18,21 +19,26 @@ public static class Export
     /// <summary>
     /// Writes the rows as comma separated values.
     /// </summary>
+    /// <param name="output">The stream the file is written to.</param>
     /// <param name="columns">The columns, in order.</param>
     /// <param name="headers">The translated header for each column.</param>
     /// <param name="rows">The rows to write.</param>
-    /// <param name="culture">The culture the numbers are written in, matching the headers.</param>
+    /// <param name="culture">The culture the numbers are written in, as the spreadsheet expects
+    /// them, which is the one asked for rather than the one the headers fell back to.</param>
     /// <param name="yes">The word for a value that is true, in that same culture.</param>
     /// <param name="no">The word for a value that is false.</param>
-    /// <returns>The file contents.</returns>
-    public static byte[] Csv(
+    /// <param name="cancellation">Stops reading rows once the caller has gone away.</param>
+    public static void Csv(
+        Stream output,
         IReadOnlyList<ColumnDefinition> columns,
         IReadOnlyList<string> headers,
-        IReadOnlyList<InventoryRowResult> rows,
+        IEnumerable<InventoryRowResult> rows,
         CultureInfo culture,
         string yes,
-        string no)
+        string no,
+        CancellationToken cancellation)
     {
+        ArgumentNullException.ThrowIfNull(output);
         ArgumentNullException.ThrowIfNull(culture);
 
         // Where a comma is the decimal separator it cannot also separate the fields.
@@ -40,51 +46,50 @@ public static class Export
             ? ';'
             : ',';
 
-        using var buffer = new MemoryStream();
-
         // The BOM is what makes Excel read it as UTF-8 rather than the local codepage.
-        buffer.Write(Encoding.UTF8.GetPreamble());
+        output.Write(Encoding.UTF8.GetPreamble());
 
-        using (var writer = new StreamWriter(buffer, new UTF8Encoding(false), leaveOpen: true) { NewLine = "\r\n" })
+        using var writer = new StreamWriter(output, new UTF8Encoding(false), 64 * 1024, leaveOpen: true) { NewLine = "\r\n" };
+        writer.WriteLine(string.Join(separator, Quote(headers.Select(Literal), separator)));
+
+        foreach (var row in rows)
         {
-            writer.WriteLine(string.Join(separator, Quote(headers.Select(Literal), separator)));
-
-            foreach (var row in rows)
+            cancellation.ThrowIfCancellationRequested();
+            var values = new List<string>(columns.Count);
+            foreach (var column in columns)
             {
-                var values = new List<string>(columns.Count);
-                foreach (var column in columns)
-                {
-                    values.Add(Scalar(row.Values.GetValueOrDefault(column.Key), culture, yes, no));
-                }
-
-                writer.WriteLine(string.Join(separator, Quote(values, separator)));
+                values.Add(Scalar(row.Values.GetValueOrDefault(column.Key), culture, yes, no));
             }
-        }
 
-        return buffer.ToArray();
+            writer.WriteLine(string.Join(separator, Quote(values, separator)));
+        }
     }
 
     /// <summary>
     /// Writes the rows as an OpenDocument spreadsheet, with numbers and dates typed so they can be
     /// sorted and totalled without being converted first.
     /// </summary>
+    /// <param name="output">The stream the file is written to.</param>
     /// <param name="columns">The columns, in order.</param>
     /// <param name="headers">The translated header for each column.</param>
     /// <param name="rows">The rows to write.</param>
     /// <param name="sheetName">The name of the single sheet.</param>
     /// <param name="yes">The word for a value that is true, in the culture of the headers.</param>
     /// <param name="no">The word for a value that is false.</param>
-    /// <returns>The file contents.</returns>
-    public static byte[] Ods(
+    /// <param name="cancellation">Stops reading rows once the caller has gone away.</param>
+    public static void Ods(
+        Stream output,
         IReadOnlyList<ColumnDefinition> columns,
         IReadOnlyList<string> headers,
-        IReadOnlyList<InventoryRowResult> rows,
+        IEnumerable<InventoryRowResult> rows,
         string sheetName,
         string yes,
-        string no)
+        string no,
+        CancellationToken cancellation)
     {
-        using var buffer = new MemoryStream();
-        using (var archive = new ZipArchive(buffer, ZipArchiveMode.Create, true))
+        ArgumentNullException.ThrowIfNull(output);
+
+        using (var archive = new ZipArchive(output, ZipArchiveMode.Create, true))
         {
             // The mimetype entry has to come first and be stored, not deflated.
             var mimetype = archive.CreateEntry("mimetype", CompressionLevel.NoCompression);
@@ -96,10 +101,8 @@ public static class Export
             Write(archive, "META-INF/manifest.xml", Manifest());
 
             using var content = new StreamWriter(archive.CreateEntry("content.xml").Open());
-            Content(content, columns, headers, rows, sheetName, yes, no);
+            Content(content, columns, headers, rows, sheetName, yes, no, cancellation);
         }
-
-        return buffer.ToArray();
     }
 
     private static void Write(ZipArchive archive, string path, string content)
@@ -163,10 +166,11 @@ public static class Export
         TextWriter xml,
         IReadOnlyList<ColumnDefinition> columns,
         IReadOnlyList<string> headers,
-        IReadOnlyList<InventoryRowResult> rows,
+        IEnumerable<InventoryRowResult> rows,
         string sheetName,
         string yes,
-        string no)
+        string no,
+        CancellationToken cancellation)
     {
         xml.Write("""<?xml version="1.0" encoding="UTF-8"?>""");
         xml.Write("""<office:document-content xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" """);
@@ -202,6 +206,7 @@ public static class Export
 
         foreach (var row in rows)
         {
+            cancellation.ThrowIfCancellationRequested();
             xml.Write("<table:table-row>");
             foreach (var column in columns)
             {

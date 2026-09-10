@@ -25,6 +25,8 @@ install is the zip from the
 [latest release](https://github.com/ivenos/jellyfin_inventory/releases/latest)
 unpacked into `config/plugins/Inventory/`.
 
+**Compatibility:** Jellyfin 12.0 or newer; on anything older the catalogue stays empty.
+
 ## Columns
 
 | Group | Columns |
@@ -43,8 +45,8 @@ column keys all come from `Schema`.
 
 | Endpoint | Parameters | Answers with |
 | --- | --- | --- |
-| `GET Schema` | `culture` | The populated media types with their levels, every column, the page size and the interface strings |
-| `GET Items` | `mediaType`, `level`, `parentIds`, `columnLevel`, `search`, `sortBy`, `descending`, `startIndex`, `limit`, `culture` | One page of rows with the columns they are keyed by, how many rows there are in total, and the size and runtime behind them |
+| `GET Schema` | `culture` | The populated media types with their levels, every column, the page size, the interface strings and the culture they were answered in |
+| `GET Items` | `mediaType`, `level`, `parentIds`, `columnLevel`, `search`, `sortBy`, `descending`, `startIndex`, `limit`, `culture` | One page of rows with the columns they are keyed by, how many rows there are in total, and the size and runtime behind them; `parentIds` returns the whole child set rather than a page |
 | `GET Export` | `mediaType`, `level`, `columnLevel`, `format`, `search`, `sortBy`, `descending`, `culture` | Every matching row as a `csv` or `ods` file |
 | `POST Columns` | `level`, and the column keys as a JSON array in the body | The stored selection |
 | `POST Expand` | `mediaType`, `level` | The stored level |

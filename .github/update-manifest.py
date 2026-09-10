@@ -25,7 +25,7 @@ for name, value, pattern in (
     ("source-url", args.source_url, r"^https://\S+$"),
     ("timestamp", args.timestamp, r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$"),
 ):
-    if not re.match(pattern, value or ""):
+    if not re.fullmatch(pattern, value or ""):
         raise SystemExit(f"--{name} is {value!r}, which does not match {pattern}")
 
 path = pathlib.Path(args.manifest)
@@ -37,7 +37,7 @@ versions = packages[0].setdefault("versions", [])
 # Older entries stay: a server only sees versions whose targetAbi it satisfies, so leaving
 # them is what keeps installations on an older Jellyfin working.
 versions = [v for v in versions if v.get("version") != args.version]
-versions.insert(0, {
+versions.append({
     "version": args.version,
     "changelog": args.changelog,
     "targetAbi": args.target_abi,
@@ -45,7 +45,16 @@ versions.insert(0, {
     "checksum": args.checksum,
     "timestamp": args.timestamp,
 })
+
+
+# A hand-written entry that is not plain numbers sorts last rather than killing the release job.
+def order(entry):
+    parts = entry.get("version", "").split(".")
+    return tuple(int(p) for p in parts) if all(p.isdigit() for p in parts) else ()
+
+
+versions.sort(key=order, reverse=True)
 packages[0]["versions"] = versions
 
 path.write_text(json.dumps(packages, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
-print(f"manifest.json now lists {len(versions)} version(s), newest {args.version}")
+print(f"manifest.json now lists {len(versions)} version(s), newest {versions[0]['version']}")

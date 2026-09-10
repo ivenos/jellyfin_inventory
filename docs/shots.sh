@@ -14,6 +14,8 @@ SDK_IMAGE="${SDK_IMAGE:-$(sed -n 's/^SDK_IMAGE=.*:-\(.*\)}"/\1/p' "$ROOT/test/ru
 BROWSER_IMAGE="${PLAYWRIGHT_IMAGE:-mcr.microsoft.com/playwright:v1.63.0-noble}"
 # The image carries the browsers but not the library, and the two have to be the same release.
 BROWSER_VERSION=$(printf '%s' "$BROWSER_IMAGE" | sed -n 's/.*:v\([0-9.]*\).*/\1/p')
+: "${IMAGE:?could not be read out of test/run.sh}"
+: "${SDK_IMAGE:?could not be read out of test/run.sh}"
 BUILD=1
 
 for arg in "$@"; do
@@ -125,10 +127,10 @@ FIXTURES
 )
 BOOKS="The Coast Road Companion|M. Ferrers
 Notes on Tidewater|J. Aldis"
-STAMP=$(printf '%s\n%s' "$RECIPE" "$BOOKS" | cat - "$ROOT/test/make-book.py" | md5sum | cut -d' ' -f1)
+STAMP=$(printf '%s\n%s\n%s' "$RECIPE" "$BOOKS" "$IMAGE" | cat - "$ROOT/test/make-book.py" | md5sum | cut -d' ' -f1)
 
 if [ "$(cat "$WORK/media/.complete" 2>/dev/null || true)" != "$STAMP" ]; then
-    rm -rf "$WORK/media"
+    rm -rf "${WORK:?}/media"
     mkdir -p "$WORK/media/books" "$WORK/media/photos"
     printf '%s\n' "$BOOKS" | while IFS='|' read -r title author; do
         python3 "$ROOT/test/make-book.py" "$WORK/media/books/$title.epub" "$title" "$author"
@@ -140,7 +142,7 @@ fi
 
 echo "== start =="
 cleanup
-rm -rf "$WORK/config" "$WORK/cache"
+rm -rf "${WORK:?}/config" "${WORK:?}/cache"
 mkdir -p "$WORK/config/plugins/Inventory" "$WORK/cache" "$WORK/browser"
 cp "$DLL" "$WORK/config/plugins/Inventory/"
 python3 "$ROOT/.github/make-meta.py" --version 9.9.9.0 --root "$ROOT" \
@@ -175,8 +177,14 @@ TOKEN=$(curl -sf -X POST "$BASE/Users/AuthenticateByName" -H "$JSON" -H "$CLIENT
     -d '{"Username":"admin","Pw":"inventoryshots"}' \
     | python3 -c "import sys,json;print(json.load(sys.stdin)['AccessToken'])")
 
-# Titles that no provider knows, so a lookup would only replace them with nothing.
-OPTIONS='{"LibraryOptions":{"EnableInternetProviders":false,"EnableChapterImageExtraction":false}}'
+# EnableInternetProviders is obsolete in 12.0, an empty fetcher list per type is what holds.
+OPTIONS=$(python3 -c "
+import json
+kinds = ['Movie', 'Series', 'Season', 'Episode', 'MusicArtist', 'MusicAlbum', 'Audio',
+         'Book', 'Photo', 'PhotoAlbum', 'Video', 'MusicVideo', 'BoxSet', 'Trailer']
+print(json.dumps({'LibraryOptions': {'EnableChapterImageExtraction': False, 'TypeOptions': [
+    {'Type': k, 'MetadataFetchers': [], 'MetadataFetcherOrder': [],
+     'ImageFetchers': [], 'ImageFetcherOrder': []} for k in kinds]}}))")
 for library in "Movies:movies" "Shows:tvshows" "Music:music" "Books:books" "Photos:homevideos"; do
     name=${library%%:*}
     curl -sf -X POST -H "Authorization: MediaBrowser Token=\"$TOKEN\"" -H "$JSON" -d "$OPTIONS" \

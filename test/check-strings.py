@@ -38,13 +38,24 @@ for path in cultures:
             problems.append(f"{key} is empty")
         elif re.search(r"[\u2013\u2014]", value):
             problems.append(f"{key} carries a typographic dash")
-        # A placeholder the translation dropped renders a sentence with no number in it.
-        elif key in base and "{0}" in base[key] and "{0}" not in value:
-            problems.append(f"{key} lost its placeholder")
+        # A placeholder dropped renders a sentence with no number, one invented renders braces.
+        if key in base and sorted(re.findall(r"\{\d+\}", value)) != sorted(re.findall(r"\{\d+\}", base[key])):
+            problems.append(f"{key} does not carry the placeholders en has")
 
     if problems:
         failed = True
         print(f"FAIL {path.name}: " + ", ".join(problems))
 
-print(f"{len(base)} keys across {len(cultures)} cultures")
+page = directory.parent / "Configuration" / "configPage.html"
+# The closing bracket keeps a key built by concatenation out.
+asked = set(re.findall(r"\bt\('([^']+)'\s*[,)]", page.read_text(encoding="utf-8")))
+if not asked:
+    failed = True
+    print(f"FAIL {page.name}: no translated string is asked for, which cannot be right")
+unknown = sorted(asked - set(base))
+if unknown:
+    failed = True
+    print(f"FAIL {page.name}: " + ", ".join(f"asks for {k}, which en.json has not" for k in unknown))
+
+print(f"{len(base)} keys across {len(cultures)} cultures, {len(asked)} asked for by the page")
 sys.exit(1 if failed else 0)
