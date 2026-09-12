@@ -39,6 +39,6 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      # Builds in the same SDK container the script uses locally, so a green run
-      # here means the same thing it means on a developer's machine.
-      - run: JELLYFIN_IMAGE=jellyfin/jellyfin:${{ matrix.jellyfin }} sh test/run.sh
+      - env:
+          TAG: ${{ matrix.jellyfin }}
+        run: JELLYFIN_IMAGE=jellyfin/jellyfin:$TAG sh test/run.sh

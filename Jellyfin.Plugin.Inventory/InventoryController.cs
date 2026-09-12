@@ -134,7 +134,6 @@ public class InventoryController : ControllerBase
             return BadRequest($"Unknown media type '{mediaType}' or level '{level}'.");
         }
 
-        // Expanded rows are shown inside their parent's table and keep its columns.
         var selection = string.IsNullOrEmpty(columnLevel)
             ? (string.IsNullOrEmpty(level) ? mediaType : level)
             : columnLevel;
@@ -151,16 +150,15 @@ public class InventoryController : ControllerBase
 
         var columns = Columns.Resolve(config.GetColumns(selection), selection);
 
-        // A Guid[] would only bind from a repeated parameter, and one id per row makes for a
-        // long query string, so the ids arrive comma separated the way Jellyfin's own API takes them.
+        // A Guid[] would only bind from a repeated parameter, so the ids arrive comma separated.
         var parents = parentIds?.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
             .Select(id => Guid.TryParse(id, out var parsed) ? parsed : Guid.Empty)
-            .Where(id => id != Guid.Empty)
             .ToArray();
 
-        if (parentIds is not null && parents is { Length: 0 })
+        // One id short would answer with part of a level and look like the whole of it.
+        if (parents is not null && (parents.Length == 0 || Array.IndexOf(parents, Guid.Empty) >= 0))
         {
-            return BadRequest("No usable id in parentIds.");
+            return BadRequest("parentIds has to be a comma separated list of item ids.");
         }
 
         var expanding = parents is { Length: > 0 };
@@ -228,7 +226,6 @@ public class InventoryController : ControllerBase
             return BadRequest($"Unknown media type '{mediaType}' or level '{level}'.");
         }
 
-        // A tab opened to its episodes lists them under the columns the tab was given.
         var exported = kind.Value.ToString();
         var selection = string.IsNullOrEmpty(columnLevel) ? exported : columnLevel;
         if (Hierarchy.Level(selection) is null)
@@ -427,7 +424,8 @@ public class InventoryController : ControllerBase
 
         try
         {
-            return CultureInfo.GetCultureInfo(culture);
+            // Anything else is cached forever, so an invented name is a megabyte every few thousand.
+            return CultureInfo.GetCultureInfo(culture, predefinedOnly: true);
         }
         catch (CultureNotFoundException)
         {

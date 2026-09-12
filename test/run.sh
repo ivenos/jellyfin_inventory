@@ -59,6 +59,7 @@ api() {
     curl -sf --max-time 120 "http://localhost:$PORT/$1" -H "Authorization: MediaBrowser Token=\"$TOKEN\"" && return
     echo "the api answered $1 with $(curl -s --max-time 120 -o /dev/null -w '%{http_code}' \
         "http://localhost:$PORT/$1" -H "Authorization: MediaBrowser Token=\"$TOKEN\"")" >&2
+    return 1
 }
 
 field() {
@@ -131,6 +132,25 @@ bare = re.sub(r'var\(--jf-[^()]*(?:\([^()]*\))?[^()]*\)', '', style)
 loose = re.findall(r'#[0-9a-fA-F]{3,8}\b|rgba?\([^)]*\)', bare)
 print('ok' if not loose else loose)")" "ok"
 
+cp "$ROOT/manifest.json" "$WORK/manifest.json"
+check "a release is written into the manifest ahead of the ones already listed" \
+    "$(python3 "$ROOT/.github/update-manifest.py" --manifest "$WORK/manifest.json" \
+        --version 99.9.9.0 --target-abi 12.0.0.0 --checksum 0123456789abcdef0123456789abcdef \
+        --source-url https://example.invalid/inventory_99.9.9.0.zip \
+        --timestamp 2099-01-01T00:00:00Z --changelog='- a note that opens with a dash' >/dev/null \
+      && python3 -c "
+import json
+kept = json.load(open('$ROOT/manifest.json'))[0]['versions']
+now = json.load(open('$WORK/manifest.json'))[0]['versions']
+print('ok' if now[0]['version'] == '99.9.9.0'
+      and now[0]['changelog'] == '- a note that opens with a dash'
+      and [v['version'] for v in now[1:]] == [v['version'] for v in kept] else now)")" "ok"
+check "while one whose checksum did not survive the release job is refused" \
+    "$(python3 "$ROOT/.github/update-manifest.py" --manifest "$WORK/manifest.json" \
+        --version 99.9.9.0 --target-abi 12.0.0.0 --checksum '' \
+        --source-url https://example.invalid/inventory_99.9.9.0.zip \
+        --timestamp 2099-01-01T00:00:00Z >/dev/null 2>&1 && echo written || echo refused)" "refused"
+
 if [ "$BUILD" = 1 ]; then
     echo "== build =="
     # Docker would create a missing mount source as root, which the uid the build runs under cannot write to.
@@ -201,11 +221,39 @@ RECIPE=$(cat <<'FIXTURES'
             "/media/shows/Patchy (2021)/Season 01/Patchy S01E05.mkv"
         dd if=/dev/urandom of="/media/shows/Patchy (2021)/Season 01/Patchy S01E06.mkv" \
             bs=1024 count=2048 status=none
-        # A name a spreadsheet has to be protected from and a CSV has to quote.
-        mkdir -p "/media/movies/Ärger, \"Quoted\" Mövie (2018)"
+        # A name a spreadsheet has to be protected from, a CSV has to quote and an XML has to escape.
+        mkdir -p "/media/movies/Ärger, \"Quoted\" & <Mövie> (2018)"
         $FF -y -loglevel error -f lavfi -i testsrc2=size=320x240:rate=10:duration=2 \
             -c:v libx264 -preset ultrafast -crf 40 -pix_fmt yuv420p \
-            "/media/movies/Ärger, \"Quoted\" Mövie (2018)/Ärger, \"Quoted\" Mövie (2018).mkv"
+            "/media/movies/Ärger, \"Quoted\" & <Mövie> (2018)/Ärger, \"Quoted\" & <Mövie> (2018).mkv"
+        # The file named after the folder is the film, and the second cut beside it is split in two.
+        mkdir -p "/media/movies/Double Cut (2022)"
+        $FF -y -loglevel error -f lavfi -i testsrc2=size=640x360:rate=25:duration=5 \
+            -f lavfi -i sine=frequency=500:duration=5 \
+            -c:v libx264 -preset ultrafast -crf 40 -pix_fmt yuv420p -c:a aac -ac 2 \
+            "/media/movies/Double Cut (2022)/Double Cut (2022).mkv"
+        $FF -y -loglevel error -f lavfi -i testsrc2=size=1280x720:rate=25:duration=3 \
+            -f lavfi -i sine=frequency=500:duration=3 \
+            -c:v libx264 -preset ultrafast -crf 34 -pix_fmt yuv420p -c:a aac -ac 2 \
+            "/media/movies/Double Cut (2022)/Double Cut (2022) - 720p - part1.mkv"
+        $FF -y -loglevel error -f lavfi -i testsrc2=size=1280x720:rate=25:duration=2 \
+            -f lavfi -i sine=frequency=500:duration=2 \
+            -c:v libx264 -preset ultrafast -crf 34 -pix_fmt yuv420p -c:a aac -ac 2 \
+            "/media/movies/Double Cut (2022)/Double Cut (2022) - 720p - part2.mkv"
+        # Both at once: a cut split across two files, beside a second cut of the same film.
+        mkdir -p "/media/movies/Two Cuts (2019)"
+        $FF -y -loglevel error -f lavfi -i testsrc2=size=640x360:rate=25:duration=6 \
+            -f lavfi -i sine=frequency=500:duration=6 \
+            -c:v libx264 -preset ultrafast -crf 40 -pix_fmt yuv420p -c:a aac -ac 2 \
+            "/media/movies/Two Cuts (2019)/Two Cuts (2019) - part1.mkv"
+        $FF -y -loglevel error -f lavfi -i testsrc2=size=640x360:rate=25:duration=4 \
+            -f lavfi -i sine=frequency=500:duration=4 \
+            -c:v libx264 -preset ultrafast -crf 40 -pix_fmt yuv420p -c:a aac -ac 2 \
+            "/media/movies/Two Cuts (2019)/Two Cuts (2019) - part2.mkv"
+        $FF -y -loglevel error -f lavfi -i testsrc2=size=1280x720:rate=25:duration=6 \
+            -f lavfi -i sine=frequency=500:duration=6 \
+            -c:v libx264 -preset ultrafast -crf 34 -pix_fmt yuv420p -c:a aac -ac 2 \
+            "/media/movies/Two Cuts (2019)/Two Cuts (2019) - Directors Cut.mkv"
         # Jellyfin stacks these into one movie, and only the first part carries its size.
         mkdir -p "/media/movies/Two Part Feature (2019)"
         $FF -y -loglevel error -f lavfi -i testsrc2=size=640x360:rate=25:duration=6 \
@@ -329,7 +377,7 @@ printf 'waiting for the scan'
 i=0
 until [ "$(api 'Inventory/Schema' | field "
 (lambda have: 'ok' if all(have.get(k) == v for k, v in
-                          {'Movie': 5, 'Series': 3, 'MusicAlbum': 1, 'Book': 1, 'Photo': 3}.items()) else have)(
+                          {'Movie': 7, 'Series': 3, 'MusicAlbum': 1, 'Book': 1, 'Photo': 3}.items()) else have)(
     {t['MediaType']: t['Count'] for t in json.load(sys.stdin)['MediaTypes']})")" = "ok" ]; do
     i=$((i + 1))
     [ "$i" -gt 60 ] && { echo; echo "library did not settle" >&2; api 'Inventory/Schema'; exit 1; }
@@ -362,7 +410,7 @@ echo
 echo "== checks =="
 SCHEMA=$(api 'Inventory/Schema')
 check "movie count" \
-    "$(printf '%s\n' "$SCHEMA" | field "[t['Count'] for t in json.load(sys.stdin)['MediaTypes'] if t['MediaType']=='Movie'][0]")" "5"
+    "$(printf '%s\n' "$SCHEMA" | field "[t['Count'] for t in json.load(sys.stdin)['MediaTypes'] if t['MediaType']=='Movie'][0]")" "7"
 check "seasons and episodes are not tabs of their own" \
     "$(printf '%s\n' "$SCHEMA" | field "','.join(t['MediaType'] for t in json.load(sys.stdin)['MediaTypes'])")" "Movie,Series,MusicAlbum,Book,Photo"
 check "an album breaks down into its tracks" \
@@ -374,7 +422,11 @@ check "series offers its three levels" \
 check "columns are offered" \
     "$(printf '%s\n' "$SCHEMA" | field "len(json.load(sys.stdin)['Columns']) > 30")" "True"
 check "an extra sitting beside a film is not an item of its own" \
-    "$(printf '%s\n' "$SCHEMA" | field "sum(t['Count'] for t in json.load(sys.stdin)['MediaTypes'] if t['MediaType'] in ('Video', 'MusicVideo'))")" "0"
+    "$(api 'Inventory/Items?mediaType=Movie&search=Making' | field "json.load(sys.stdin)['TotalCount']")" "0"
+FEATURE=$(wc -c < "$WORK/media/movies/Blue Harbour (2021)/Blue Harbour (2021).mkv")
+check "and its bytes are not added to the film it sits with" \
+    "$(api 'Inventory/Items?mediaType=Movie&search=Blue%20Harbour' \
+        | field "json.load(sys.stdin)['Rows'][0]['Values']['size']")" "$FEATURE"
 check "a movie table starts with the columns it was given" \
     "$(api 'Inventory/Items?mediaType=Movie&limit=1' | field "','.join(c['Key'] for c in json.load(sys.stdin)['Columns'])")" \
     "name,year,size,duration,sizePerHour,totalBitrate,videoCodec,resolution,videoRange,audioCodec,audioLayout"
@@ -423,6 +475,23 @@ check "a film split across two files reports the bytes of both" \
 check "and the runtime of both" \
     "$(api 'Inventory/Items?mediaType=Movie&search=Two%20Part' \
         | field "round(json.load(sys.stdin)['Rows'][0]['Values']['duration'])")" "10"
+VERSIONS=$(cat "$WORK/media/movies/Double Cut (2022)"/*.mkv | wc -c)
+check "a film kept in a second cut that is split in two reports every file of both" \
+    "$(api 'Inventory/Items?mediaType=Movie&search=Double%20Cut' \
+        | field "json.load(sys.stdin)['Rows'][0]['Values']['size']")" "$VERSIONS"
+check "and the runtime of one cut, since both are the same film" \
+    "$(api 'Inventory/Items?mediaType=Movie&search=Double%20Cut' \
+        | field "round(json.load(sys.stdin)['Rows'][0]['Values']['duration'])")" "5"
+CUTS=$(cat "$WORK/media/movies/Two Cuts (2019)"/*.mkv | wc -c)
+check "and so does one whose own cut is the split one" \
+    "$(api 'Inventory/Items?mediaType=Movie&search=Two%20Cuts' \
+        | field "json.load(sys.stdin)['Rows'][0]['Values']['size']")" "$CUTS"
+check "and runs as long as the cut it was measured from" \
+    "$(api 'Inventory/Items?mediaType=Movie&search=Two%20Cuts' \
+        | field "round(json.load(sys.stdin)['Rows'][0]['Values']['duration'])")" "10"
+check "a film in several cuts takes no rate from bytes and a runtime that measure different files" \
+    "$(api 'Inventory/Items?mediaType=Movie&search=Double%20Cut' \
+        | field "(lambda v: v['sizePerHour'] is None and 0 < v['totalBitrate'] < v['size'] * 8 / v['duration'])(json.load(sys.stdin)['Rows'][0]['Values'])")" "True"
 check "the totals line adds up the runtimes it is showing" \
     "$(printf '%s\n' "$MOVIES" | field "(lambda d: round(d['TotalDuration']) == round(sum(r['Values']['duration'] or 0 for r in d['Rows'])))(json.load(sys.stdin))")" "True"
 check "and that runtime is not zero" \
@@ -621,6 +690,9 @@ check "each returned child names the parent it belongs to" \
 check "a parentIds list that holds nothing usable is rejected" \
     "$(curl -s -o /dev/null -w '%{http_code}' "$BASE/Inventory/Items?mediaType=Series&level=Season&parentIds=not-an-id" \
         -H "Authorization: MediaBrowser Token=\"$TOKEN\"")" "400"
+check "and so is one with a single id that is not one, rather than answered for the others" \
+    "$(curl -s -o /dev/null -w '%{http_code}' "$BASE/Inventory/Items?mediaType=Series&level=Season&parentIds=$SERIES_ID,not-an-id" \
+        -H "Authorization: MediaBrowser Token=\"$TOKEN\"")" "400"
 
 curl -sf -X POST "$BASE/Inventory/Expand?mediaType=Series&level=Episode" \
     -H "Authorization: MediaBrowser Token=\"$TOKEN\"" >/dev/null || refused "Inventory/Expand?mediaType=Series&level=Episode"
@@ -696,11 +768,11 @@ check "a season is played once its own episodes are" \
 curl -sf "$BASE/Inventory/Export?mediaType=Movie&format=csv" \
     -H "Authorization: MediaBrowser Token=\"$TOKEN\"" -o "$WORK/export.csv"
 check "csv export carries a header and every row" \
-    "$(wc -l < "$WORK/export.csv" | tr -d ' ')" "6"
+    "$(wc -l < "$WORK/export.csv" | tr -d ' ')" "8"
 check "csv export is utf-8 with the mark excel needs, and crlf line endings" \
     "$(python3 -c "
 data = open('$WORK/export.csv', 'rb').read()
-print('ok' if data[:3] == b'\xef\xbb\xbf' and data.count(b'\r\n') == 6 else repr(data[:16]))")" "ok"
+print('ok' if data[:3] == b'\xef\xbb\xbf' and data.count(b'\r\n') == 8 else repr(data[:16]))")" "ok"
 check "a title a spreadsheet would evaluate is written as text" \
     "$(python3 -c "
 import csv, io
@@ -768,7 +840,7 @@ import xml.dom.minidom
 xml.dom.minidom.parseString(content)
 print('ok' if names[0] == 'mimetype' and stored
       and mimetype == 'application/vnd.oasis.opendocument.spreadsheet'
-      and rows == 6 else f'{names[0]}/{mimetype}/{rows}/{stored}')")" "ok"
+      and rows == 8 else f'{names[0]}/{mimetype}/{rows}/{stored}')")" "ok"
 # Walked from the front, the way odf sniffers and java.util.zip read it, not via the directory.
 check "the ods puts mimetype first and carries its sizes in the local headers" \
     "$(python3 -c "
@@ -826,7 +898,7 @@ import csv, io
 text = open('$WORK/export.csv', encoding='utf-8-sig').read()
 rows = list(csv.reader(io.StringIO(text)))
 wide = [r for r in rows if len(r) != len(rows[0])]
-want = '\u00c4rger, \"Quoted\" M\u00f6vie (2018)'
+want = '\u00c4rger, \"Quoted\" & <M\u00f6vie> (2018)'
 print('ok' if not wide and want in [r[0] for r in rows[1:]] else (wide, [r[0] for r in rows[1:]]))")" "ok"
 check "and the same name comes back out of the spreadsheet" \
     "$(python3 -c "
@@ -834,7 +906,7 @@ import xml.dom.minidom, zipfile
 with zipfile.ZipFile('$WORK/export.ods') as book:
     doc = xml.dom.minidom.parseString(book.read('content.xml'))
 cells = [n.firstChild.nodeValue for n in doc.getElementsByTagName('text:p') if n.firstChild]
-print('ok' if '\u00c4rger, \"Quoted\" M\u00f6vie (2018)' in cells else cells)")" "ok"
+print('ok' if '\u00c4rger, \"Quoted\" & <M\u00f6vie> (2018)' in cells else cells)")" "ok"
 # Name is what an unsorted export falls back to, so sorting on it proves nothing.
 check "the export follows the sort the table was showing" \
     "$(curl -sf "$BASE/Inventory/Export?mediaType=Movie&format=csv&sortBy=size&descending=true" \
@@ -914,7 +986,7 @@ check "a deleted account stops counting towards the totals" \
     "$(api 'Inventory/Items?mediaType=Movie&sortBy=everyonePlayCount&descending=true&limit=1' \
         | field "json.load(sys.stdin)['Rows'][0]['Values']['everyonePlayCount']")" "1"
 
-# A bit per account ran out at 64, and a film everybody had watched stopped counting there.
+# Sixty-five accounts, because the count was a bitmask once and stopped at sixty-four.
 CROWD=0
 while [ "$CROWD" -lt 65 ]; do
     EXTRA=$(curl -sf -X POST "$BASE/Users/New" -H "Authorization: MediaBrowser Token=\"$TOKEN\"" -H "$JSON" \
@@ -925,7 +997,7 @@ while [ "$CROWD" -lt 65 ]; do
         || refused "Users/$EXTRA/PlayedItems/$MOVIE_ID"
     CROWD=$((CROWD + 1))
 done
-check "a film every account has played is counted past the 64 a bitmask holds" \
+check "a film every account has played is counted past sixty-four" \
     "$(api 'Inventory/Items?mediaType=Movie&sortBy=everyonePlayed&descending=true&limit=1' \
         | field "json.load(sys.stdin)['Rows'][0]['Values']['everyonePlayed']")" "66"
 check "while a series still counts only the account that watched every episode of it" \
@@ -946,7 +1018,7 @@ api 'Inventory/Schema' > "$WORK/page/schema.json"
 api 'Inventory/Items?mediaType=Movie&sortBy=size&descending=true&limit=100' > "$WORK/page/items.json"
 api 'Inventory/Items?mediaType=Movie&search=Two%20Part' > "$WORK/page/one.json"
 docker run --rm --security-opt label=disable --user "$(id -u):$(id -g)" -e HOME=/tmp \
-    -e "JSDOM=$JSDOM_VERSION" -v "$WORK/page:/w" -w /w "$NODE_IMAGE" sh -c \
+    -e TZ=Asia/Tokyo -e "JSDOM=$JSDOM_VERSION" -v "$WORK/page:/w" -w /w "$NODE_IMAGE" sh -c \
     'set -e
      [ -f "node_modules/.jsdom-$JSDOM" ] || { rm -rf node_modules
          npm install --no-audit --no-fund --silent "jsdom@$JSDOM"
@@ -958,7 +1030,7 @@ rendered() { sed -n "s/^$1=//p" "$WORK/page/report.txt"; }
 
 check "the page turns its state into the query it sends" \
     "$(rendered query)" "Inventory/Items?mediaType=Movie&level=Movie&search=&sortBy=&descending=false&startIndex=0&limit=2&culture=en"
-check "the page draws a row for every item" "$(rendered rows)" "5"
+check "the page draws a row for every item" "$(rendered rows)" "7"
 check "the page links a row to the item it stands for" \
     "$(rendered link | cut -d= -f1)" "#/details?id"
 check "the tab shows it is busy while the rows are on their way" \
@@ -973,23 +1045,40 @@ check "and handed back once it arrives, even if the table moved on meanwhile" \
 check "an answer that arrives too late still takes the loading message down" \
     "$(rendered stale.overlay)" "0"
 check "a table the user asked for does not discard the schema of the visit it was asked in" \
-    "$(rendered stale.tabs)" "New Movies 5,New Series 3,New Albums 1,New Books 1,New Photos 3"
+    "$(rendered stale.tabs)" "New Movies 7,New Series 3,New Albums 1,New Books 1,New Photos 3"
 check "and the answer to a visit that was left does not take down this visit's loading message" \
     "$(rendered overlay.pending)" "1"
 check "which comes down when this visit is answered" \
-    "$(rendered overlay.settled)/$(rendered overlay.tabs | cut -d, -f1)" "0/New Movies 5"
+    "$(rendered overlay.settled)/$(rendered overlay.tabs | cut -d, -f1)" "0/New Movies 7"
 check "an export that never lands does not hold the buttons past the visit" \
     "$(rendered hung.during)/$(rendered hung.after)" "true,true/false,false"
 check "and leaves no spinner behind on the way out" "$(rendered hung.spinning)" "0"
 check "a first load that fails says so where the table would be" \
     "$(rendered failed.shown)/$(rendered failed.message)" "true/Could not load the inventory."
+check "a page turn that fails does not skip the page behind it" \
+    "$(rendered retry.asked)" "startIndex=2"
+check "and leaves the pager on the page that is drawn" \
+    "$(rendered retry.pager)" "1 / 4"
+check "and a sort that fails does not turn the next page in an order that was never drawn" \
+    "$(rendered retry.sorted)" "sortBy=&descending=false&startIndex=4"
+check "and coming back to rows that did not arrive leaves the next page reachable" \
+    "$(rendered retry.revisit)" "1"
+check "a tab whose rows never arrive does not keep the rows of the one before it" \
+    "$(rendered switch.selected)/$(rendered switch.rows)/$(rendered switch.headers)/$(rendered switch.totals)" \
+    "Series 3/0/0/"
+check "nor pages to turn through them" "$(rendered switch.pager)" "/true/true"
+check "and the column picker is not offered over a table that is not there" \
+    "$(rendered switch.columns)/$(rendered switch.boxes)/$(rendered failed.columns)" "true/0/true"
+check "children that are thrown away close the control that asked for them" \
+    "$(rendered stuck.opened)/$(rendered stuck.after)/$(rendered stuck.children)" "true/false/0"
+check "the page raises nothing while it is driven" "$(rendered raised)" "0"
 check "the page takes its column headers from the strings" \
     "$(rendered headers)" "Name,Size,Duration,Size/hour,Video codec,Interlaced"
 check "the page names every tab and how much it holds" \
-    "$(rendered tabs)" "Movies 5,Series 3,Albums 1,Books 1,Photos 3"
+    "$(rendered tabs)" "Movies 7,Series 3,Albums 1,Books 1,Photos 3"
 check "the totals line counts the rows the server matched" \
-    "$(rendered totals | cut -d' ' -f1-2)" "5 items"
-check "the pager counts the pages the rows need" "$(rendered pager)" "1 / 3"
+    "$(rendered totals | cut -d' ' -f1-2)" "7 items"
+check "the pager counts the pages the rows need" "$(rendered pager)" "1 / 4"
 check "a single row is counted in the singular" \
     "$(rendered one.rows)/$(rendered one.totals | cut -d' ' -f1-2)" "1/1 item"
 
@@ -1108,7 +1197,7 @@ mv "$WORK/media/movies/Late Arrival (2025)/Blue Harbour (2021).mkv" \
 curl -sf -X POST "$BASE/Library/Refresh" -H "Authorization: MediaBrowser Token=\"$TOKEN\"" >/dev/null || refused "Library/Refresh"
 printf 'waiting for the new film'
 i=0
-until [ "$(api 'Inventory/Items?mediaType=Movie' | field "json.load(sys.stdin)['TotalCount']")" = "6" ]; do
+until [ "$(api 'Inventory/Items?mediaType=Movie' | field "json.load(sys.stdin)['TotalCount']")" = "8" ]; do
     i=$((i + 1))
     [ "$i" -gt 40 ] && { echo; echo "the new film never arrived" >&2; exit 1; }
     [ $((i % 10)) = 0 ] && curl -sf -X POST "$BASE/Library/Refresh" \
@@ -1118,10 +1207,9 @@ until [ "$(api 'Inventory/Items?mediaType=Movie' | field "json.load(sys.stdin)['
 done
 echo
 check "a film added while the server runs reaches the table without a restart" \
-    "$(api 'Inventory/Items?mediaType=Movie' | field "json.load(sys.stdin)['TotalCount']")" "6"
+    "$(api 'Inventory/Items?mediaType=Movie' | field "json.load(sys.stdin)['TotalCount']")" "8"
 
 echo "== restart =="
-# What the page stores has to survive a restart, which is the whole point of storing it.
 curl -sf -X POST "$BASE/Inventory/Columns?level=Book" \
     -H "Authorization: MediaBrowser Token=\"$TOKEN\"" -H "$JSON" -d '["name","container"]' >/dev/null || refused "Inventory/Columns?level=Book"
 curl -sf -X POST "$BASE/Inventory/Expand?mediaType=Series&level=Season" \

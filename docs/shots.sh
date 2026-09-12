@@ -6,7 +6,7 @@ set -eu
 PORT="${PORT:-8095}"
 CONTAINER="jellyfin-inventory-shots-$PORT"
 NETWORK="jellyfin-inventory-shots-$PORT"
-WORK="${INVENTORY_SHOTS_DIR:-$HOME/.cache/jellyfin-inventory-shots}"
+WORK="${INVENTORY_SHOTS_DIR:-$HOME/.cache/jellyfin-inventory-shots-$PORT}"
 ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 # Taken from the test run, so the versions stay in one place.
 IMAGE="${JELLYFIN_IMAGE:-$(sed -n 's/^IMAGE=.*:-\(.*\)}"/\1/p' "$ROOT/test/run.sh")}"
@@ -159,7 +159,7 @@ BASE="http://localhost:$PORT"
 
 printf 'waiting for startup'
 i=0
-until curl -sf "$BASE/Startup/Configuration" -H "$CLIENT" >/dev/null 2>&1; do
+until curl -sf --max-time 10 "$BASE/Startup/Configuration" -H "$CLIENT" >/dev/null 2>&1; do
     i=$((i + 1))
     [ "$i" -gt 90 ] && { echo; echo "server did not come up" >&2; exit 1; }
     printf '.'
@@ -254,7 +254,10 @@ EOF
 docker run --rm --security-opt label=disable --user "$(id -u):$(id -g)" \
     --network "$NETWORK" --ipc=host -e HOME=/tmp \
     -v "$WORK/browser:/b" -v "$ROOT/docs:/out" -w /b "$BROWSER_IMAGE" sh -c \
-    "[ -d node_modules/playwright ] || npm install --no-audit --no-fund --silent playwright@$BROWSER_VERSION
+    "set -e
+     [ -f node_modules/.playwright-$BROWSER_VERSION ] || { rm -rf node_modules
+       npm install --no-audit --no-fund --silent playwright@$BROWSER_VERSION
+       touch node_modules/.playwright-$BROWSER_VERSION; }
      node /b/shots.mjs"
 
 ls -l "$ROOT/docs"

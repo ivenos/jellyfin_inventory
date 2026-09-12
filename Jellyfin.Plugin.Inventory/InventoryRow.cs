@@ -242,8 +242,8 @@ public class InventoryRow
     public int? PlayedByCount => PlayedBy.Count > 0 ? PlayedBy.Count : null;
 
     /// <summary>
-    /// Gets or sets a value indicating whether every item below carries both a size and a runtime.
-    /// Where one does not, its bytes would be weighed against the running time of the others.
+    /// Gets or sets a value indicating whether the size and the runtime measure the same files, which
+    /// several cuts of one film, or a folder with an unmeasured item below it, do not.
     /// </summary>
     public bool Rateable { get; set; } = true;
 

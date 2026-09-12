@@ -62,8 +62,9 @@ many form needs new keys and a change to the page.
 
 ## The configuration page
 
-Take colours from the theme variables (`--jf-palette-*`) and never from literals,
-or the table looks right in the default dark theme and wrong in the other five.
+Take colours from the theme variables (`--jf-palette-*`) and never from a literal
+outside a `var()` fallback, or the table looks right in the default dark theme
+and wrong in the other five.
 Controls are `emby-input`, `emby-button` and `emby-select`, and each one carries the
 class the web client would add to it. The module that upgrades them is loaded
 lazily, so on a cold load straight to the plugin page it may not have run, and a
@@ -93,7 +94,7 @@ A release that moves .NET as well takes `TargetFramework` in the csproj and
 `framework` in `build.yaml` with it, `SDK_IMAGE` in `test/run.sh` and the images in
 the release workflow and under Build above, and the `net10.0` in the output
 path, spelled out in `test/run.sh`, `docs/shots.sh`, the release workflow and
-under Build above.
+under Build above, which names the version in prose as well.
 `docs/shots.sh` reads both images out of `test/run.sh`.
 
 ## Releases

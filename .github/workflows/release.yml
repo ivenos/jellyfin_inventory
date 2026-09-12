@@ -9,14 +9,13 @@ on:
 permissions:
   contents: write
 
-concurrency:
-  group: release-${{ github.ref }}
-
 jobs:
   build:
     if: github.event_name == 'push'
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    concurrency:
+      group: release-build-${{ github.ref }}
     steps:
       - uses: actions/checkout@v7
 
@@ -39,8 +38,6 @@ jobs:
             dotnet build -c Release --nologo \
             -p:Version="$VERSION" -p:AssemblyVersion="$VERSION" -p:FileVersion="$VERSION"
 
-      # A folder without meta.json is dated to the server's own version, and every later
-      # release is then deleted as if it were the older copy.
       - name: Package
         run: |
           python3 .github/make-meta.py --version "$VERSION" --out meta.json
@@ -55,17 +52,32 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          asset="inventory_$VERSION.zip"
           if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
-            gh release upload "$GITHUB_REF_NAME" "inventory_$VERSION.zip" --clobber
+            # Asked outside the condition, where a query that fails still stops the step.
+            draft=$(gh release view "$GITHUB_REF_NAME" --json isDraft -q .isDraft)
+            assets=$(gh release view "$GITHUB_REF_NAME" --json assets -q '.assets[].name')
+            [ "$draft" = "true" ] || [ "$draft" = "false" ] || {
+              echo "could not read whether $GITHUB_REF_NAME is still a draft" >&2
+              exit 1
+            }
+            # Every build stamps meta.json afresh, so no two archives are alike. Replacing the one
+            # a published release carries would leave manifest.json on a checksum nothing matches.
+            if [ "$draft" = "false" ] && printf '%s\n' "$assets" | grep -qFx "$asset"; then
+              echo "$GITHUB_REF_NAME is published and already carries $asset" >&2
+              exit 1
+            fi
+            gh release upload "$GITHUB_REF_NAME" "$asset" --clobber
           else
-            gh release create "$GITHUB_REF_NAME" "inventory_$VERSION.zip" \
-              --draft --title "$GITHUB_REF_NAME"
+            gh release create "$GITHUB_REF_NAME" "$asset" --draft --title "$GITHUB_REF_NAME"
           fi
 
   manifest:
     if: github.event_name == 'release'
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 40
+    concurrency:
+      group: release-manifest-${{ github.ref }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -88,10 +100,10 @@ jobs:
           version="${TAG#v}.0"
           url="${{ github.server_url }}/${{ github.repository }}/releases/download/$TAG/inventory_$version.zip"
           # The tag push builds the archive, and both can be triggered by the same click.
-          for attempt in 1 2 3 4 5; do
-            curl -fsSL "$url" -o package.zip && break
-            [ "$attempt" = 5 ] && { echo "no archive at $url" >&2; exit 1; }
-            sleep $((attempt * 20))
+          for attempt in $(seq 1 70); do
+            curl -fsSL --max-time 60 "$url" -o package.zip && break
+            [ "$attempt" = 70 ] && { echo "no archive at $url" >&2; exit 1; }
+            sleep 30
           done
           # From the tagged commit, not from main: main may already carry the abi of the next
           # Jellyfin, which would lock this release out of the servers it was built for.

@@ -36,6 +36,8 @@ public sealed class InventoryService : IDisposable
     // Reading playback for every user costs a query each, so the totals are copied onto their own set.
     private readonly ConcurrentDictionary<BaseItemKind, Cached> _everyone = new();
 
+    private readonly object _userLock = new();
+
     // Rows built before a library change are dropped the next time they are asked for.
     private int _generation;
 
@@ -366,25 +368,30 @@ public sealed class InventoryService : IDisposable
     private IReadOnlyList<InventoryRow> Everyone(BaseItemKind kind)
         => Build(_everyone, kind, k => BuildEveryone(k, Users()));
 
-    // A bit stands for a user by position, so the order has to hold across levels built at
-    // different moments, and nothing tells a plugin that an account came or went.
+    // An index stands for a user and nothing tells a plugin that an account came or went, so the
+    // list and the number standing for it are read together and the order holds across levels.
     private User[] Users()
     {
-        var users = _userManager.GetUsers().OrderBy(u => u.Id).ToArray();
-        var stamp = users.Aggregate(users.Length, (hash, user) => (hash * 31) + user.Id.GetHashCode());
-        if (Interlocked.Exchange(ref _userStamp, stamp) != stamp)
+        lock (_userLock)
         {
-            _everyone.Clear();
-            foreach (var entry in _perUser)
+            var users = _userManager.GetUsers().OrderBy(u => u.Id).ToArray();
+            var stamp = users.Aggregate(users.Length, (hash, user) => (hash * 31) + user.Id.GetHashCode());
+            if (_userStamp != stamp)
             {
-                if (entry.Key.Everyone)
+                _userStamp = stamp;
+                _everyone.Clear();
+                var present = users.Select(u => u.Id).ToHashSet();
+                foreach (var entry in _perUser)
                 {
-                    _perUser.TryRemove(entry);
+                    if (entry.Key.Everyone || !present.Contains(entry.Key.UserId))
+                    {
+                        _perUser.TryRemove(entry);
+                    }
                 }
             }
-        }
 
-        return users;
+            return users;
+        }
     }
 
     private IReadOnlyList<InventoryRow> BuildEveryone(BaseItemKind kind, IReadOnlyList<User> users)
@@ -661,7 +668,7 @@ public sealed class InventoryService : IDisposable
         row.AudioTracks = CommonValue(children, c => c.AudioTracks, mixed, "audioTracks");
         row.SubtitleTracks = CommonValue(children, c => c.SubtitleTracks, mixed, "subtitleTracks");
 
-        row.Rateable = children.All(c => c.Size.HasValue && c.Duration.HasValue);
+        row.Rateable = children.All(c => c.Rateable && c.Size.HasValue && c.Duration.HasValue);
         row.TotalBitrate = row.Rateable && row.Size is > 0 && row.Duration is > 0
             ? (long?)(row.Size.Value * 8 / row.Duration.Value)
             : null;
@@ -682,14 +689,27 @@ public sealed class InventoryService : IDisposable
             Library = _libraryManager.GetCollectionFolders(item, roots).FirstOrDefault()?.Name
         };
 
-        if (item is Video video && video.AdditionalParts.Length > 0)
+        if (item is Video video)
         {
-            // A stacked film keeps its later parts as items of their own, and carries only the first.
-            var parts = video.GetAdditionalParts().ToArray();
-            var bytes = (item.Size ?? 0) + parts.Sum(p => p.Size ?? 0);
-            row.Size = bytes > 0 ? bytes : null;
-            var ticks = (item.RunTimeTicks ?? 0) + parts.Sum(p => p.RunTimeTicks ?? 0);
-            row.Duration = ticks > 0 ? ticks / (double)TimeSpan.TicksPerSecond : null;
+            if (video.AdditionalParts.Length > 0)
+            {
+                // A stacked film keeps its later parts as items of their own, and carries only the first.
+                var parts = video.GetAdditionalParts().ToArray();
+                var bytes = (item.Size ?? 0) + parts.Sum(p => p.Size ?? 0);
+                row.Size = bytes > 0 ? bytes : null;
+                var ticks = (item.RunTimeTicks ?? 0) + parts.Sum(p => p.RunTimeTicks ?? 0);
+                row.Duration = ticks > 0 ? ticks / (double)TimeSpan.TicksPerSecond : null;
+            }
+
+            if (video.LocalAlternateVersions.Length > 0 || video.LinkedAlternateVersions.Length > 0)
+            {
+                // Several cuts of one film are one item, all one length, and any of them can be stacked.
+                var bytes = video.GetAllVersions()
+                    .Where(v => !v.Id.Equals(item.Id))
+                    .Sum(v => (v.Size ?? 0) + v.GetAdditionalParts().Sum(p => p.Size ?? 0));
+                row.Size = bytes > 0 ? (row.Size ?? 0) + bytes : row.Size;
+                row.Rateable = false;
+            }
         }
 
         if (item is Episode episode)
@@ -780,7 +800,7 @@ public sealed class InventoryService : IDisposable
         row.SubtitleTracks = streams.Count > 0 ? subtitles.Length : null;
         row.SubtitleLanguages = Join(subtitles.Select(s => s.Language));
 
-        row.TotalBitrate = row.Size is > 0 && row.Duration is > 0
+        row.TotalBitrate = row.Rateable && row.Size is > 0 && row.Duration is > 0
             ? (long?)(row.Size.Value * 8 / row.Duration.Value)
             : streams.Sum(s => (long)(s.BitRate ?? 0)) is var sum && sum > 0 ? sum : null;
     }

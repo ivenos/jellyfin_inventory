@@ -39,15 +39,16 @@ unpacked into `config/plugins/Inventory/`.
 
 ## API
 
-Six endpoints under `/Inventory`, all requiring an administrator token.
-`mediaType` names a tab, `level` one of the levels inside it; those and the
-column keys all come from `Schema`.
+Six endpoints under `/Inventory`, all requiring an administrator token. An API
+key carries no user, so the playback columns that are the caller's own are
+empty for one. `mediaType` names a tab, `level` one of the levels inside it;
+those and the column keys all come from `Schema`.
 
 | Endpoint | Parameters | Answers with |
 | --- | --- | --- |
 | `GET Schema` | `culture` | The populated media types with their levels, every column, the page size, the interface strings and the culture they were answered in |
 | `GET Items` | `mediaType`, `level`, `parentIds`, `columnLevel`, `search`, `sortBy`, `descending`, `startIndex`, `limit`, `culture` | One page of rows with the columns they are keyed by, how many rows there are in total, and the size and runtime behind them; `parentIds` returns the whole child set rather than a page |
-| `GET Export` | `mediaType`, `level`, `columnLevel`, `format`, `search`, `sortBy`, `descending`, `culture` | Every matching row as a `csv` or `ods` file |
+| `GET Export` | `mediaType`, `level`, `columnLevel`, `format`, `search`, `sortBy`, `descending`, `culture` | Every matching row as a `csv` or `ods` file, less the ones a match above them already accounts for |
 | `POST Columns` | `level`, and the column keys as a JSON array in the body | The stored selection |
 | `POST Expand` | `mediaType`, `level` | The stored level |
 | `POST PageSize` | `size` | The stored number of rows per page |

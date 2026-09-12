@@ -178,6 +178,8 @@
             // Every response is checked against this, so a slower earlier one cannot paint over a later.
             var generation = 0;
             var visit = 0;
+            // What the rows on screen answer, so a request that fails knows whether they still do.
+            var drawn = null;
 
             function t(key, fallback) {
                 return schema.strings[key] || fallback || key;
@@ -251,6 +253,11 @@
 
             function isNumeric(kind) {
                 return ['Bytes', 'BytesPerHour', 'Duration', 'Bitrate', 'FrameRate', 'Number', 'Plain'].indexOf(kind) !== -1;
+            }
+
+            // A number column pushes its indentation against the far edge, the same at every depth.
+            function tree(column) {
+                return column === firstColumn && anyExpandable;
             }
 
             function applyStaticLabels() {
@@ -390,7 +397,7 @@
 
             // One request per level rather than one per row: expanding a page of series would
             // otherwise fire a request for every series, and again for every season.
-            function children(level, ids) {
+            function children(level, ids, mine) {
                 // A page of series carries far more season ids than fit in a request line.
                 var batches = [];
                 for (var i = 0; i < ids.length; i += 50) {
@@ -402,7 +409,8 @@
                 // Four at a time: ten thousand rows to a page would otherwise open two hundred
                 // requests at once. Which answers first does not matter, they are keyed by parent.
                 function worker() {
-                    if (at >= batches.length) { return Promise.resolve(); }
+                    // The address is built when the batch runs, and the tab may have moved on.
+                    if (at >= batches.length || mine !== generation) { return Promise.resolve(); }
                     var batch = batches[at];
                     at++;
                     return ApiClient.getJSON(url('Items', {
@@ -443,9 +451,12 @@
 
                 return children(state.levels[depth].Level, parents.map(function (tr) {
                     return tr.getAttribute('data-id');
-                })).then(function (rows) {
+                }), mine).then(function (rows) {
                     parents.forEach(function (tr) {
-                        tr.querySelector('.invTwisty').removeAttribute('data-busy');
+                        var twisty = tr.querySelector('.invTwisty');
+                        twisty.removeAttribute('data-busy');
+                        // A control cannot stay open over children that are being thrown away.
+                        if (mine !== generation) { setTwisty(twisty, false); }
                     });
                     if (mine !== generation) { return; }
 
@@ -605,6 +616,12 @@
             }
 
             function saveColumns(keys) {
+                // The picker stands over the table that is drawn, not over the one on its way in.
+                if (columnLevel !== state.level) {
+                    renderColumnPicker();
+                    return;
+                }
+
                 pending = keys;
                 outstanding++;
                 // The level the columns on screen belong to: a queued request builds its address
@@ -630,7 +647,7 @@
 
             function cell(row, column, depth, expandable) {
                 var td = document.createElement('td');
-                if (isNumeric(column.Format)) { td.className = 'num'; }
+                if (isNumeric(column.Format) && !tree(column)) { td.className = 'num'; }
                 if (column.Key === 'name' || column.Key === 'series') { td.className = 'name'; }
                 if (column.Key === 'path') { td.className = 'path'; td.title = row.Values[column.Key] || ''; }
 
@@ -717,9 +734,14 @@
                 var mine = generation;
                 setTwisty(twisty, true);
                 twisty.setAttribute('data-busy', '1');
-                children(below.Level, [row.Id]).then(function (rows) {
+                children(below.Level, [row.Id], mine).then(function (rows) {
                     twisty.removeAttribute('data-busy');
-                    if (mine !== generation || twisty.getAttribute('data-open') !== '1') { return; }
+                    if (twisty.getAttribute('data-open') !== '1') { return; }
+                    if (mine !== generation) {
+                        setTwisty(twisty, false);
+                        return;
+                    }
+
                     place(tr, rows, twisty, depth + 1);
                 }).catch(function () {
                     twisty.removeAttribute('data-busy');
@@ -764,6 +786,7 @@
                 if (!outstanding || columnLevel !== state.level) { pending = null; }
                 columnLevel = state.level;
                 firstColumn = result.Columns[0];
+                page.querySelector('#invColumnsBtn').disabled = false;
                 anyExpandable = !state.search && result.Rows.some(function (row) { return row.Expandable; });
 
                 result.Columns.forEach(function (column) {
@@ -782,7 +805,7 @@
                     th.setAttribute('data-key', column.Key);
                     th.setAttribute('aria-sort', sorted ? (state.descending ? 'descending' : 'ascending') : 'none');
                     th.title = t('ColumnHint', 'Enter sorts, Ctrl with an arrow key moves the column');
-                    th.className = (isNumeric(column.Format) ? 'num' : '') + (sorted ? ' sorted' : '');
+                    th.className = (isNumeric(column.Format) && !tree(column) ? 'num' : '') + (sorted ? ' sorted' : '');
 
                     var sort = function () {
                         state.descending = state.sortBy === column.Key ? !state.descending : isNumeric(column.Format);
@@ -911,6 +934,29 @@
                 if (held === next && next.disabled && !prev.disabled) { prev.focus(); }
             }
 
+            function clear() {
+                page.querySelector('#invHead').innerHTML = '';
+                page.querySelector('#invBody').innerHTML = '';
+                page.querySelector('#invGroups').innerHTML = '';
+                page.querySelector('#invColumnsPanel').style.display = 'none';
+                page.querySelector('#invTotals').textContent = '';
+                page.querySelector('#invPage').textContent = '';
+                page.querySelector('#invPrev').disabled = true;
+                page.querySelector('#invNext').disabled = true;
+                page.querySelector('#invColumnsBtn').disabled = true;
+                page.querySelector('#invColumnsBtn').setAttribute('aria-expanded', 'false');
+                activeColumns = [];
+                firstColumn = null;
+                anyExpandable = false;
+                drawn = null;
+                state.total = 0;
+            }
+
+            function answers(what) {
+                return what && what.type === state.type && what.level === state.level
+                    && what.search === state.search;
+            }
+
             function load() {
                 if (!state.type || !showing) { return; }
                 var mine = ++generation;
@@ -932,6 +978,16 @@
                     busy(false);
                     refocus = wanted;
                     state.total = result.TotalCount;
+                    drawn = {
+                        type: state.type,
+                        level: state.level,
+                        search: state.search,
+                        sortBy: state.sortBy,
+                        descending: state.descending,
+                        start: state.start,
+                        limit: state.limit,
+                        total: state.total
+                    };
                     renderTable(result);
                     renderFooter(result);
                     renderColumnPicker();
@@ -939,6 +995,17 @@
                 }).catch(function () {
                     if (mine !== generation) { return; }
                     busy(false);
+                    if (answers(drawn)) {
+                        state.sortBy = drawn.sortBy;
+                        state.descending = drawn.descending;
+                        state.start = drawn.start;
+                        state.limit = drawn.limit;
+                        state.total = drawn.total;
+                        renderPageSizes();
+                    } else {
+                        clear();
+                    }
+
                     // The toast fades, and a first load that failed would leave nothing behind it.
                     var blank = page.querySelector('#invEmpty');
                     blank.textContent = t('LoadFailed', 'Could not load the inventory.');
@@ -999,8 +1066,6 @@
 
                 var mine = visit;
                 var buttons = [page.querySelector('#invCsv'), page.querySelector('#invOds')];
-                // Disabling the button under the caret drops the focus to the body, and the next
-                // tab would start again at the top of the dashboard.
                 var held = buttons.indexOf(document.activeElement);
                 buttons.forEach(function (button) { button.disabled = true; });
                 var pressed = page.querySelector(extension === 'csv' ? '#invCsv' : '#invOds');
@@ -1037,7 +1102,7 @@
                 pressed.removeAttribute('aria-label');
                 pressed.removeAttribute('aria-busy');
                 buttons.forEach(function (button) { button.disabled = false; });
-                if (held >= 0) { buttons[held].focus(); }
+                if (held >= 0 && document.activeElement === document.body) { buttons[held].focus(); }
             }
 
             // A button keeps the focus ring after a click, which reads as "still active" on an
@@ -1119,6 +1184,11 @@
                     } else if (result.MediaTypes.length) {
                         selectType(result.MediaTypes[0].MediaType);
                     } else {
+                        state.type = null;
+                        state.levels = [];
+                        renderTypes();
+                        renderExpandBar();
+                        clear();
                         page.querySelector('#invEmpty').style.display = '';
                     }
 
@@ -1137,6 +1207,7 @@
             // would otherwise report over whatever page they went to.
             page.addEventListener('viewhide', function () {
                 showing = false;
+                refocus = null;
                 clearTimeout(searchTimer);
                 generation++;
                 visit++;

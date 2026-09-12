@@ -19,9 +19,9 @@ if not re.fullmatch(r"\d+\.\d+\.\d+\.\d+", args.version):
 root = pathlib.Path(args.root)
 package = json.loads((root / "manifest.json").read_text(encoding="utf-8"))[0]
 
-abi = re.search(r'^targetAbi:\s*"(.*)"', (root / "build.yaml").read_text(encoding="utf-8"), re.M)
+abi = re.search(r'^targetAbi:\s*"(\d+\.\d+\.\d+\.\d+)"', (root / "build.yaml").read_text(encoding="utf-8"), re.M)
 if not abi:
-    raise SystemExit("build.yaml carries no quoted targetAbi")
+    raise SystemExit("build.yaml carries no targetAbi of four numbers in quotes")
 
 # Without this file Jellyfin dates an unpacked plugin to the server's own version, and deletes
 # every later release as if it were the older copy.
@@ -34,7 +34,7 @@ pathlib.Path(args.out).write_text(json.dumps({
     "category": package["category"],
     "version": args.version,
     "targetAbi": abi.group(1),
-    "timestamp": datetime.datetime.now(datetime.UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
+    "timestamp": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
     "changelog": "",
     "status": "Active",
     "autoUpdate": True,

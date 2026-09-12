@@ -5,6 +5,7 @@ const [html, schemaFile, ...itemFiles] = process.argv.slice(2);
 const schema = JSON.parse(readFileSync(schemaFile, 'utf8'));
 const source = readFileSync(html, 'utf8');
 const read = (file) => JSON.parse(readFileSync(file, 'utf8'));
+const raised = [];
 
 function gate() {
     let open;
@@ -16,8 +17,16 @@ async function render(items, mode) {
     let overlay = 0;
     let served = 0;
     let downloads = 0;
+    let failing = false;
     const schemaGates = [gate(), gate()];
+    const held = gate();
     const rows = gate();
+    // A tab with a level under it, so its rows carry a control that opens them.
+    const openable = JSON.parse(JSON.stringify(items));
+    openable.Rows.forEach(function (row) { row.Expandable = true; });
+    const deep = JSON.parse(JSON.stringify(schema));
+    deep.MediaTypes[0].Levels.push({ Level: 'Child', Label: 'Children' });
+    deep.MediaTypes[0].ExpandedTo = null;
     const download = gate();
     const asked = [];
     // The second visit finds a library that has changed, so a discarded answer is visible.
@@ -27,7 +36,8 @@ async function render(items, mode) {
     const dom = new JSDOM(source, {
         runScripts: 'dangerously',
         url: 'http://localhost/web/index.html',
-        virtualConsole: new VirtualConsole(),
+        virtualConsole: new VirtualConsole()
+            .on('jsdomError', (e) => { if (e.type !== 'not implemented') { raised.push(e.message); } }),
         beforeParse(window) {
             window.ApiClient = {
                 serverId: () => 'server',
@@ -36,6 +46,7 @@ async function render(items, mode) {
                 getJSON: (url) => {
                     asked.push(url);
                     if (url.startsWith('Inventory/Schema')) {
+                        if (mode === 'stuck') { return Promise.resolve(deep); }
                         const call = ++served;
                         if (mode === 'stale') {
                             return call > 1 ? schemaGates[1].held.then(() => changed) : Promise.resolve(schema);
@@ -47,7 +58,12 @@ async function render(items, mode) {
                     }
 
                     if (url.startsWith('Inventory/Items')) {
-                        if (mode === 'failed') { return Promise.reject(new Error('no')); }
+                        if (mode === 'failed' || failing) { return Promise.reject(new Error('no')); }
+                        if (mode === 'stuck' && url.includes('parentIds=')) {
+                            return held.held.then(() => items);
+                        }
+
+                        if (mode === 'stuck') { return Promise.resolve(openable); }
                         // Held so the busy state can be read while the rows are still on their way.
                         return mode === 'stale' || mode === 'overlay'
                             ? Promise.resolve(items)
@@ -61,7 +77,11 @@ async function render(items, mode) {
             window.Dashboard = {
                 showLoadingMsg() { overlay++; },
                 hideLoadingMsg() { overlay = 0; },
-                alert(message) { if (mode !== 'failed') { throw new Error('the page gave up: ' + message); } },
+                alert(message) {
+                    if (!['failed', 'retry', 'stuck', 'switch'].includes(mode)) {
+                        throw new Error('the page gave up: ' + message);
+                    }
+                },
             };
             window.URL.createObjectURL = () => 'blob:export';
             window.URL.revokeObjectURL = () => {};
@@ -137,7 +157,7 @@ async function render(items, mode) {
         const report = {
             message: page.querySelector('#invEmpty').textContent.trim(),
             shown: page.querySelector('#invEmpty').style.display !== 'none',
-            picker: page.querySelectorAll('#invGroups input').length > 0,
+            columns: page.querySelector('#invColumnsBtn').disabled,
         };
         window.close();
         return report;
@@ -157,6 +177,76 @@ async function render(items, mode) {
         download.open();
         await settle();
         const report = { during: during, after: disabled(), spinning: spinning() };
+        window.close();
+        return report;
+    }
+
+    if (mode === 'retry') {
+        failing = true;
+        click('#invNext');
+        await settle();
+        const stale = page.querySelector('#invPage').textContent.trim();
+        failing = false;
+        click('#invNext');
+        await settle();
+        const items = () => asked.filter((url) => url.startsWith('Inventory/Items'));
+        const turned = items().pop().match(/startIndex=\d+/)[0];
+        failing = true;
+        page.querySelector('#invHead th').dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+        await settle();
+        failing = false;
+        click('#invNext');
+        await settle();
+        const sorted = items().pop().match(/sortBy=[^&]*&descending=\w+&startIndex=\d+/)[0];
+        leave();
+        await settle();
+        failing = true;
+        show();
+        await settle();
+        failing = false;
+        const before = items().length;
+        click('#invNext');
+        await settle();
+        const report = { pager: stale, asked: turned, sorted: sorted, revisit: items().length - before };
+        window.close();
+        return report;
+    }
+
+    if (mode === 'switch') {
+        failing = true;
+        page.querySelectorAll('.invType')[1].dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+        await settle();
+        const report = {
+            selected: all('.invType.selected').join(','),
+            rows: page.querySelectorAll('#invBody tr').length,
+            headers: page.querySelectorAll('#invHead th').length,
+            totals: page.querySelector('#invTotals').textContent.trim(),
+            columns: page.querySelector('#invColumnsBtn').disabled,
+            boxes: page.querySelectorAll('#invGroups input').length,
+            pager: [page.querySelector('#invPage').textContent, page.querySelector('#invPrev').disabled,
+                page.querySelector('#invNext').disabled].join('/'),
+        };
+        window.close();
+        return report;
+    }
+
+    if (mode === 'stuck') {
+        const twisty = () => page.querySelector('#invBody .invTwisty');
+        twisty().dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+        await settle();
+        const opened = twisty().getAttribute('aria-expanded');
+        // Sorted while the children are on their way, and that request fails, so the rows stay.
+        failing = true;
+        page.querySelector('#invHead th').dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+        await settle();
+        failing = false;
+        held.open();
+        await settle();
+        const report = {
+            opened: opened,
+            after: twisty().getAttribute('aria-expanded'),
+            children: page.querySelectorAll('#invBody tr[data-depth="1"]').length,
+        };
         window.close();
         return report;
     }
@@ -206,7 +296,9 @@ for (const [prefix, file] of [['one', itemFiles[1]], ['exact', itemFiles[2]]]) {
     }
 }
 
-for (const mode of ['hide', 'export', 'stale', 'overlay', 'hung', 'failed']) {
+for (const mode of ['hide', 'export', 'stale', 'overlay', 'hung', 'failed', 'retry', 'stuck', 'switch']) {
     const extra = await render(read(itemFiles[0]), mode);
     for (const [key, value] of Object.entries(extra)) { console.log(`${mode}.${key}=${value}`); }
 }
+
+console.log(`raised=${raised.length}`);

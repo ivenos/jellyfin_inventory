@@ -5,8 +5,7 @@ using System.Linq;
 namespace Jellyfin.Plugin.Inventory;
 
 /// <summary>
-/// Every column the inventory can show. A new attribute is one entry here plus its field on
-/// <see cref="InventoryRow"/>; nothing else knows the list.
+/// Every column the inventory can show.
 /// </summary>
 public static class Columns
 {
@@ -36,7 +35,7 @@ public static class Columns
         new("videoProfile", "Video", ColumnFormat.Text, r => r.VideoProfile),
         // Ordered by area, since "960x540" reads as the larger of the two next to "1920x1080".
         new("resolution", "Video", ColumnFormat.Text, r => r.Resolution, r => (long?)r.Width * r.Height),
-        new("height", "Video", ColumnFormat.Number, r => r.Height),
+        new("height", "Video", ColumnFormat.Plain, r => r.Height),
         new("videoBitrate", "Video", ColumnFormat.Bitrate, r => r.VideoBitrate),
         new("frameRate", "Video", ColumnFormat.FrameRate, r => r.FrameRate),
         new("bitDepth", "Video", ColumnFormat.Plain, r => r.BitDepth),
@@ -93,6 +92,6 @@ public static class Columns
         var resolved = keys?.Select(Find).OfType<ColumnDefinition>().DistinctBy(c => c.Key).ToArray() ?? [];
         return resolved.Length > 0
             ? resolved
-            : ColumnDefaults.For(level).Select(Find).OfType<ColumnDefinition>().ToArray();
+            : ColumnDefaults.For(level).Select(Find).OfType<ColumnDefinition>().DistinctBy(c => c.Key).ToArray();
     }
 }
