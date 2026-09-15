@@ -5,13 +5,13 @@ body:
   - type: markdown
     attributes:
       value: |
-        Fill in what you can. Only the first field is required.
+        Please fill in as much detail as possible. For more detailed server logs, add `"Jellyfin.Plugin.Inventory": "Debug"` to the `Override` block of a `logging.json` in your config directory.
 
   - type: textarea
     id: description
     attributes:
       label: What happened?
-      description: What you did, and what the table showed instead.
+      description: A clear description of the bug.
     validations:
       required: true
 
@@ -19,25 +19,41 @@ body:
     id: expected
     attributes:
       label: What did you expect?
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1.
+        2.
+        3.
+
+  - type: textarea
+    id: screenshots
+    attributes:
+      label: Screenshots
+      description: A screenshot of the table often says it all.
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: "The lines mentioning Inventory from Dashboard > Logs"
+      render: text
 
   - type: input
-    id: versions
+    id: version
     attributes:
-      label: Versions
-      placeholder: "e.g. Jellyfin 12.0.1, Inventory 0.1.0"
+      label: "Inventory version"
+      placeholder: "e.g. Inventory 0.2.0 on Jellyfin 12.0.1"
+    validations:
+      required: true
 
   - type: input
     id: browser
     attributes:
       label: Browser
       placeholder: "e.g. Firefox 145, Safari 18"
-
-  - type: textarea
-    id: logs
-    attributes:
-      label: Logs or screenshots
-      description: >-
-        A screenshot of the table often says it all. For a server-side problem,
-        the lines mentioning Inventory from Dashboard > Logs help; adding
-        `"Jellyfin.Plugin.Inventory": "Debug"` to the `Override` block of a
-        `logging.json` in your config directory makes them more detailed.

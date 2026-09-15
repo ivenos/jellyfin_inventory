@@ -3,7 +3,7 @@ using System;
 namespace Jellyfin.Plugin.Inventory;
 
 /// <summary>
-/// A column: its key, how it is labelled and rendered, and where its value comes from.
+/// A column: its key, how it is labeled and rendered, and where its value comes from.
 /// </summary>
 /// <param name="Key">The stable key used in the configuration and in API responses. The header is
 /// looked up as "column.&lt;key&gt;" in the plugin's strings.</param>

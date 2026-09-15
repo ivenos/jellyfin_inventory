@@ -1,35 +1,114 @@
 name: CLA check
 
-# pull_request_target: with pull_request a contributor could disarm this check
-# from inside the same PR.
 on:
   pull_request_target:
-    types: [opened, edited, synchronize, reopened]
+    types: [opened, edited, synchronize, reopened, closed]
 
-# Nothing is checked out and no token is needed, which is what makes that safe.
+# Nothing is checked out, which is what makes the write token safe.
 permissions: {}
-
-# types: [edited] means every edit of the description starts a run.
-concurrency:
-  group: cla-${{ github.event.pull_request.number }}
-  cancel-in-progress: true
 
 jobs:
   cla:
     runs-on: ubuntu-latest
     timeout-minutes: 5
-    # Repo owner is implicitly covered. Bots are skipped by account type, so this
-    # keeps working if Renovate ever moves to the hosted app (renovate[bot]).
     if: >-
-      github.event.pull_request.user.login != 'ivenos' &&
-      github.event.pull_request.user.type != 'Bot'
+      github.event.pull_request.user.login != github.repository_owner &&
+      github.event.pull_request.user.type != 'Bot' &&
+      ((github.event.action == 'closed' && github.event.pull_request.merged) ||
+       (github.event.action != 'closed' && github.event.pull_request.state == 'open'))
+    permissions:
+      pull-requests: write
+    # An edit right after the merge must not cancel the receipt.
+    concurrency:
+      group: cla-${{ github.event.pull_request.number }}-${{ github.event.action == 'closed' }}
+      cancel-in-progress: ${{ github.event.action != 'closed' }}
+    env:
+      GH_TOKEN: ${{ github.token }}
+      REPO: ${{ github.repository }}
+      PR: ${{ github.event.pull_request.number }}
+      AUTHOR: ${{ github.event.pull_request.user.login }}
+      AUTHOR_ID: ${{ github.event.pull_request.user.id }}
+      OWNER: ${{ github.repository_owner }}
+      OWNER_ID: ${{ github.repository_owner_id }}
+      PR_BODY: ${{ github.event.pull_request.body }}
     steps:
-      - name: Verify CLA checkbox is ticked
-        env:
-          PR_BODY: ${{ github.event.pull_request.body }}
+      - name: Verify CLA
+        id: verify
         run: |
-          if ! grep -qiE '\[x\].*I agree to the CLA' <<< "$PR_BODY"; then
-            echo "::error::CLA checkbox is not ticked. Please edit the PR description and check the box under 'Contributor License Agreement'."
+          errors="$RUNNER_TEMP/errors.txt"
+          commits="$RUNNER_TEMP/commits.json"
+          : > "$errors"
+
+          agreement="- [x] I agree to the [Contributor License Agreement](https://github.com/$REPO/blob/main/.github/CLA.md) for this pull request and every commit I add to it."
+          if ! tr -d '\r' <<< "$PR_BODY" | grep -qixF -- "$agreement"; then
+            echo "The CLA checkbox is not ticked. Edit the pull request description and tick the box under \"Contributor License Agreement\"." >> "$errors"
+          fi
+
+          gh api --paginate "repos/$REPO/pulls/$PR/commits" \
+            --jq '.[] | {sha, login: .author.login, name: .commit.author.name, email: .commit.author.email, message: .commit.message}' > "$commits"
+
+          jq -rs --arg author "$AUTHOR" --arg owner "$OWNER" '
+            .[] | select(.login != $author and .login != $owner)
+            | "Commit \(.sha[:7]) is authored by \(.login // "\(.name) <\(.email)>, which is not linked to a GitHub account"). Only the pull request author and the maintainer commit to a pull request."
+          ' "$commits" >> "$errors"
+
+          jq -rs --arg author "$AUTHOR" --arg author_id "$AUTHOR_ID" --arg owner "$OWNER" --arg owner_id "$OWNER_ID" '
+            ([.[] | select(.login == $author or .login == $owner) | .email // empty]
+              + ([$author, "\($author_id)+\($author)", $owner, "\($owner_id)+\($owner)"] | map("\(.)@users.noreply.github.com"))
+              | map(ascii_downcase)) as $known
+            | .[] | .sha as $sha
+            | .message | split("\n")[]
+            | capture("^co-authored-by:.*<(?<email>[^>]+)>"; "i").email
+            | select(ascii_downcase | IN($known[]) | not)
+            | "Commit \($sha[:7]) has a co-author (\(.)) other than the pull request author and the maintainer."
+          ' "$commits" >> "$errors"
+
+          files=$(gh api --paginate "repos/$REPO/pulls/$PR/files" --jq '.[] | .filename, .previous_filename // empty')
+          if grep -qxF .github/CLA.md <<< "$files"; then
+            echo "The pull request changes .github/CLA.md, which only the maintainer does." >> "$errors"
+          fi
+
+          if [ -s "$errors" ]; then
+            sed 's/^/::error::/' "$errors"
             exit 1
           fi
           echo "CLA confirmed."
+
+      - name: Post receipt
+        if: github.event.action == 'closed'
+        env:
+          MERGED_AT: ${{ github.event.pull_request.merged_at }}
+          MERGE_SHA: ${{ github.event.pull_request.merge_commit_sha }}
+        run: |
+          tr -d '\r' <<< "$PR_BODY" | jq -Rs \
+            --arg repo "$REPO" --arg author "$AUTHOR" --arg author_id "$AUTHOR_ID" \
+            --arg merged_at "$MERGED_AT" --arg sha "$MERGE_SHA" \
+            --slurpfile commits "$RUNNER_TEMP/commits.json" '
+            {body: ([
+              "### CLA receipt",
+              "",
+              "@\($author) (GitHub user ID \($author_id)) agreed to the [Contributor License Agreement](https://github.com/\($repo)/blob/\($sha)/.github/CLA.md) for this pull request and every commit in it. Merged at \($merged_at) as \($sha).",
+              "",
+              "<pre>",
+              ($commits[] | "\(.sha) \(.name) <\(.email)>" | @html),
+              "</pre>",
+              "",
+              "<details><summary>Pull request description at merge</summary>",
+              "",
+              "<pre>\(.[:50000] | @html)</pre>",
+              "",
+              "</details>"
+            ] | join("\n"))}
+            ' | gh api "repos/$REPO/issues/$PR/comments" --input - > /dev/null
+
+      - name: Report merge without CLA
+        if: failure() && steps.verify.outcome == 'failure' && github.event.action == 'closed'
+        run: |
+          errors="$RUNNER_TEMP/errors.txt"
+          [ -s "$errors" ] || echo "The check did not finish, see the workflow log." > "$errors"
+          jq -Rs '{body: "### Merged without a confirmed CLA\n\n<pre>\(@html)</pre>"}' "$errors" |
+            gh api "repos/$REPO/issues/$PR/comments" --input - > /dev/null
+
+      - name: Lock conversation
+        if: always() && github.event.action == 'closed'
+        run: gh api -X PUT "repos/$REPO/issues/$PR/lock" -f lock_reason=resolved

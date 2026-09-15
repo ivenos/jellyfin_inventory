@@ -4,10 +4,10 @@
 set -eu
 
 PORT="${PORT:-8095}"
-CONTAINER="jellyfin-inventory-shots-$PORT"
-NETWORK="jellyfin-inventory-shots-$PORT"
-WORK="${INVENTORY_SHOTS_DIR:-$HOME/.cache/jellyfin-inventory-shots-$PORT}"
-ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+CONTAINER="jellyfin_inventory-screenshots-$PORT"
+NETWORK="jellyfin_inventory-screenshots-$PORT"
+WORK="${INVENTORY_SCREENSHOTS_DIR:-$HOME/.cache/jellyfin_inventory-screenshots-$PORT}"
+ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)
 # Taken from the test run, so the versions stay in one place.
 IMAGE="${JELLYFIN_IMAGE:-$(sed -n 's/^IMAGE=.*:-\(.*\)}"/\1/p' "$ROOT/test/run.sh")}"
 SDK_IMAGE="${SDK_IMAGE:-$(sed -n 's/^SDK_IMAGE=.*:-\(.*\)}"/\1/p' "$ROOT/test/run.sh")}"
@@ -145,7 +145,7 @@ cleanup
 rm -rf "${WORK:?}/config" "${WORK:?}/cache"
 mkdir -p "$WORK/config/plugins/Inventory" "$WORK/cache" "$WORK/browser"
 cp "$DLL" "$WORK/config/plugins/Inventory/"
-python3 "$ROOT/.github/make-meta.py" --version 9.9.9.0 --root "$ROOT" \
+python3 "$ROOT/.github/scripts/make-meta.py" --version 9.9.9.0 --root "$ROOT" \
     --out "$WORK/config/plugins/Inventory/meta.json" >/dev/null
 docker network create "$NETWORK" >/dev/null
 docker run -d --name "$CONTAINER" --security-opt label=disable --user "$(id -u):$(id -g)" \
@@ -253,11 +253,11 @@ EOF
 
 docker run --rm --security-opt label=disable --user "$(id -u):$(id -g)" \
     --network "$NETWORK" --ipc=host -e HOME=/tmp \
-    -v "$WORK/browser:/b" -v "$ROOT/docs:/out" -w /b "$BROWSER_IMAGE" sh -c \
+    -v "$WORK/browser:/b" -v "$ROOT/.github/assets:/out" -w /b "$BROWSER_IMAGE" sh -c \
     "set -e
      [ -f node_modules/.playwright-$BROWSER_VERSION ] || { rm -rf node_modules
        npm install --no-audit --no-fund --silent playwright@$BROWSER_VERSION
        touch node_modules/.playwright-$BROWSER_VERSION; }
      node /b/shots.mjs"
 
-ls -l "$ROOT/docs"
+ls -l "$ROOT/.github/assets"

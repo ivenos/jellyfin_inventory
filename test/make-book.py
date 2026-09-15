@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Writes a minimal EPUB, enough for Jellyfin to catalogue it as a book."""
+"""Writes a minimal EPUB, enough for Jellyfin to catalog it as a book."""
 
 import hashlib
 import sys

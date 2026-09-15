@@ -6,6 +6,7 @@
     "overview": "A sortable, filterable table of everything in your libraries.",
     "owner": "ivenos",
     "category": "General",
+    "imageUrl": "https://raw.githubusercontent.com/ivenos/jellyfin_inventory/main/.github/assets/thumb.png",
     "versions": [
       {
         "version": "0.2.0.0",

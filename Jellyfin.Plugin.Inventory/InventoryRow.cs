@@ -140,7 +140,7 @@ public class InventoryRow
     public bool? Interlaced { get; set; }
 
     /// <summary>
-    /// Gets or sets the video range, as Jellyfin derives it from the colour metadata.
+    /// Gets or sets the video range, as Jellyfin derives it from the color metadata.
     /// </summary>
     public string? VideoRange { get; set; }
 

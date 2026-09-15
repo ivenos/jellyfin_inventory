@@ -32,6 +32,7 @@ pathlib.Path(args.out).write_text(json.dumps({
     "overview": package["overview"],
     "owner": package["owner"],
     "category": package["category"],
+    "imagePath": package["imageUrl"].rsplit("/", 1)[-1],
     "version": args.version,
     "targetAbi": abi.group(1),
     "timestamp": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),

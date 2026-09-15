@@ -67,7 +67,7 @@ public static class Export
 
     /// <summary>
     /// Writes the rows as an OpenDocument spreadsheet, with numbers and dates typed so they can be
-    /// sorted and totalled without being converted first.
+    /// sorted and totaled without being converted first.
     /// </summary>
     /// <param name="output">The stream the file is written to.</param>
     /// <param name="columns">The columns, in order.</param>

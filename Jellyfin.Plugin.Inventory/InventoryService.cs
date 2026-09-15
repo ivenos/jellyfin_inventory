@@ -588,7 +588,7 @@ public sealed class InventoryService : IDisposable
             var byParent = Shared(leaf).ToLookup(r => toLeaves ? r.AncestorId : r.ParentId);
 
             // What can be opened is the level directly below, which for a series is its seasons
-            // rather than the episodes it is totalled from.
+            // rather than the episodes it is totaled from.
             var below = toLeaves && levels[1] != leaf
                 ? Shared(levels[1]).ToLookup(r => r.ParentId)
                 : byParent;

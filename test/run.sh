@@ -123,7 +123,7 @@ found = {name: sorted(set(re.findall(p, (root / f).read_text(encoding='utf-8'), 
          for name, (p, f) in seen.items()}
 print('ok' if all(v == list(found['build.yaml']) for v in found.values()) and found['build.yaml'] else found)")" "ok"
 
-check "the page takes its colours from the theme" \
+check "the page takes its colors from the theme" \
     "$(python3 -c "
 import pathlib, re
 html = pathlib.Path('$ROOT/Jellyfin.Plugin.Inventory/Configuration/configPage.html').read_text(encoding='utf-8')
@@ -134,7 +134,7 @@ print('ok' if not loose else loose)")" "ok"
 
 cp "$ROOT/manifest.json" "$WORK/manifest.json"
 check "a release is written into the manifest ahead of the ones already listed" \
-    "$(python3 "$ROOT/.github/update-manifest.py" --manifest "$WORK/manifest.json" \
+    "$(python3 "$ROOT/.github/scripts/update-manifest.py" --manifest "$WORK/manifest.json" \
         --version 99.9.9.0 --target-abi 12.0.0.0 --checksum 0123456789abcdef0123456789abcdef \
         --source-url https://example.invalid/inventory_99.9.9.0.zip \
         --timestamp 2099-01-01T00:00:00Z --changelog='- a note that opens with a dash' >/dev/null \
@@ -146,7 +146,7 @@ print('ok' if now[0]['version'] == '99.9.9.0'
       and now[0]['changelog'] == '- a note that opens with a dash'
       and [v['version'] for v in now[1:]] == [v['version'] for v in kept] else now)")" "ok"
 check "while one whose checksum did not survive the release job is refused" \
-    "$(python3 "$ROOT/.github/update-manifest.py" --manifest "$WORK/manifest.json" \
+    "$(python3 "$ROOT/.github/scripts/update-manifest.py" --manifest "$WORK/manifest.json" \
         --version 99.9.9.0 --target-abi 12.0.0.0 --checksum '' \
         --source-url https://example.invalid/inventory_99.9.9.0.zip \
         --timestamp 2099-01-01T00:00:00Z >/dev/null 2>&1 && echo written || echo refused)" "refused"
@@ -177,7 +177,7 @@ RECIPE=$(cat <<'FIXTURES'
             -f lavfi -i sine=frequency=440:duration=20 \
             -c:v libx264 -preset ultrafast -crf 30 -pix_fmt yuv420p -c:a aac -ac 2 -b:a 128k \
             "/media/movies/Blue Harbour (2021)/Blue Harbour (2021).mkv"
-        # HDR10 has to go into the bitstream; the muxer-level colour flags do not survive here.
+        # HDR10 has to go into the bitstream; the muxer-level color flags do not survive here.
         $FF -y -loglevel error -f lavfi -i testsrc2=size=3840x2160:rate=24:duration=15 \
             -f lavfi -i sine=frequency=300:duration=15 \
             -c:v libx265 -preset ultrafast -crf 32 -pix_fmt yuv420p10le \
@@ -306,8 +306,8 @@ echo "== start =="
 docker rm -f "$CONTAINER" >/dev/null 2>&1 || true
 rm -rf "${WORK:?}/config" "${WORK:?}/cache"
 mkdir -p "$WORK/config/plugins/Inventory" "$WORK/cache"
-cp "$DLL" "$WORK/config/plugins/Inventory/"
-python3 "$ROOT/.github/make-meta.py" --version 9.9.9.0 --root "$ROOT" \
+cp "$DLL" "$ROOT/.github/assets/thumb.png" "$WORK/config/plugins/Inventory/"
+python3 "$ROOT/.github/scripts/make-meta.py" --version 9.9.9.0 --root "$ROOT" \
     --out "$WORK/config/plugins/Inventory/meta.json" >/dev/null
 # Runs under the caller's uid so a later run can clear the config it writes.
 docker run -d --name "$CONTAINER" --security-opt label=disable \
@@ -399,7 +399,7 @@ until [ "$(api 'Inventory/Items?mediaType=MusicAlbum' | field "json.load(sys.std
         | field "all(r['Values'].get('videoCodec') for r in json.load(sys.stdin)['Rows']
                      if r['Values']['name'] != 'Patchy S01E06')")" = "True" ]; do
     i=$((i + 1))
-    [ "$i" -gt 60 ] && { echo; echo "media was never analysed" >&2; api 'Inventory/Items?mediaType=MusicAlbum'; exit 1; }
+    [ "$i" -gt 60 ] && { echo; echo "media was never analyzed" >&2; api 'Inventory/Items?mediaType=MusicAlbum'; exit 1; }
     [ $((i % 5)) = 0 ] && curl -sf -X POST "$BASE/Library/Refresh" \
         -H "Authorization: MediaBrowser Token=\"$TOKEN\"" >/dev/null 2>&1
     printf '.'
@@ -408,6 +408,10 @@ done
 echo
 
 echo "== checks =="
+check "the plugin serves the image its meta.json names" \
+    "$(curl -s --max-time 30 -o /dev/null -w '%{http_code} %{content_type}' \
+        "$BASE/Plugins/$(field "json.load(open('$WORK/config/plugins/Inventory/meta.json'))['guid']" </dev/null)/9.9.9.0/Image")" \
+    "200 image/png"
 SCHEMA=$(api 'Inventory/Schema')
 check "movie count" \
     "$(printf '%s\n' "$SCHEMA" | field "[t['Count'] for t in json.load(sys.stdin)['MediaTypes'] if t['MediaType']=='Movie'][0]")" "7"
@@ -670,7 +674,7 @@ curl -sf -X POST "$BASE/Inventory/Columns?level=Episode" \
     -H "Authorization: MediaBrowser Token=\"$TOKEN\"" -H "$JSON" \
     -d '["name","audioLanguages","no-such-column"]' >/dev/null || refused "Inventory/Columns?level=Episode"
 PICKED=$(api 'Inventory/Items?mediaType=Series&level=Episode&limit=1')
-check "stored columns are honoured, in the order they were given" \
+check "stored columns are honored, in the order they were given" \
     "$(printf '%s\n' "$PICKED" | field "','.join(c['Key'] for c in json.load(sys.stdin)['Columns'])")" "name,audioLanguages"
 
 curl -sf -X POST "$BASE/Inventory/Columns?level=Episode" \
@@ -982,7 +986,7 @@ check "and nobody for a series with an episode left over" \
 
 # Nothing tells a plugin that an account is gone, so the totals have to notice by themselves.
 curl -sf -X DELETE "$BASE/Users/$SECOND_ID" -H "Authorization: MediaBrowser Token=\"$TOKEN\"" >/dev/null
-check "a deleted account stops counting towards the totals" \
+check "a deleted account stops counting toward the totals" \
     "$(api 'Inventory/Items?mediaType=Movie&sortBy=everyonePlayCount&descending=true&limit=1' \
         | field "json.load(sys.stdin)['Rows'][0]['Values']['everyonePlayCount']")" "1"
 
