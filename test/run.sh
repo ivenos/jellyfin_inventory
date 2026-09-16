@@ -934,6 +934,10 @@ check "the configuration page is served, so a missing resource cannot pass unnot
 check "the configuration page carries the table it is supposed to draw" \
     "$(curl -sf "$BASE/web/ConfigurationPage?name=Inventory" \
         -H "Authorization: MediaBrowser Token=\"$TOKEN\"" | grep -c 'id="invBody"')" "1"
+check "the table has its own entry in the dashboard sidebar" \
+    "$(curl -sf "$BASE/web/ConfigurationPages?enableInMainMenu=true" \
+        -H "Authorization: MediaBrowser Token=\"$TOKEN\"" \
+        | field "[p['DisplayName'] for p in json.load(sys.stdin) if p['Name'] == 'Inventory']")" "['Inventory']"
 
 # The rows are cached per user, so a second administrator has to see his own playback and not
 # the one the first has just written.

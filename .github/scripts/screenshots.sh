@@ -8,13 +8,13 @@ CONTAINER="jellyfin_inventory-screenshots-$PORT"
 NETWORK="jellyfin_inventory-screenshots-$PORT"
 WORK="${INVENTORY_SCREENSHOTS_DIR:-$HOME/.cache/jellyfin_inventory-screenshots-$PORT}"
 ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)
+IMAGE="${JELLYFIN_IMAGE:-jellyfin/jellyfin:$(python3 "$ROOT/test/versions.py" --root "$ROOT" | tail -n 1)}"
 # Taken from the test run, so the versions stay in one place.
-IMAGE="${JELLYFIN_IMAGE:-$(sed -n 's/^IMAGE=.*:-\(.*\)}"/\1/p' "$ROOT/test/run.sh")}"
 SDK_IMAGE="${SDK_IMAGE:-$(sed -n 's/^SDK_IMAGE=.*:-\(.*\)}"/\1/p' "$ROOT/test/run.sh")}"
 BROWSER_IMAGE="${PLAYWRIGHT_IMAGE:-mcr.microsoft.com/playwright:v1.63.0-noble}"
 # The image carries the browsers but not the library, and the two have to be the same release.
 BROWSER_VERSION=$(printf '%s' "$BROWSER_IMAGE" | sed -n 's/.*:v\([0-9.]*\).*/\1/p')
-: "${IMAGE:?could not be read out of test/run.sh}"
+case "$IMAGE" in *:) echo "test/versions.py named no Jellyfin release" >&2; exit 1 ;; esac
 : "${SDK_IMAGE:?could not be read out of test/run.sh}"
 BUILD=1
 

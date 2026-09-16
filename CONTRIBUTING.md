@@ -27,7 +27,7 @@ sh test/run.sh --keep         # leave the server up to click through
 - `PORT` gives a run its own container and working directory.
 - CI runs it once per major and minor Jellyfin release from `targetAbi` in `build.yaml` on, as listed by `test/versions.py`. The same sweep locally: `for v in $(python3 test/versions.py); do JELLYFIN_IMAGE=jellyfin/jellyfin:$v sh test/run.sh; done`
 - There are no unit tests on the server side. `test/page.mjs` renders the page in jsdom against the answers the same run recorded.
-- `.github/scripts/screenshots.sh` rebuilds the README screenshots from a showcase library. Run it when a change alters what the table looks like.
+- `.github/scripts/screenshots.sh` rebuilds the README screenshots from a showcase library, on the newest release the test matrix covers. Run it when a change alters what the table looks like.
 
 ## Code style
 

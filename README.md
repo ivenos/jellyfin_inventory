@@ -29,7 +29,7 @@ Add the repository under Dashboard → Plugins → Repositories:
 https://raw.githubusercontent.com/ivenos/jellyfin_inventory/main/manifest.json
 ```
 
-Inventory then appears in the catalog under General. Restart the server after installing; the table is at Dashboard → Plugins → Inventory → Settings. A manual install is the zip from the [latest release](https://github.com/ivenos/jellyfin_inventory/releases/latest) unpacked into `config/plugins/Inventory/`.
+Inventory then appears in the catalog under General. Restart the server after installing; the table has its own entry under Plugins in the dashboard sidebar. A manual install is the zip from the [latest release](https://github.com/ivenos/jellyfin_inventory/releases/latest) unpacked into `config/plugins/Inventory/`.
 
 ## Columns
 
