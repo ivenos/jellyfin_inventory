@@ -46,6 +46,11 @@
       "commitMessagePrefix": "ci:"
     },
     {
+      "matchManagers": ["custom.regex"],
+      "matchUpdateTypes": ["minor", "patch"],
+      "automerge": true
+    },
+    {
       "matchPackageNames": ["Jellyfin.Controller", "Jellyfin.Model"],
       "enabled": false
     }
