@@ -5,7 +5,7 @@ set -eu
 IMAGE="${JELLYFIN_IMAGE:-jellyfin/jellyfin:12.0}"
 SDK_IMAGE="${SDK_IMAGE:-mcr.microsoft.com/dotnet/sdk:10.0}"
 NODE_IMAGE="${NODE_IMAGE:-node:24-alpine}"
-JSDOM_VERSION="${JSDOM_VERSION:-30.0.1}"
+JSDOM_VERSION="${JSDOM_VERSION:-30.1.0}"
 PORT="${PORT:-8097}"
 # Keyed by port, so a second run on another port cannot tear down the first one.
 CONTAINER="${CONTAINER:-jellyfin-inventory-test-$PORT}"

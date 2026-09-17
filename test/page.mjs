@@ -43,7 +43,7 @@ async function render(items, mode) {
         runScripts: 'dangerously',
         url: 'http://localhost/web/index.html',
         virtualConsole: new VirtualConsole()
-            .on('jsdomError', (e) => { if (e.type !== 'not implemented') { raised.push(e.message); } }),
+            .on('jsdomError', (e) => { if (!e.message.startsWith('Not implemented')) { raised.push(e.message); } }),
         beforeParse(window) {
             window.ApiClient = {
                 serverId: () => 'server',
@@ -353,11 +353,14 @@ async function render(items, mode) {
         // The web client keeps the view it left, and a second address for this page adds another.
         leave();
         await settle();
-        const second = window.document.importNode(
-            new window.DOMParser().parseFromString(source, 'text/html').querySelector('#InventoryPage'), true);
+        const copy = new window.DOMParser().parseFromString(source, 'text/html').querySelector('#InventoryPage');
+        const code = copy.querySelector('script').textContent;
+        // Taken out before the copy is inserted, since jsdom runs a script that arrives with it.
+        copy.querySelector('script').remove();
+        const second = window.document.importNode(copy, true);
         window.document.body.appendChild(second);
         const script = window.document.createElement('script');
-        script.textContent = second.querySelector('script').textContent;
+        script.textContent = code;
         window.document.body.appendChild(script);
         const schemas = asked.filter((url) => url.startsWith('Inventory/Schema')).length;
         second.dispatchEvent(new window.Event('pageshow'));
