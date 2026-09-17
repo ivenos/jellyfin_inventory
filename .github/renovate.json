@@ -1,12 +1,28 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
   "extends": ["config:recommended"],
+  "ignorePresets": [":ignoreModulesAndTests"],
   "dependencyDashboard": false,
   "labels": ["dependencies"],
   "minimumReleaseAge": "3 days",
   "minimumReleaseAgeBehaviour": "timestamp-optional",
   "platformAutomerge": false,
   "automergeStrategy": "squash",
+  "customManagers": [
+    {
+      "customType": "regex",
+      "managerFilePatterns": ["/^test/run\\.sh$/", "/^\\.github/scripts/screenshots\\.sh$/"],
+      "matchStrings": ["_IMAGE=\"\\$\\{\\w+:-(?<depName>node|mcr\\.microsoft\\.com/playwright):(?<currentValue>[^}]+)\\}\""],
+      "datasourceTemplate": "docker"
+    },
+    {
+      "customType": "regex",
+      "managerFilePatterns": ["/^test/run\\.sh$/"],
+      "matchStrings": ["JSDOM_VERSION=\"\\$\\{JSDOM_VERSION:-(?<currentValue>[^}]+)\\}\""],
+      "depNameTemplate": "jsdom",
+      "datasourceTemplate": "npm"
+    }
+  ],
   "packageRules": [
     {
       "matchManagers": ["github-actions"],
@@ -23,6 +39,11 @@
       "matchManagers": ["nuget"],
       "matchUpdateTypes": ["patch"],
       "automerge": true
+    },
+    {
+      "matchManagers": ["custom.regex"],
+      "groupName": "Test tooling",
+      "commitMessagePrefix": "ci:"
     },
     {
       "matchPackageNames": ["Jellyfin.Controller", "Jellyfin.Model"],

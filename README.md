@@ -10,7 +10,7 @@
 <a href="https://github.com/ivenos/jellyfin_inventory/releases"><picture><source media="(prefers-color-scheme: dark)" srcset="https://shieldcn.dev/github/downloads/ivenos/jellyfin_inventory.svg?variant=secondary&amp;mode=dark"><img alt="Downloads" src="https://shieldcn.dev/github/downloads/ivenos/jellyfin_inventory.svg?variant=secondary&amp;mode=light"></picture></a>
 <a href="LICENSE"><picture><source media="(prefers-color-scheme: dark)" srcset="https://shieldcn.dev/badge/license-GPL_3.0.svg?variant=secondary&amp;mode=dark"><img alt="License" src="https://shieldcn.dev/badge/license-GPL_3.0.svg?variant=secondary&amp;mode=light"></picture></a>
 
-Inventory is a Jellyfin plugin that puts everything in your libraries into one sortable, searchable table in the dashboard, from a whole series down to a single episode. It shows where the space has gone and what your files are made of, and exports the result as a spreadsheet.
+Inventory is a Jellyfin plugin that puts everything in your libraries into one sortable, searchable and filterable table in the dashboard, from a whole series down to a single episode. It shows where the space has gone and what your files are made of, and exports the result as a spreadsheet.
 
 <img alt="The movies table, with size, size per hour, bitrate, codec, resolution, HDR and audio" src=".github/assets/movies.png" width="48%">
 <img alt="The series table expanded to episodes, with seasons and series totaled from them" src=".github/assets/series.png" width="48%">
@@ -21,7 +21,7 @@ Inventory is a Jellyfin plugin that puts everything in your libraries into one s
 
 ## Installation
 
-Requires Jellyfin 12.0 or newer. On anything older the catalog stays empty.
+Requires Jellyfin 12.0 or newer. On anything older, Inventory does not appear in the catalog.
 
 Add the repository under Dashboard → Plugins → Repositories:
 
@@ -29,7 +29,7 @@ Add the repository under Dashboard → Plugins → Repositories:
 https://raw.githubusercontent.com/ivenos/jellyfin_inventory/main/manifest.json
 ```
 
-Inventory then appears in the catalog under General. Restart the server after installing; the table has its own entry under Plugins in the dashboard sidebar. A manual install is the zip from the [latest release](https://github.com/ivenos/jellyfin_inventory/releases/latest) unpacked into `config/plugins/Inventory/`.
+Inventory then appears in the catalog under General. Restart the server after installing; the table has its own entry under Plugins in the dashboard sidebar. A manual install is the zip from the [latest release](https://github.com/ivenos/jellyfin_inventory/releases/latest) unpacked into a folder `Inventory` in the `plugins` directory of the server's data directory, which is `/config/plugins` in the Docker image.
 
 ## Columns
 
@@ -47,17 +47,19 @@ Six endpoints under `/Inventory`, all requiring an administrator token. An API k
 
 | Endpoint | Parameters | Answers with |
 | --- | --- | --- |
-| `GET Schema` | `culture` | The populated media types with their levels, every column, the page size, the interface strings and the culture they were answered in |
-| `GET Items` | `mediaType`, `level`, `parentIds`, `columnLevel`, `search`, `sortBy`, `descending`, `startIndex`, `limit`, `culture` | One page of rows with the columns they are keyed by, how many rows there are in total, and the size and runtime behind them; `parentIds` returns the whole child set rather than a page |
-| `GET Export` | `mediaType`, `level`, `columnLevel`, `format`, `search`, `sortBy`, `descending`, `culture` | Every matching row as a `csv` or `ods` file, less the ones a match above them already accounts for |
+| `GET Schema` | `culture` | The populated media types with their levels, every column with the operators it can be filtered by, the page size, the most conditions `filters` may carry, the interface strings and the culture they were answered in |
+| `GET Items` | `mediaType`, `level`, `parentIds`, `columnLevel`, `search`, `filters`, `sortBy`, `descending`, `startIndex`, `limit`, `culture` | One page of rows with the columns they are keyed by, how many rows there are in total, and the size and runtime behind them; `parentIds` returns the whole child set rather than a page |
+| `GET Export` | `mediaType`, `level`, `columnLevel`, `format`, `search`, `filters`, `sortBy`, `descending`, `culture` | Every matching row as a `csv` or `ods` file, less the ones a match above them already accounts for |
 | `POST Columns` | `level`, and the column keys as a JSON array in the body | The stored selection |
 | `POST Expand` | `mediaType`, `level` | The stored level |
 | `POST PageSize` | `size` | The stored number of rows per page |
+
+`filters` is a JSON array of up to 20 conditions, and a row has to meet all of them: `[{"column":"height","op":"ge","value":1080}]`. `op` is one of the operators `Schema` lists for the column, out of `eq`, `ne`, `ge`, `le`, `contains`, `notContains`, `empty` and `notEmpty`, the last two taking no `value`. A value is in the unit `Items` answers in, which is bytes, seconds or bits per second, and a date is `yyyy-MM-dd`. An empty cell meets only `ne`, `notContains` and `empty`, and a cell that reads as mixed meets no condition.
 
 ## License
 
 Copyright © Iven Schlösser. Inventory is free software, licensed under the [GNU General Public License v3.0 only](LICENSE). You may use, modify and redistribute it. Anyone distributing a modified version must release it under the same license and make its source code available.
 
-Inventory builds on the Jellyfin.Controller and Jellyfin.Model packages, licensed under the GNU General Public License v3.0 only.
+Inventory builds on the Jellyfin.Controller and Jellyfin.Model packages, licensed under the GNU General Public License v3.0 only. The title of its dashboard page is set in Plus Jakarta Sans, whose Latin letters it embeds under the SIL Open Font License 1.1.
 
 Inventory is not affiliated with or endorsed by the Jellyfin project.

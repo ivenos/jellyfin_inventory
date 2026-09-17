@@ -198,7 +198,17 @@ until [ "$(curl -sf "$BASE/Inventory/Items?mediaType=Movie&limit=30" \
     | python3 -c "
 import json, sys
 rows = json.load(sys.stdin)['Rows']
-print(len({r['Values'].get('size') for r in rows}), len(rows))" 2>/dev/null)" = "18 18" ]; do
+print(len({r['Values'].get('size') for r in rows}), len(rows))" 2>/dev/null)" = "18 18" ] \
+   && [ "$(curl -sf "$BASE/Inventory/Schema" -H "Authorization: MediaBrowser Token=\"$TOKEN\"" \
+    | python3 -c "
+import json, sys
+print(' '.join('%s=%s' % (t['MediaType'], t['Count']) for t in json.load(sys.stdin)['MediaTypes']))" 2>/dev/null)" \
+        = "Movie=18 Series=3 MusicAlbum=18 Book=2 Photo=4" ] \
+   && [ "$(curl -sf "$BASE/Inventory/Items?mediaType=Series&level=Episode&columnLevel=Series&limit=30" \
+    -H "Authorization: MediaBrowser Token=\"$TOKEN\"" \
+    | python3 -c "
+import json, sys
+print(sum(1 for r in json.load(sys.stdin)['Rows'] if r['Values'].get('videoCodec')))" 2>/dev/null)" = "24" ]; do
     i=$((i + 1))
     [ "$i" -gt 60 ] && { echo; echo "library did not settle" >&2; exit 1; }
     [ $((i % 10)) = 0 ] && curl -sf -X POST "$BASE/Library/Refresh" \

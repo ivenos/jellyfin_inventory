@@ -15,10 +15,18 @@ public class PluginConfiguration : BasePluginConfiguration
     /// </summary>
     public const int MaxPageSize = 10000;
 
+    // Jellyfin's own configuration endpoint stores a null as it was sent.
+    private ColumnPreset[] _presets = [];
+    private ExpandPreference[] _expanded = [];
+
     /// <summary>
     /// Gets or sets the per-level column selections. A level without an entry uses the defaults.
     /// </summary>
-    public ColumnPreset[] Presets { get; set; } = [];
+    public ColumnPreset[] Presets
+    {
+        get => _presets;
+        set => _presets = value ?? [];
+    }
 
     /// <summary>
     /// Gets or sets the number of rows fetched per page.
@@ -28,7 +36,11 @@ public class PluginConfiguration : BasePluginConfiguration
     /// <summary>
     /// Gets or sets how far each media type is expanded when it opens.
     /// </summary>
-    public ExpandPreference[] Expanded { get; set; } = [];
+    public ExpandPreference[] Expanded
+    {
+        get => _expanded;
+        set => _expanded = value ?? [];
+    }
 
     /// <summary>
     /// Returns the columns stored for a level, or null if the user has not chosen any.

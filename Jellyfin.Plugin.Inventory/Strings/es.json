@@ -15,7 +15,7 @@
   "No": "No",
   "mediaType.Movie": "Películas",
   "mediaType.Series": "Series",
-  "mediaType.MusicAlbum": "Álbumes",
+  "mediaType.MusicAlbum": "Música",
   "mediaType.MusicVideo": "Vídeos musicales",
   "mediaType.Video": "Vídeos",
   "mediaType.Book": "Libros",
@@ -80,5 +80,15 @@
   "column.everyonePlayCount": "Reproducciones (todos)",
   "Expand": "Expandir",
   "Collapse": "Contraer",
-  "ColumnHint": "Intro ordena, Ctrl con una flecha mueve la columna"
+  "ColumnHint": "Intro ordena, Ctrl con una flecha mueve la columna",
+  "Filters": "Filtros",
+  "AddFilter": "Añadir filtro",
+  "RemoveFilter": "Quitar filtro",
+  "FilterColumn": "Columna",
+  "FilterCondition": "Condición",
+  "FilterValue": "Valor",
+  "op.contains": "contiene",
+  "op.notContains": "no contiene",
+  "op.empty": "está vacío",
+  "op.notEmpty": "no está vacío"
 }

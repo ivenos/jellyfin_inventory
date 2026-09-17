@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Globalization;
 using System.IO;
 using System.Linq;
@@ -38,7 +39,7 @@ public sealed class InventoryService : IDisposable
 
     private readonly object _userLock = new();
 
-    // Rows built before a library change are dropped the next time they are asked for.
+    // A set still building when the library changes is dropped the next time it is asked for.
     private int _generation;
 
     private int _userStamp;
@@ -97,7 +98,7 @@ public sealed class InventoryService : IDisposable
             types.Add(new MediaTypeInfo(
                 levels[0].ToString(),
                 Translations.Get(culture, "mediaType." + levels[0]),
-                counts[first],
+                levels[0] == BaseItemKind.MusicAlbum ? counts[^1] : counts[first],
                 available));
         }
 
@@ -128,6 +129,7 @@ public sealed class InventoryService : IDisposable
     /// <param name="everyone">Whether the rows carry the playback totals over every user.</param>
     /// <param name="columns">The columns to return.</param>
     /// <param name="search">An optional substring the name, series or path must contain.</param>
+    /// <param name="filters">The conditions a row has to meet, all of them.</param>
     /// <param name="sortBy">The column key to sort on.</param>
     /// <param name="descending">Whether to sort descending.</param>
     /// <param name="startIndex">The first row to return.</param>
@@ -143,6 +145,7 @@ public sealed class InventoryService : IDisposable
         bool everyone,
         IReadOnlyList<ColumnDefinition> columns,
         string? search,
+        IReadOnlyList<RowFilter> filters,
         string? sortBy,
         bool descending,
         int startIndex,
@@ -161,17 +164,18 @@ public sealed class InventoryService : IDisposable
         }
 
         IReadOnlyList<InventoryRow> rows;
+        var levels = Hierarchy.Levels(mediaType)!;
         var spanning = !string.IsNullOrWhiteSpace(search)
             && parentIds is not { Count: > 0 }
-            && kind == Hierarchy.Levels(mediaType)![0];
+            && kind == levels[0];
 
         if (spanning)
         {
             // A search reaches through the whole tab: typing an episode name in the series view has
             // to find the episode, which is not on the level being listed.
-            rows = Hierarchy.Levels(mediaType)!
+            rows = levels
                 .SelectMany(l => Rows(l, user, everyone))
-                .Where(r => Matches(r, search!))
+                .Where(r => Matches(r, search!) && Meets(r, filters))
                 .ToArray();
         }
         else
@@ -183,10 +187,24 @@ public sealed class InventoryService : IDisposable
                 var wanted = parentIds.ToHashSet();
                 rows = rows.Where(r => r.ParentId.HasValue && wanted.Contains(r.ParentId.Value)).ToArray();
             }
+            else if (levels.Count > 1 && kind == levels[0])
+            {
+                // A track filed loose beside the albums is on no row that opens to reach it.
+                var loose = Rows(levels[^1], user, everyone).Where(r => r.AncestorId is null).ToArray();
+                if (loose.Length > 0)
+                {
+                    rows = [.. rows, .. loose];
+                }
+            }
 
             if (!string.IsNullOrWhiteSpace(search))
             {
                 rows = rows.Where(r => Matches(r, search)).ToArray();
+            }
+
+            if (filters.Count > 0)
+            {
+                rows = rows.Where(r => Meets(r, filters)).ToArray();
             }
         }
 
@@ -256,6 +274,8 @@ public sealed class InventoryService : IDisposable
             || (row.SeriesName?.Contains(search, StringComparison.OrdinalIgnoreCase) ?? false)
             || (row.Path?.Contains(search, StringComparison.OrdinalIgnoreCase) ?? false);
 
+    private static bool Meets(InventoryRow row, IReadOnlyList<RowFilter> filters) => filters.All(f => f.Matches(row));
+
     private static IComparable? SortKey(object? value) => value switch
     {
         null => null,
@@ -284,6 +304,7 @@ public sealed class InventoryService : IDisposable
         }
 
         Interlocked.Increment(ref _generation);
+        _cache.Clear();
         _perUser.Clear();
         _everyone.Clear();
     }
@@ -347,19 +368,20 @@ public sealed class InventoryService : IDisposable
                 }).ToArray();
             }
 
-            var playback = _userDataManager.GetUserDataBatch(Items(kind), user);
+            var playback = _userDataManager.GetUserDataBatch(WithVersions(Items(kind), basis), user);
 
             return basis.Select(row =>
             {
-                if (!playback.TryGetValue(row.Id, out var data))
+                var copy = row.Copy();
+                copy.PlayCount = 0;
+                copy.Played = false;
+                foreach (var data in Records(playback, row))
                 {
-                    return row;
+                    copy.PlayCount += data.PlayCount;
+                    copy.LastPlayed = Later(copy.LastPlayed, data.LastPlayedDate);
+                    copy.Played |= data.Played;
                 }
 
-                var copy = row.Copy();
-                copy.PlayCount = data.PlayCount > 0 ? data.PlayCount : null;
-                copy.LastPlayed = data.LastPlayedDate;
-                copy.Played = data.Played;
                 return copy;
             }).ToArray();
         });
@@ -413,10 +435,15 @@ public sealed class InventoryService : IDisposable
             }).ToArray();
         }
 
-        var items = Items(kind);
+        var items = WithVersions(Items(kind), rows);
         var copies = rows.Select(r => r.Copy()).ToArray();
         var watchers = new List<int>?[copies.Length];
         var index = 0;
+
+        foreach (var copy in copies)
+        {
+            copy.EveryonePlayCount = 0;
+        }
 
         foreach (var user in users)
         {
@@ -424,23 +451,15 @@ public sealed class InventoryService : IDisposable
             for (var at = 0; at < copies.Length; at++)
             {
                 var copy = copies[at];
-                if (!playback.TryGetValue(copy.Id, out var data))
+                var played = false;
+                foreach (var data in Records(playback, copy))
                 {
-                    continue;
+                    copy.EveryonePlayCount += data.PlayCount;
+                    copy.EveryoneLastPlayed = Later(copy.EveryoneLastPlayed, data.LastPlayedDate);
+                    played |= data.Played;
                 }
 
-                if (data.PlayCount > 0)
-                {
-                    copy.EveryonePlayCount = (copy.EveryonePlayCount ?? 0) + data.PlayCount;
-                }
-
-                if (data.LastPlayedDate is { } played
-                    && (copy.EveryoneLastPlayed is null || played > copy.EveryoneLastPlayed))
-                {
-                    copy.EveryoneLastPlayed = played;
-                }
-
-                if (data.Played)
+                if (played)
                 {
                     (watchers[at] ??= []).Add(index);
                 }
@@ -451,14 +470,37 @@ public sealed class InventoryService : IDisposable
 
         for (var at = 0; at < copies.Length; at++)
         {
-            if (watchers[at] is { } set)
-            {
-                copies[at].PlayedBy = set;
-            }
+            copies[at].PlayedBy = watchers[at] ?? (IReadOnlyList<int>)[];
         }
 
         return copies;
     }
+
+    // Jellyfin keeps a play on the version that was played, and shows the film played by it.
+    private IReadOnlyList<BaseItem> WithVersions(IReadOnlyList<BaseItem> items, IReadOnlyList<InventoryRow> rows)
+    {
+        var versions = rows.SelectMany(r => r.Versions).Select(_libraryManager.GetItemById).OfType<BaseItem>().ToArray();
+        return versions.Length > 0 ? [.. items, .. versions] : items;
+    }
+
+    private static IEnumerable<UserItemData> Records(Dictionary<Guid, UserItemData> playback, InventoryRow row)
+    {
+        if (playback.TryGetValue(row.Id, out var own))
+        {
+            yield return own;
+        }
+
+        foreach (var version in row.Versions)
+        {
+            if (playback.TryGetValue(version, out var data))
+            {
+                yield return data;
+            }
+        }
+    }
+
+    private static DateTime? Later(DateTime? current, DateTime? candidate)
+        => candidate is { } value && (current is null || value > current) ? value : current;
 
     private static void FoldPlayback(InventoryRow row, IReadOnlyList<InventoryRow> children)
     {
@@ -467,8 +509,7 @@ public sealed class InventoryService : IDisposable
             return;
         }
 
-        var plays = children.Sum(c => c.PlayCount ?? 0);
-        row.PlayCount = plays > 0 ? plays : null;
+        row.PlayCount = children.Sum(c => c.PlayCount ?? 0);
         row.LastPlayed = children.Max(c => c.LastPlayed);
         row.Played = children.All(c => c.Played == true);
     }
@@ -480,10 +521,9 @@ public sealed class InventoryService : IDisposable
             return;
         }
 
-        var plays = children.Sum(c => c.EveryonePlayCount ?? 0);
-        row.EveryonePlayCount = plays > 0 ? plays : null;
+        row.EveryonePlayCount = children.Sum(c => c.EveryonePlayCount ?? 0);
         row.EveryoneLastPlayed = children.Max(c => c.EveryoneLastPlayed);
-        row.PlayedBy = children.Select(c => c.PlayedBy).Aggregate(Shared);
+        row.PlayedBy = children.Select(c => c.PlayedBy ?? []).Aggregate(Shared);
     }
 
     // Both sides list their users in the order the server gave them, so one pass down the two is enough.
@@ -550,10 +590,13 @@ public sealed class InventoryService : IDisposable
 
     private IReadOnlyList<InventoryRow> BuildRows(BaseItemKind kind)
     {
+        var watch = Stopwatch.StartNew();
         var levels = Hierarchy.Of(kind);
         var leaf = levels is null ? kind : levels[^1];
         var items = Items(kind);
         var roots = _libraryManager.GetUserRootFolder().Children.OfType<Folder>().ToList();
+        var libraries = new Dictionary<Guid, string?>();
+        var listed = items.Select(i => i.Id).ToHashSet();
         var rows = new List<InventoryRow>(items.Count);
 
         if (leaf == kind)
@@ -566,7 +609,7 @@ public sealed class InventoryService : IDisposable
 
             foreach (var item in items)
             {
-                var row = NewRow(item, roots);
+                var row = NewRow(item, roots, libraries, listed);
                 if (streamed)
                 {
                     ApplyStreams(row, _mediaSourceManager.GetMediaStreams(item.Id));
@@ -595,14 +638,14 @@ public sealed class InventoryService : IDisposable
 
             foreach (var item in items)
             {
-                var row = NewRow(item, roots);
+                var row = NewRow(item, roots, libraries, listed);
                 Fold(row, byParent[item.Id].ToArray());
                 row.Expandable = below[item.Id].Any();
                 rows.Add(row);
             }
         }
 
-        _logger.LogDebug("Built {Count} inventory rows for {Kind}", rows.Count, kind);
+        _logger.LogDebug("Built {Count} inventory rows for {Kind} in {Elapsed} ms", rows.Count, kind, watch.ElapsedMilliseconds);
         return rows;
     }
 
@@ -674,7 +717,7 @@ public sealed class InventoryService : IDisposable
             : null;
     }
 
-    private InventoryRow NewRow(BaseItem item, List<Folder> roots)
+    private InventoryRow NewRow(BaseItem item, List<Folder> roots, Dictionary<Guid, string?> libraries, HashSet<Guid> listed)
     {
         var row = new InventoryRow
         {
@@ -686,7 +729,7 @@ public sealed class InventoryService : IDisposable
             Size = item.Size,
             DateAdded = item.DateCreated > DateTime.MinValue ? item.DateCreated : null,
             Duration = item.RunTimeTicks is > 0 ? item.RunTimeTicks.Value / (double)TimeSpan.TicksPerSecond : null,
-            Library = _libraryManager.GetCollectionFolders(item, roots).FirstOrDefault()?.Name
+            Library = Library(item, roots, libraries)
         };
 
         if (item is Video video)
@@ -701,14 +744,19 @@ public sealed class InventoryService : IDisposable
                 row.Duration = ticks > 0 ? ticks / (double)TimeSpan.TicksPerSecond : null;
             }
 
-            if (video.LocalAlternateVersions.Length > 0 || video.LinkedAlternateVersions.Length > 0)
+            // Jellyfin 12.1 lists a version filed in another library as a row of its own, which weighs itself.
+            var versions = video.PrimaryVersionId is null
+                && (video.LocalAlternateVersions.Length > 0 || video.LinkedAlternateVersions.Length > 0)
+                ? video.GetAllVersions().Where(v => !v.Id.Equals(item.Id) && !listed.Contains(v.Id)).ToArray()
+                : [];
+
+            if (versions.Length > 0)
             {
                 // Several cuts of one film are one item, all one length, and any of them can be stacked.
-                var bytes = video.GetAllVersions()
-                    .Where(v => !v.Id.Equals(item.Id))
-                    .Sum(v => (v.Size ?? 0) + v.GetAdditionalParts().Sum(p => p.Size ?? 0));
+                var bytes = versions.Sum(v => (v.Size ?? 0) + v.GetAdditionalParts().Sum(p => p.Size ?? 0));
                 row.Size = bytes > 0 ? (row.Size ?? 0) + bytes : row.Size;
                 row.Rateable = false;
+                row.Versions = versions.Select(v => v.Id).ToArray();
             }
         }
 
@@ -734,6 +782,23 @@ public sealed class InventoryService : IDisposable
         }
 
         return row;
+    }
+
+    // One walk up the parents per folder, each step a query; without a parent it starts at the owner.
+    private string? Library(BaseItem item, List<Folder> roots, Dictionary<Guid, string?> known)
+    {
+        if (known.TryGetValue(item.ParentId, out var name))
+        {
+            return name;
+        }
+
+        name = _libraryManager.GetCollectionFolders(item, roots).FirstOrDefault()?.Name;
+        if (!item.ParentId.Equals(default))
+        {
+            known[item.ParentId] = name;
+        }
+
+        return name;
     }
 
     private static Guid? Identifier(Guid value) => value.Equals(default) ? null : value;

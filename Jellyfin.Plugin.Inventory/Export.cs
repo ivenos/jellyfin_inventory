@@ -1,4 +1,5 @@
 using System;
+using System.Buffers;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
@@ -16,6 +17,8 @@ namespace Jellyfin.Plugin.Inventory;
 /// </summary>
 public static class Export
 {
+    private static readonly SearchValues<char> _breaks = SearchValues.Create(",;\t\"\r\n");
+
     /// <summary>
     /// Writes the rows as comma separated values.
     /// </summary>
@@ -41,6 +44,11 @@ public static class Export
         ArgumentNullException.ThrowIfNull(output);
         ArgumentNullException.ThrowIfNull(culture);
 
+        if (culture.NumberFormat.NumberDecimalSeparator is not ("." or ","))
+        {
+            culture = CultureInfo.InvariantCulture;
+        }
+
         // Where a comma is the decimal separator it cannot also separate the fields.
         var separator = string.Equals(culture.NumberFormat.NumberDecimalSeparator, ",", StringComparison.Ordinal)
             ? ';'
@@ -50,7 +58,7 @@ public static class Export
         output.Write(Encoding.UTF8.GetPreamble());
 
         using var writer = new StreamWriter(output, new UTF8Encoding(false), 64 * 1024, leaveOpen: true) { NewLine = "\r\n" };
-        writer.WriteLine(string.Join(separator, Quote(headers.Select(Literal), separator)));
+        writer.WriteLine(string.Join(separator, headers.Select(Text)));
 
         foreach (var row in rows)
         {
@@ -61,7 +69,7 @@ public static class Export
                 values.Add(Scalar(row.Values.GetValueOrDefault(column.Key), culture, yes, no));
             }
 
-            writer.WriteLine(string.Join(separator, Quote(values, separator)));
+            writer.WriteLine(string.Join(separator, values));
         }
     }
 
@@ -111,29 +119,27 @@ public static class Export
         writer.Write(content);
     }
 
-    private static IEnumerable<string> Quote(IEnumerable<string> values, char separator)
+    // Quoted on any separator a reader may split on, or a name holding one starts a formula there.
+    private static string Text(string value)
     {
-        foreach (var value in values)
-        {
-            yield return value.AsSpan().IndexOfAny([separator, '"', '\n', '\r']) >= 0
-                ? '"' + value.Replace("\"", "\"\"", StringComparison.Ordinal) + '"'
-                : value;
-        }
+        var cell = Literal(Printable(value));
+        return cell.AsSpan().IndexOfAny(_breaks) >= 0
+            ? '"' + cell.Replace("\"", "\"\"", StringComparison.Ordinal) + '"'
+            : cell;
     }
 
     private static string Scalar(object? value, CultureInfo culture, string yes, string no) => value switch
     {
         null => string.Empty,
         // The headers are translated and the numbers are local, so a truth value reads that way too.
-        bool flag => flag ? yes : no,
+        bool flag => Text(flag ? yes : no),
         // The one date format every reader takes whatever it is set to.
         DateTime date => date.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
         IFormattable number => number.ToString(null, culture),
-        _ => Literal(Printable(value.ToString() ?? string.Empty))
+        _ => Text(value.ToString() ?? string.Empty)
     };
 
-    // A cell a spreadsheet would read as a formula is prefixed, since a file name is not something
-    // the person exporting chose.
+    // A cell a spreadsheet would read as a formula is prefixed, since nobody exporting chose the file names.
     private static string Literal(string value)
         => value.Length > 0 && "=+-@\t\r".Contains(value[0], StringComparison.Ordinal) ? "'" + value : value;
 

@@ -25,6 +25,13 @@ namespace Jellyfin.Plugin.Inventory;
 public class InventoryController : ControllerBase
 {
     private static readonly object _configLock = new();
+
+    // Any other name is cached for good, and a private-use one like "x-a" has no number format.
+    private static readonly HashSet<string> _cultures = CultureInfo.GetCultures(CultureTypes.AllCultures)
+        .Select(c => c.Name)
+        .Where(n => n.Length > 0)
+        .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
     private readonly InventoryService _inventory;
     private readonly IUserManager _userManager;
     private readonly IApplicationPaths _paths;
@@ -59,11 +66,17 @@ public class InventoryController : ControllerBase
 
     // Reading a playback record copies the whole set of rows, and the totals cost a query per user
     // on top, so a table that shows neither is answered from the shared set.
-    private User? Reader(IReadOnlyList<ColumnDefinition> columns, string? sortBy)
-        => Uses(columns, sortBy, ColumnSource.User) ? Caller : null;
+    private User? Reader(IReadOnlyList<ColumnDefinition> columns, string? sortBy, IReadOnlyList<RowFilter> filters)
+        => Uses(columns, sortBy, filters, ColumnSource.User) ? Caller : null;
 
-    private static bool Uses(IReadOnlyList<ColumnDefinition> columns, string? sortBy, ColumnSource source)
-        => columns.Any(c => c.Source == source) || Columns.Find(sortBy)?.Source == source;
+    private static bool Uses(
+        IReadOnlyList<ColumnDefinition> columns,
+        string? sortBy,
+        IReadOnlyList<RowFilter> filters,
+        ColumnSource source)
+        => columns.Any(c => c.Source == source)
+            || Columns.Find(sortBy)?.Source == source
+            || filters.Any(f => f.Column.Source == source);
 
     /// <summary>
     /// Gets the table's shape: the populated media types with their levels, every available column,
@@ -90,6 +103,7 @@ public class InventoryController : ControllerBase
             }),
             Columns = Columns.All.Select(c => Describe(c, culture)),
             PageSize = Math.Clamp(config.PageSize, 1, PluginConfiguration.MaxPageSize),
+            MaxFilters = RowFilter.MaxCount,
             Culture = Translations.Resolve(culture),
             Strings = Translations.All(culture)
         });
@@ -106,12 +120,15 @@ public class InventoryController : ControllerBase
     /// their parent's table. Defaults to the level being listed.</param>
     /// <param name="culture">The culture to translate the column headers into.</param>
     /// <param name="search">An optional substring the name, series or path must contain.</param>
+    /// <param name="filters">Conditions every row has to meet, as a JSON array of objects with
+    /// "column", "op" and "value".</param>
     /// <param name="sortBy">The column to sort on.</param>
     /// <param name="descending">Whether to sort descending.</param>
     /// <param name="startIndex">The first row to return.</param>
     /// <param name="limit">How many rows to return.</param>
     /// <response code="200">The requested page.</response>
-    /// <response code="400">The media type, level, column level or sort column is not known.</response>
+    /// <response code="400">The media type, level, column level or sort column is not known, or a
+    /// filter cannot be read.</response>
     /// <returns>The page of rows.</returns>
     [HttpGet("Items")]
     [ProducesResponseType(StatusCodes.Status200OK)]
@@ -123,6 +140,7 @@ public class InventoryController : ControllerBase
         [FromQuery] string? columnLevel,
         [FromQuery] string? culture,
         [FromQuery] string? search,
+        [FromQuery] string? filters,
         [FromQuery] string? sortBy,
         [FromQuery] bool descending = false,
         [FromQuery] int startIndex = 0,
@@ -148,6 +166,12 @@ public class InventoryController : ControllerBase
             return BadRequest($"'{sortBy}' is not a column.");
         }
 
+        var conditions = RowFilter.Parse(filters, out var unreadable);
+        if (unreadable is not null)
+        {
+            return BadRequest(unreadable);
+        }
+
         var columns = Columns.Resolve(config.GetColumns(selection), selection);
 
         // A Guid[] would only bind from a repeated parameter, so the ids arrive comma separated.
@@ -166,10 +190,11 @@ public class InventoryController : ControllerBase
             mediaType,
             level,
             parents,
-            Reader(columns, sortBy),
-            Uses(columns, sortBy, ColumnSource.Everyone),
+            Reader(columns, sortBy, conditions),
+            Uses(columns, sortBy, conditions, ColumnSource.Everyone),
             columns,
             search,
+            conditions,
             sortBy,
             descending,
             expanding ? 0 : Math.Max(0, startIndex),
@@ -196,10 +221,12 @@ public class InventoryController : ControllerBase
     /// <param name="format">Either "csv" or "ods".</param>
     /// <param name="culture">The culture the headers appear in.</param>
     /// <param name="search">An optional substring to filter on.</param>
+    /// <param name="filters">Conditions every row has to meet, as <c>Items</c> takes them.</param>
     /// <param name="sortBy">The column that decides the row order.</param>
     /// <param name="descending">Whether that order is reversed.</param>
     /// <response code="200">The spreadsheet.</response>
-    /// <response code="400">The media type, level, column level, format or sort column is not known.</response>
+    /// <response code="400">The media type, level, column level, format or sort column is not
+    /// known, or a filter cannot be read.</response>
     /// <returns>A file download.</returns>
     [HttpGet("Export")]
     [ProducesResponseType(StatusCodes.Status200OK)]
@@ -211,6 +238,7 @@ public class InventoryController : ControllerBase
         [FromQuery] string format,
         [FromQuery] string? culture,
         [FromQuery] string? search,
+        [FromQuery] string? filters,
         [FromQuery] string? sortBy,
         [FromQuery] bool descending = false)
     {
@@ -238,6 +266,12 @@ public class InventoryController : ControllerBase
             return BadRequest($"'{sortBy}' is not a column.");
         }
 
+        var conditions = RowFilter.Parse(filters, out var unreadable);
+        if (unreadable is not null)
+        {
+            return BadRequest(unreadable);
+        }
+
         var columns = Columns.Resolve(Configuration.GetColumns(selection), selection);
         var headers = columns.Select(c => Translations.Get(culture, "column." + c.Key)).ToArray();
 
@@ -245,10 +279,11 @@ public class InventoryController : ControllerBase
             mediaType,
             level,
             null,
-            Reader(columns, sortBy),
-            Uses(columns, sortBy, ColumnSource.Everyone),
+            Reader(columns, sortBy, conditions),
+            Uses(columns, sortBy, conditions, ColumnSource.Everyone),
             columns,
             search,
+            conditions,
             sortBy,
             descending,
             0,
@@ -272,21 +307,28 @@ public class InventoryController : ControllerBase
                 Options = FileOptions.DeleteOnClose | FileOptions.Asynchronous,
             });
 
-        if (isOds)
+        try
         {
-            Export.Ods(spool, columns, headers, page.Rows, name, yes, no, HttpContext.RequestAborted);
+            if (isOds)
+            {
+                Export.Ods(spool, columns, headers, page.Rows, name, yes, no, HttpContext.RequestAborted);
+            }
+            else
+            {
+                Export.Csv(spool, columns, headers, page.Rows, Locale(culture), yes, no, HttpContext.RequestAborted);
+            }
+
+            // Set once the file exists: the error page inherits whatever headers are already on the response.
+            Response.ContentType = isOds ? "application/vnd.oasis.opendocument.spreadsheet" : "text/csv; charset=utf-8";
+            Response.Headers.ContentDisposition = attachment;
+            Response.ContentLength = spool.Length;
+            spool.Position = 0;
+            await spool.CopyToAsync(Response.Body, HttpContext.RequestAborted).ConfigureAwait(false);
         }
-        else
+        catch (OperationCanceledException) when (HttpContext.RequestAborted.IsCancellationRequested)
         {
-            Export.Csv(spool, columns, headers, page.Rows, Locale(culture), yes, no, HttpContext.RequestAborted);
         }
 
-        // Set once the file exists: the error page inherits whatever headers are already on the response.
-        Response.ContentType = isOds ? "application/vnd.oasis.opendocument.spreadsheet" : "text/csv; charset=utf-8";
-        Response.Headers.ContentDisposition = attachment;
-        Response.ContentLength = spool.Length;
-        spool.Position = 0;
-        await spool.CopyToAsync(Response.Body, HttpContext.RequestAborted).ConfigureAwait(false);
         return new EmptyResult();
     }
 
@@ -416,22 +458,7 @@ public class InventoryController : ControllerBase
 
     // The headers are translated, so the numbers beside them are written the same way round.
     private static CultureInfo Locale(string? culture)
-    {
-        if (string.IsNullOrWhiteSpace(culture))
-        {
-            return CultureInfo.InvariantCulture;
-        }
-
-        try
-        {
-            // Anything else is cached forever, so an invented name is a megabyte every few thousand.
-            return CultureInfo.GetCultureInfo(culture, predefinedOnly: true);
-        }
-        catch (CultureNotFoundException)
-        {
-            return CultureInfo.InvariantCulture;
-        }
-    }
+        => culture is not null && _cultures.Contains(culture) ? CultureInfo.GetCultureInfo(culture) : CultureInfo.InvariantCulture;
 
     private static object Describe(ColumnDefinition column, string? culture) => new
     {
@@ -439,6 +466,7 @@ public class InventoryController : ControllerBase
         Label = Translations.Get(culture, "column." + column.Key),
         Group = Translations.Get(culture, "group." + column.Group),
         GroupKey = column.Group,
-        Format = column.Format.ToString()
+        Format = column.Format.ToString(),
+        Operators = RowFilter.Operators(column.Format)
     };
 }

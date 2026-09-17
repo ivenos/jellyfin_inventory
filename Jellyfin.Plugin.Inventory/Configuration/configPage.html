@@ -9,6 +9,27 @@
     <div data-role="content">
         <div class="content-primary">
             <style>
+                /* The web client sizes a page to the window below the app bar, and the table takes what the rest leaves. */
+                #InventoryPage, #InventoryPage > [data-role="content"], #InventoryPage .content-primary {
+                    display: flex; flex-direction: column; min-height: 0;
+                }
+                #InventoryPage > [data-role="content"], #InventoryPage .content-primary { flex: 1 1 auto; }
+                /* Clipped, a window too low for the table's least height would cut the pager off. */
+                #InventoryPage > [data-role="content"] { overflow: visible; }
+                /* The web client keeps room for the music controls twice, and they only show while something plays. */
+                #InventoryPage .content-primary { padding-bottom: 0 !important; }
+                #InventoryPage { padding-bottom: 1em !important; }
+                @font-face { font-family: "InventoryBrand"; font-weight: 700; font-display: block;
+                    src: url(data:font/woff2;base64,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) format("woff2"); }
+                #InventoryPage .invBrand { line-height: 1; margin-bottom: .35em; }
+                .invBrand a {
+                    display: inline-flex; align-items: center; gap: .18em; color: var(--jf-palette-text-primary, inherit);
+                    text-decoration: none; font: 700 1.1em/1 "InventoryBrand", sans-serif; letter-spacing: -.05em;
+                }
+                .invBrand svg { width: 1.2em; height: 1.2em; flex: none; }
+                /* The logo centers the capitals on the mark, and the box of the line sits 0.036em above them. */
+                .invBrand span { position: relative; top: -.036em; }
+                body:has(.nowPlayingBar:not(.nowPlayingBar-hidden)) #InventoryPage { padding-bottom: 5em !important; }
                 .invBar { display: flex; flex-wrap: wrap; gap: .5em; align-items: center; margin-bottom: 1em; }
                 .invTypes { display: flex; flex-wrap: wrap; gap: .4em; flex: 1 1 auto; }
                 .invType {
@@ -37,7 +58,7 @@
                 .invTable th.dropAfter { box-shadow: inset -2px 0 0 var(--jf-palette-primary-main, #00a4dc); }
                 [dir="rtl"] .invTable th.dropBefore { box-shadow: inset -2px 0 0 var(--jf-palette-primary-main, #00a4dc); }
                 [dir="rtl"] .invTable th.dropAfter { box-shadow: inset 2px 0 0 var(--jf-palette-primary-main, #00a4dc); }
-                .invSearch { max-width: 20em; }
+                .invSearch { flex: 1 1 10em; max-width: 20em; }
                 .invPanel {
                     border: 1px solid var(--jf-palette-divider, rgba(255,255,255,.15));
                     border-radius: var(--jf-shape-borderRadius, 4px);
@@ -48,14 +69,32 @@
                 .invGroup h4 { margin: 0 0 .5em; color: var(--jf-palette-text-secondary, inherit); font-weight: 500; }
                 .invGroup label { display: block; padding: .15em 0; cursor: pointer; }
                 .invGroup input { margin-right: .5em; accent-color: var(--jf-palette-primary-main, #00a4dc); }
-                .invScroll { max-height: 70vh; overflow: auto; border-radius: var(--jf-shape-borderRadius, 4px); }
+                .invFilter { display: flex; flex-wrap: wrap; gap: .5em; align-items: center; margin-bottom: .6em; }
+                .invFilter select { width: auto; min-width: 9em; }
+                .invFilter .invOp select { min-width: 5em; }
+                .invFilter input { width: auto; max-width: 14em; }
+                .invFilter .invUnit { color: var(--jf-palette-text-secondary, inherit); }
+                .invDrop {
+                    border: none; background: none; cursor: pointer; padding: 0; font-size: 1.3em;
+                    color: var(--jf-palette-text-secondary, inherit); min-width: 24px; min-height: 24px;
+                }
+                .invDrop:hover { color: var(--jf-palette-primary-main, #00a4dc); }
+                .invScroll {
+                    flex: 0 0 auto; min-height: 0; overflow: auto;
+                    border-radius: var(--jf-shape-borderRadius, 4px);
+                }
+                /* Only rows that fill the least height give way to a low window, or a short table shrinks out of sight. */
+                .invScroll:has(tbody tr:nth-child(5)) { flex-shrink: 1; min-height: 12em; }
+                .invFilter input[aria-invalid="true"] { box-shadow: inset 0 0 0 2px var(--jf-palette-error-main, #f44336); }
                 table.invTable { border-collapse: collapse; width: 100%; font-size: .92em; }
                 .invTable th, .invTable td {
                     padding: .5em .75em; text-align: start; white-space: nowrap;
                     border-bottom: 1px solid var(--jf-palette-divider, rgba(255,255,255,.1));
                 }
+                /* Firefox draws sticky cells a little low after a wheel scroll, and the rows show above them. */
+                .invTable thead { position: sticky; top: 0; z-index: 1; }
                 .invTable th {
-                    position: sticky; top: 0; z-index: 1; cursor: pointer; user-select: none; font-weight: 600;
+                    cursor: pointer; user-select: none; font-weight: 600;
                     background: var(--jf-palette-background-paper, #202020);
                     color: var(--jf-palette-text-secondary, inherit);
                     /* The collapsed border belongs to the table and scrolls away under the header. */
@@ -81,7 +120,7 @@
                     width: 2em; min-width: 24px; min-height: 24px;
                 }
                 .invTwisty:hover { color: var(--jf-palette-primary-main, #00a4dc); }
-                .invTwisty:focus-visible, .invType:focus-visible, .invTable th:focus-visible {
+                .invTwisty:focus-visible, .invType:focus-visible, .invDrop:focus-visible, .invTable th:focus-visible, .invBrand a:focus-visible {
                     outline: 2px solid var(--jf-palette-primary-main, #00a4dc); outline-offset: -2px;
                 }
                 .invIndent { display: inline-block; }
@@ -118,14 +157,26 @@
                 }
             </style>
 
-            <h2 class="sectionTitle" id="invTitle">Inventory</h2>
+            <h2 class="sectionTitle invBrand">
+                <a href="https://github.com/ivenos/jellyfin_inventory" target="_blank" rel="noopener noreferrer" title="github.com/ivenos/jellyfin_inventory">
+                    <svg viewBox="32 32 448 448" aria-hidden="true" focusable="false">
+                        <defs><linearGradient id="invMarkGradient" gradientUnits="userSpaceOnUse" x1="34" y1="128" x2="478" y2="384"><stop offset="0" stop-color="#AA5CC3"/><stop offset="1" stop-color="#00A4DC"/></linearGradient></defs>
+                        <path fill="url(#invMarkGradient)" fill-rule="evenodd" d="M480 256C480 286.2 479.7 326.1 479.1 346.6C478.6 367.1 477.7 369.6 476.6 378.8C475.4 388.1 474 395.2 472.3 402.2C470.5 409.1 468.5 415 466.1 420.6C463.8 426.2 461.1 431.1 458.1 435.7C455.1 440.2 451.8 444.3 448 448C444.3 451.8 440.2 455.1 435.7 458.1C431.1 461.1 426.2 463.8 420.6 466.1C415 468.5 409.1 470.5 402.2 472.3C395.2 474 388.1 475.4 378.8 476.6C369.6 477.7 367.1 478.6 346.6 479.1C326.1 479.7 286.2 480 256 480C225.8 480 185.9 479.7 165.4 479.1C144.9 478.6 142.4 477.7 133.2 476.6C123.9 475.4 116.8 474 109.8 472.3C102.9 470.5 97 468.5 91.4 466.1C85.8 463.8 80.9 461.1 76.3 458.1C71.8 455.1 67.7 451.8 64 448C60.2 444.3 56.9 440.2 53.9 435.7C50.9 431.1 48.2 426.2 45.9 420.6C43.5 415 41.5 409.1 39.7 402.2C38 395.2 36.6 388.1 35.4 378.8C34.3 369.6 33.4 367.1 32.9 346.6C32.3 326.1 32 286.2 32 256C32 225.8 32.3 185.9 32.9 165.4C33.4 144.9 34.3 142.4 35.4 133.2C36.6 123.9 38 116.8 39.7 109.8C41.5 102.9 43.5 97 45.9 91.4C48.2 85.8 50.9 80.9 53.9 76.3C56.9 71.8 60.2 67.7 64 64C67.7 60.2 71.8 56.9 76.3 53.9C80.9 50.9 85.8 48.2 91.4 45.9C97 43.5 102.9 41.5 109.8 39.7C116.8 38 123.9 36.6 133.2 35.4C142.4 34.3 144.9 33.4 165.4 32.9C185.9 32.3 225.8 32 256 32C286.2 32 326.1 32.3 346.6 32.9C367.1 33.4 369.6 34.3 378.8 35.4C388.1 36.6 395.2 38 402.2 39.7C409.1 41.5 415 43.5 420.6 45.9C426.2 48.2 431.1 50.9 435.7 53.9C440.2 56.9 444.3 60.2 448 64C451.8 67.7 455.1 71.8 458.1 76.3C461.1 80.9 463.8 85.8 466.1 91.4C468.5 97 470.5 102.9 472.3 109.8C474 116.8 475.4 123.9 476.6 133.2C477.7 142.4 478.6 144.9 479.1 165.4C479.7 185.9 480 225.8 480 256ZM416 256C416 277.6 415.8 306.1 415.4 320.7C415 335.4 414.4 337.1 413.6 343.7C412.7 350.4 411.7 355.4 410.5 360.4C409.2 365.4 407.8 369.6 406.1 373.6C404.4 377.6 402.5 381.1 400.4 384.3C398.2 387.6 395.8 390.5 393.2 393.2C390.5 395.8 387.6 398.2 384.3 400.4C381.1 402.5 377.6 404.4 373.6 406.1C369.6 407.8 365.4 409.2 360.4 410.5C355.4 411.7 350.4 412.7 343.7 413.6C337.1 414.4 335.4 415 320.7 415.4C306.1 415.8 277.6 416 256 416C234.4 416 205.9 415.8 191.3 415.4C176.6 415 174.9 414.4 168.3 413.6C161.6 412.7 156.6 411.7 151.6 410.5C146.6 409.2 142.4 407.8 138.4 406.1C134.4 404.4 130.9 402.5 127.7 400.4C124.4 398.2 121.5 395.8 118.8 393.2C116.2 390.5 113.8 387.6 111.6 384.3C109.5 381.1 107.6 377.6 105.9 373.6C104.2 369.6 102.8 365.4 101.5 360.4C100.3 355.4 99.3 350.4 98.4 343.7C97.6 337.1 97 335.4 96.6 320.7C96.2 306.1 96 277.6 96 256C96 234.4 96.2 205.9 96.6 191.3C97 176.6 97.6 174.9 98.4 168.3C99.3 161.6 100.3 156.6 101.5 151.6C102.8 146.6 104.2 142.4 105.9 138.4C107.6 134.4 109.5 130.9 111.6 127.7C113.8 124.4 116.2 121.5 118.8 118.8C121.5 116.2 124.4 113.8 127.7 111.6C130.9 109.5 134.4 107.6 138.4 105.9C142.4 104.2 146.6 102.8 151.6 101.5C156.6 100.3 161.6 99.3 168.3 98.4C174.9 97.6 176.6 97 191.3 96.6C205.9 96.2 234.4 96 256 96C277.6 96 306.1 96.2 320.7 96.6C335.4 97 337.1 97.6 343.7 98.4C350.4 99.3 355.4 100.3 360.4 101.5C365.4 102.8 369.6 104.2 373.6 105.9C377.6 107.6 381.1 109.5 384.3 111.6C387.6 113.8 390.5 116.2 393.2 118.8C395.8 121.5 398.2 124.4 400.4 127.7C402.5 130.9 404.4 134.4 406.1 138.4C407.8 142.4 409.2 146.6 410.5 151.6C411.7 156.6 412.7 161.6 413.6 168.3C414.4 174.9 415 176.6 415.4 191.3C415.8 205.9 416 234.4 416 256ZM182 162H330A22 22 0 0 1 330 206H182A22 22 0 0 1 182 162ZM182 234H274A22 22 0 0 1 274 278H182A22 22 0 0 1 182 234ZM182 306H218A22 22 0 0 1 218 350H182A22 22 0 0 1 182 306Z"/>
+                    </svg>
+                    <span id="invTitle">Inventory</span>
+                </a>
+            </h2>
 
             <div class="invBar">
                 <div class="invTypes" id="invTypes"></div>
-                <input is="emby-input" type="search" id="invSearch" class="invSearch emby-input" />
+                <input type="search" id="invSearch" class="invSearch emby-input" />
                 <button is="emby-button" type="button" id="invColumnsBtn" class="raised emby-button"
                         aria-expanded="false" aria-controls="invColumnsPanel">
                     <span id="invColumnsLabel"></span>
+                </button>
+                <button is="emby-button" type="button" id="invFilterBtn" class="raised emby-button"
+                        aria-expanded="false" aria-controls="invFilterPanel">
+                    <span id="invFilterLabel"></span>
                 </button>
                 <button is="emby-button" type="button" id="invCsv" class="raised emby-button"><span>CSV</span></button>
                 <button is="emby-button" type="button" id="invOds" class="raised emby-button"><span>ODS</span></button>
@@ -140,6 +191,11 @@
 
             <div class="invPanel" id="invColumnsPanel" style="display:none">
                 <div class="invGroups" id="invGroups"></div>
+            </div>
+
+            <div class="invPanel" id="invFilterPanel" style="display:none">
+                <div id="invFilters"></div>
+                <button is="emby-button" type="button" id="invFilterAdd" class="raised emby-button"><span id="invFilterAddLabel"></span></button>
             </div>
 
             <div class="invScroll">
@@ -167,13 +223,15 @@
 
     <script type="text/javascript">
         (function () {
-            var page = document.querySelector('#InventoryPage');
+            // The web client can still hold an earlier view of this page, whose controls are taken.
+            var page = document.querySelector('#InventoryPage:not([data-bound])');
+            page.setAttribute('data-bound', '');
             var showing = false;
             // Jellyfin keeps the chosen interface language on the root element and updates it live.
             var culture = document.documentElement.getAttribute('lang') || 'en-US';
             try { (0).toLocaleString(culture); } catch (e) { culture = 'en-US'; }
             var plural = new Intl.PluralRules(culture);
-            var state = { type: null, level: null, levels: [], expandTo: 0, sortBy: null, descending: false, start: 0, limit: 100, search: '', total: 0 };
+            var state = { type: null, level: null, levels: [], expandTo: 0, sortBy: null, descending: false, start: 0, limit: 100, search: '', filters: [], total: 0 };
             var schema = { mediaTypes: [], columns: [], strings: {} };
             // Every response is checked against this, so a slower earlier one cannot paint over a later.
             var generation = 0;
@@ -255,6 +313,58 @@
                 return ['Bytes', 'BytesPerHour', 'Duration', 'Bitrate', 'FrameRate', 'Number', 'Plain'].indexOf(kind) !== -1;
             }
 
+            function columnOf(key) {
+                return schema.columns.filter(function (column) { return column.Key === key; })[0];
+            }
+
+            // The value box takes the unit the table prints, the server the one it keeps.
+            function scale(format) {
+                switch (format) {
+                    case 'Bytes':
+                    case 'BytesPerHour': return { by: 1073741824, unit: 'GB' };
+                    case 'Duration': return { by: 60, unit: 'min' };
+                    case 'Bitrate': return { by: 1000, unit: 'kbit/s' };
+                    default: return { by: 1, unit: '' };
+                }
+            }
+
+            var bare = { empty: true, notEmpty: true };
+
+            function operand(filter, format) {
+                var text = filter.value;
+                if (format === 'Date') { return /^\d{4}-\d{2}-\d{2}$/.test(text) ? text : null; }
+                if (!isNumeric(format)) { return text === '' ? null : text; }
+                var number = /^[+-]?(\d+([.,]\d*)?|[.,]\d+)$/.test(text) ? Number(text.replace(',', '.')) : NaN;
+                return isFinite(number) ? String(number * scale(format).by) : null;
+            }
+
+            function conditions() {
+                var list = [];
+                state.filters.forEach(function (filter) {
+                    var column = columnOf(filter.column);
+                    if (!column) { return; }
+                    if (bare[filter.op]) {
+                        list.push({ column: filter.column, op: filter.op });
+                        return;
+                    }
+
+                    var value = operand(filter, column.Format);
+                    if (value !== null) { list.push({ column: filter.column, op: filter.op, value: value }); }
+                });
+                return list;
+            }
+
+            // A folder row has no single value to hold a condition against, so a filtered table
+            // lists the level the tab is expanded to, flat.
+            function listing() {
+                var filters = conditions();
+                var opened = filters.length ? state.levels[state.expandTo] : null;
+                return {
+                    level: opened ? opened.Level : state.level,
+                    filters: filters.length ? JSON.stringify(filters) : ''
+                };
+            }
+
             // A number column pushes its indentation against the far edge, the same at every depth.
             function tree(column) {
                 return column === firstColumn && anyExpandable;
@@ -265,6 +375,8 @@
                 page.querySelector('#invSearch').setAttribute('placeholder', t('Search', 'Search'));
                 page.querySelector('#invSearch').setAttribute('aria-label', t('Search', 'Search'));
                 page.querySelector('#invColumnsLabel').textContent = t('Columns', 'Columns');
+                page.querySelector('#invFilterAddLabel').textContent = t('AddFilter', 'Add filter');
+                labelFilters();
                 page.querySelector('#invSizeLabel').textContent = t('RowsPerPage', 'Rows per page');
                 page.querySelector('#invPrevLabel').textContent = t('Previous', 'Previous');
                 page.querySelector('#invNextLabel').textContent = t('Next', 'Next');
@@ -316,7 +428,7 @@
 
             function renderExpandBar() {
                 var host = page.querySelector('#invLevels');
-                if (state.levels.length < 2 || state.search) {
+                if (state.levels.length < 2 || (state.search && !conditions().length)) {
                     host.style.display = 'none';
                     return;
                 }
@@ -380,7 +492,160 @@
                     url: url('Expand', { mediaType: state.type, level: level })
                 }).catch(function () { /* the view is already updated; remembering is best effort */ });
 
+                // A filtered table lists that level itself, and its pages are not the ones before.
+                if (conditions().length) { state.start = 0; }
                 // Drawing the page again is what discards a slower earlier chain.
+                load();
+            }
+
+            function labelFilters() {
+                var count = conditions().length;
+                page.querySelector('#invFilterLabel').textContent = t('Filters', 'Filters')
+                    + (count ? ' (' + count.toLocaleString(culture) + ')' : '');
+                page.querySelector('#invFilterAdd').disabled = state.filters.length >= schema.maxFilters;
+            }
+
+            function picker(label) {
+                var wrap = document.createElement('div');
+                wrap.className = 'invSelect selectContainer selectContainer-inline';
+                var select = document.createElement('select');
+                select.className = 'emby-select-withcolor emby-select';
+                select.setAttribute('aria-label', label);
+                wrap.appendChild(select);
+                return select;
+            }
+
+            function choice(select, value, label) {
+                var option = document.createElement('option');
+                option.value = value;
+                option.textContent = label;
+                select.appendChild(option);
+            }
+
+            function filterRow(filter) {
+                var row = document.createElement('div');
+                row.className = 'invFilter';
+                var format = columnOf(filter.column).Format;
+
+                var column = picker(t('FilterColumn', 'Column'));
+                var groups = {};
+                schema.columns.forEach(function (offered) {
+                    if (!groups[offered.GroupKey]) {
+                        groups[offered.GroupKey] = document.createElement('optgroup');
+                        groups[offered.GroupKey].label = offered.Group;
+                        column.appendChild(groups[offered.GroupKey]);
+                    }
+                    choice(groups[offered.GroupKey], offered.Key, offered.Label);
+                });
+                column.value = filter.column;
+                column.addEventListener('change', function () {
+                    filter.column = column.value;
+                    filter.op = columnOf(filter.column).Operators[0];
+                    filter.value = '';
+                    var fresh = filterRow(filter);
+                    row.replaceWith(fresh);
+                    fresh.querySelector('select').focus();
+                    applyFilters();
+                });
+                row.appendChild(column.parentNode);
+
+                var symbols = { eq: '=', ne: '\u2260', ge: '\u2265', le: '\u2264' };
+                var op = picker(t('FilterCondition', 'Condition'));
+                columnOf(filter.column).Operators.forEach(function (name) {
+                    choice(op, name, symbols[name] || t('op.' + name));
+                });
+                op.parentNode.classList.add('invOp');
+                op.value = filter.op;
+                op.addEventListener('change', function () {
+                    var redraw = bare[filter.op] || bare[op.value];
+                    filter.op = op.value;
+                    if (redraw) {
+                        var fresh = filterRow(filter);
+                        row.replaceWith(fresh);
+                        fresh.querySelector('.invOp select').focus();
+                    }
+
+                    applyFilters();
+                });
+                row.appendChild(op.parentNode);
+
+                var valued = !bare[filter.op];
+                if (valued && format === 'Boolean') {
+                    var flag = picker(t('FilterValue', 'Value'));
+                    choice(flag, 'true', t('Yes', 'Yes'));
+                    choice(flag, 'false', t('No', 'No'));
+                    // A select has no empty state to wait in, so the condition holds as it appears.
+                    if (filter.value === '') { filter.value = 'true'; }
+                    flag.value = filter.value;
+                    flag.addEventListener('change', function () {
+                        filter.value = flag.value;
+                        applyFilters();
+                    });
+                    row.appendChild(flag.parentNode);
+                } else if (valued) {
+                    var value = document.createElement('input');
+                    value.className = 'emby-input';
+                    // A number box drops a decimal comma and turns a wheel over it into another value.
+                    value.type = format === 'Date' ? 'date' : 'text';
+                    if (isNumeric(format)) { value.setAttribute('inputmode', 'decimal'); }
+                    value.setAttribute('aria-label', t('FilterValue', 'Value'));
+                    value.value = filter.value;
+                    var judge = function () {
+                        value.setAttribute('aria-invalid', filter.value !== '' && operand(filter, format) === null ? 'true' : 'false');
+                    };
+                    judge();
+                    value.addEventListener('input', function () {
+                        filter.value = value.value.trim();
+                        judge();
+                        clearTimeout(filterTimer);
+                        filterTimer = setTimeout(applyFilters, 250);
+                    });
+                    row.appendChild(value);
+                }
+
+                if (valued && scale(format).unit) {
+                    var unit = document.createElement('span');
+                    unit.className = 'invUnit';
+                    unit.textContent = scale(format).unit;
+                    row.appendChild(unit);
+                }
+
+                var drop = document.createElement('button');
+                drop.type = 'button';
+                drop.className = 'invDrop';
+                drop.setAttribute('aria-label', t('RemoveFilter', 'Remove filter'));
+                drop.textContent = '\u00d7';
+                drop.addEventListener('click', function () {
+                    state.filters.splice(state.filters.indexOf(filter), 1);
+                    row.remove();
+                    applyFilters();
+                    // Taking away the control under the caret drops the focus to the body.
+                    page.querySelector('#invFilterAdd').focus();
+                });
+                row.appendChild(drop);
+
+                return row;
+            }
+
+            function renderFilters() {
+                var host = page.querySelector('#invFilters');
+                state.filters = state.filters.filter(function (filter) {
+                    var column = columnOf(filter.column);
+                    return column && column.Operators.indexOf(filter.op) !== -1;
+                });
+                host.innerHTML = '';
+                state.filters.forEach(function (filter) { host.appendChild(filterRow(filter)); });
+                labelFilters();
+            }
+
+            var filterTimer;
+            var applied = '';
+
+            function applyFilters() {
+                clearTimeout(filterTimer);
+                labelFilters();
+                // A condition still waiting for its value asks for nothing the table does not show.
+                if (listing().filters === applied) { return; }
                 load();
             }
 
@@ -493,7 +758,7 @@
                 return chain.catch(function () { });
             }
 
-            function selectType(mediaType) {
+            function selectType(mediaType, returning) {
                 var type = null;
                 schema.mediaTypes.forEach(function (candidate) {
                     if (candidate.MediaType === mediaType) { type = candidate; }
@@ -507,9 +772,11 @@
                 state.level = type.Levels[0].Level;
                 state.expandTo = Math.max(0, type.Levels.map(function (l) { return l.Level; })
                     .indexOf(type.ExpandedTo));
-                state.start = 0;
-                state.sortBy = null;
-                state.descending = false;
+                if (!returning) {
+                    state.start = 0;
+                    state.sortBy = null;
+                    state.descending = false;
+                }
                 renderTypes();
                 renderExpandBar();
                 load();
@@ -681,7 +948,7 @@
                 if (column.Key === 'name' && text) {
                     var link = document.createElement('a');
 
-                    link.href = '#/details?id=' + row.Id + '&serverId=' + ApiClient.serverId();
+                    link.href = '#/details?id=' + encodeURIComponent(row.Id) + '&serverId=' + encodeURIComponent(ApiClient.serverId());
                     link.textContent = text;
                     td.appendChild(link);
                 } else if (column.Key === 'path' && text) {
@@ -696,6 +963,7 @@
             }
 
             var firstColumn = null;
+            var nestedView = true;
             var anyExpandable = false;
             var activeColumns = [];
             var columnLevel = null;
@@ -705,7 +973,7 @@
                 tr.setAttribute('data-depth', depth);
                 tr.setAttribute('data-id', row.Id);
                 activeColumns.forEach(function (column) {
-                    tr.appendChild(cell(row, column, depth, column === firstColumn && row.Expandable && !state.search));
+                    tr.appendChild(cell(row, column, depth, column === firstColumn && row.Expandable && nestedView));
                 });
                 return tr;
             }
@@ -787,7 +1055,8 @@
                 columnLevel = state.level;
                 firstColumn = result.Columns[0];
                 page.querySelector('#invColumnsBtn').disabled = false;
-                anyExpandable = !state.search && result.Rows.some(function (row) { return row.Expandable; });
+                nestedView = !state.search && !listing().filters;
+                anyExpandable = nestedView && result.Rows.some(function (row) { return row.Expandable; });
 
                 result.Columns.forEach(function (column) {
                     var th = document.createElement('th');
@@ -842,7 +1111,9 @@
 
                 refocus = null;
                 if (held) {
-                    var back = head.querySelector('th[data-key="' + held + '"]');
+                    var back = Array.prototype.filter.call(head.children, function (th) {
+                        return th.getAttribute('data-key') === held;
+                    })[0];
                     if (back) { back.focus(); }
                 }
             }
@@ -953,8 +1224,10 @@
             }
 
             function answers(what) {
+                var asked = listing();
                 return what && what.type === state.type && what.level === state.level
-                    && what.search === state.search;
+                    && what.search === state.search
+                    && what.listed === asked.level && what.filters === asked.filters;
             }
 
             function load() {
@@ -964,24 +1237,42 @@
                 // has long since typed past.
                 var wanted = refocus;
                 refocus = null;
+                var asked = listing();
+                if (asked.filters !== applied) {
+                    state.start = 0;
+                    state.total = 0;
+                    renderExpandBar();
+                }
+                applied = asked.filters;
                 busy(true);
                 ApiClient.getJSON(url('Items', {
                     mediaType: state.type,
-                    level: state.level,
+                    level: asked.level,
+                    columnLevel: state.level,
                     search: state.search,
+                    filters: asked.filters,
                     sortBy: state.sortBy || '',
                     descending: state.descending,
                     startIndex: state.start,
                     limit: state.limit
                 })).then(function (result) {
                     if (mine !== generation) { return; }
-                    busy(false);
                     refocus = wanted;
+                    // A library that shrank since the last answer leaves this page behind its end.
+                    if (!result.Rows.length && state.start > 0) {
+                        state.start = Math.max(0, Math.floor((result.TotalCount - 1) / state.limit) * state.limit);
+                        load();
+                        return;
+                    }
+
+                    busy(false);
                     state.total = result.TotalCount;
                     drawn = {
                         type: state.type,
                         level: state.level,
+                        listed: asked.level,
                         search: state.search,
+                        filters: asked.filters,
                         sortBy: state.sortBy,
                         descending: state.descending,
                         start: state.start,
@@ -991,7 +1282,7 @@
                     renderTable(result);
                     renderFooter(result);
                     renderColumnPicker();
-                    if (state.expandTo > 0 && !state.search) { expandTo(state.expandTo); }
+                    if (state.expandTo > 0 && nestedView) { expandTo(state.expandTo); }
                 }).catch(function () {
                     if (mine !== generation) { return; }
                     busy(false);
@@ -1051,8 +1342,10 @@
                 // by the term the table is about to leave behind.
                 applySearch(page.querySelector('#invSearch').value);
 
-                // A tab opened to its episodes shows those; a search flattens it back again.
-                var opened = !state.search && state.levels[state.expandTo];
+                // A tab opened to its episodes shows those; a search flattens it back again, unless
+                // a filter has the table listing that level as well.
+                var asked = listing();
+                var opened = (asked.filters || !state.search) && state.levels[state.expandTo];
                 var level = opened ? opened.Level : state.level;
                 var target = url('Export', {
                     mediaType: state.type,
@@ -1060,6 +1353,7 @@
                     columnLevel: state.levels[0].Level,
                     format: extension,
                     search: state.search,
+                    filters: asked.filters,
                     sortBy: state.sortBy || '',
                     descending: state.descending
                 });
@@ -1133,6 +1427,25 @@
                 this.setAttribute('aria-expanded', opening ? 'true' : 'false');
             }));
 
+            page.querySelector('#invFilterBtn').addEventListener('click', released(function () {
+                var panel = page.querySelector('#invFilterPanel');
+                var opening = panel.style.display === 'none';
+                panel.style.display = opening ? '' : 'none';
+                this.setAttribute('aria-expanded', opening ? 'true' : 'false');
+                if (opening && !state.filters.length) { page.querySelector('#invFilterAdd').click(); }
+            }));
+
+            page.querySelector('#invFilterAdd').addEventListener('click', released(function () {
+                var first = schema.columns[0];
+                if (!first) { return; }
+                var filter = { column: first.Key, op: first.Operators[0], value: '' };
+                state.filters.push(filter);
+                var row = filterRow(filter);
+                page.querySelector('#invFilters').appendChild(row);
+                labelFilters();
+                row.querySelector('select').focus();
+            }));
+
             page.querySelector('#invPrev').addEventListener('click', released(function () {
                 state.start = Math.max(0, state.start - state.limit);
                 load();
@@ -1156,6 +1469,7 @@
                 plural = new Intl.PluralRules(culture);
                 // English until the strings arrive, rather than a row of blank buttons.
                 applyStaticLabels();
+                page.querySelector('#invFilterBtn').disabled = true;
                 // The view stays in the DOM, so a message from last time would be read out again
                 // before anything has been asked for.
                 page.querySelector('#invEmpty').style.display = 'none';
@@ -1165,6 +1479,7 @@
                     Dashboard.hideLoadingMsg();
                     schema.mediaTypes = result.MediaTypes;
                     schema.columns = result.Columns;
+                    schema.maxFilters = result.MaxFilters;
                     schema.strings = result.Strings || {};
                     // An unsupported language is served English, so the strings set the plural rule.
                     try { plural = new Intl.PluralRules(result.Culture); }
@@ -1174,13 +1489,15 @@
                     page.querySelector('#invGroups').innerHTML = '';
                     typeKeys = null;
                     applyStaticLabels();
+                    renderFilters();
+                    page.querySelector('#invFilterBtn').disabled = false;
 
                     var wanted = result.MediaTypes.filter(function (type) {
                         return type.MediaType === state.type;
                     })[0];
 
                     if (wanted) {
-                        selectType(wanted.MediaType);
+                        selectType(wanted.MediaType, true);
                     } else if (result.MediaTypes.length) {
                         selectType(result.MediaTypes[0].MediaType);
                     } else {
@@ -1209,6 +1526,7 @@
                 showing = false;
                 refocus = null;
                 clearTimeout(searchTimer);
+                clearTimeout(filterTimer);
                 generation++;
                 visit++;
                 busy(false);

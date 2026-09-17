@@ -19,8 +19,7 @@ public class InventoryRow
     public Guid? ParentId { get; set; }
 
     /// <summary>
-    /// Gets or sets the id of the outermost item of the tab, used to total a series over its
-    /// episodes rather than over its seasons, where an already mixed season would hide a difference.
+    /// Gets or sets the id of the outermost item of the tab, so a series totals its episodes and not its seasons.
     /// </summary>
     public Guid? AncestorId { get; set; }
 
@@ -234,12 +233,17 @@ public class InventoryRow
     /// server lists them, ascending. A folder keeps the users who have played everything below it,
     /// so the sets are intersected rather than added.
     /// </summary>
-    public IReadOnlyList<int> PlayedBy { get; set; } = [];
+    public IReadOnlyList<int>? PlayedBy { get; set; }
 
     /// <summary>
-    /// Gets how many users have played the item to the end.
+    /// Gets how many users have played the item to the end, or null where nobody's playback was read.
     /// </summary>
-    public int? PlayedByCount => PlayedBy.Count > 0 ? PlayedBy.Count : null;
+    public int? PlayedByCount => PlayedBy?.Count;
+
+    /// <summary>
+    /// Gets or sets the ids of the versions of a film that have no row of their own and play as this one.
+    /// </summary>
+    public IReadOnlyList<Guid> Versions { get; set; } = [];
 
     /// <summary>
     /// Gets or sets a value indicating whether the size and the runtime measure the same files, which

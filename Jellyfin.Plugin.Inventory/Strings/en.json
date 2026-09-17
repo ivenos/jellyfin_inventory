@@ -15,7 +15,7 @@
   "No": "No",
   "mediaType.Movie": "Movies",
   "mediaType.Series": "Series",
-  "mediaType.MusicAlbum": "Albums",
+  "mediaType.MusicAlbum": "Music",
   "mediaType.MusicVideo": "Music videos",
   "mediaType.Video": "Videos",
   "mediaType.Book": "Books",
@@ -80,5 +80,15 @@
   "column.everyonePlayCount": "Plays (all users)",
   "Expand": "Expand",
   "Collapse": "Collapse",
-  "ColumnHint": "Enter sorts, Ctrl with an arrow key moves the column"
+  "ColumnHint": "Enter sorts, Ctrl with an arrow key moves the column",
+  "Filters": "Filters",
+  "AddFilter": "Add filter",
+  "RemoveFilter": "Remove filter",
+  "FilterColumn": "Column",
+  "FilterCondition": "Condition",
+  "FilterValue": "Value",
+  "op.contains": "contains",
+  "op.notContains": "does not contain",
+  "op.empty": "is empty",
+  "op.notEmpty": "is not empty"
 }

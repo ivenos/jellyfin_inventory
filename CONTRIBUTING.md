@@ -56,6 +56,9 @@ sh test/run.sh --keep         # leave the server up to click through
 
 - Take colors from the theme variables (`--jf-palette-*`), never from a literal outside a `var()` fallback.
 - Controls are `emby-input`, `emby-button` and `emby-select`, each with the class the web client would add to it.
+- An input carries the class without `is="emby-input"`. The upgrade throws on an input that already has it.
+- The page is a flex column in the height the web client gives it, and the table takes what is left. Nothing is sized in `vh`.
+- The table header sticks as a `thead`. Firefox draws sticky cells a little low after a wheel scroll, and the rows show above them.
 - Nothing waits for the web client's upgrade module. Anything it would insert, such as the arrow on a select, the page draws itself.
 
 ## Jellyfin versions
@@ -78,8 +81,8 @@ Conventional Commits (https://www.conventionalcommits.org/en/v1.0.0/) with a sho
 ## Dependencies
 
 - GitHub Actions and Docker images stay on version tags, never commit SHAs or digests.
-- Renovate opens the bumps. Other PRs leave dependencies alone.
-- `Jellyfin.Controller`, `Jellyfin.Model` and the images in `test/run.sh` move by hand, with the Jellyfin version.
+- Renovate opens the bumps, including Node, jsdom and Playwright in `test/run.sh` and `.github/scripts/screenshots.sh`. Other PRs leave dependencies alone.
+- `Jellyfin.Controller`, `Jellyfin.Model`, and the Jellyfin and SDK images in `test/run.sh` move by hand, with the Jellyfin version.
 
 ## Pull requests
 
