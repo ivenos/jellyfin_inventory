@@ -467,6 +467,7 @@ public class InventoryController : ControllerBase
         Group = Translations.Get(culture, "group." + column.Group),
         GroupKey = column.Group,
         Format = column.Format.ToString(),
-        Operators = RowFilter.Operators(column.Format)
+        Operators = RowFilter.Operators(column.Format),
+        Values = column.Format == ColumnFormat.Quality ? VideoQuality.Names : null
     };
 }

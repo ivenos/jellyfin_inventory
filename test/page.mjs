@@ -436,7 +436,8 @@ async function render(items, mode) {
         const sent = [];
         const invalid = [];
         for (const [column, value] of [['duration', '90'], ['totalBitrate', '128'], ['sizePerHour', '2'],
-            ['size', '1,5'], ['size', 'abc'], ['dateAdded', '20245-01-01'], ['dateAdded', '2024-03-01'], ['interlaced', null]]) {
+            ['size', '1,5'], ['size', 'abc'], ['dateAdded', '20245-01-01'], ['dateAdded', '2024-03-01'], ['interlaced', null],
+            ['quality', null]]) {
             if (page.querySelector('#invFilters select').value !== column) {
                 change(page.querySelector('#invFilters select'), column, 'change');
                 await settle();
@@ -450,7 +451,15 @@ async function render(items, mode) {
             invalid.push(box ? box.getAttribute('aria-invalid') : '-');
         }
 
-        const report = { sent: sent.join('|'), invalid: invalid.join('|') };
+        const classes = page.querySelectorAll('#invFilters select')[2];
+        change(classes, '720p', 'change');
+        await settle();
+        const report = {
+            sent: sent.join('|'),
+            invalid: invalid.join('|'),
+            classes: [...classes.options].map((option) => option.value).join(','),
+            picked: JSON.parse(param(requests().pop(), 'filters'))[0].value,
+        };
         window.close();
         return report;
     }

@@ -58,7 +58,7 @@ public static class Export
         output.Write(Encoding.UTF8.GetPreamble());
 
         using var writer = new StreamWriter(output, new UTF8Encoding(false), 64 * 1024, leaveOpen: true) { NewLine = "\r\n" };
-        writer.WriteLine(string.Join(separator, headers.Select(Text)));
+        writer.WriteLine(string.Join(separator, headers.Select((header, i) => Text(header + Unit(columns[i].Format)))));
 
         foreach (var row in rows)
         {
@@ -128,6 +128,14 @@ public static class Export
             : cell;
     }
 
+    private static string Unit(ColumnFormat format) => format switch
+    {
+        ColumnFormat.Bytes or ColumnFormat.BytesPerHour => " (B)",
+        ColumnFormat.Duration => " (s)",
+        ColumnFormat.Bitrate => " (bit/s)",
+        _ => string.Empty
+    };
+
     private static string Scalar(object? value, CultureInfo culture, string yes, string no) => value switch
     {
         null => string.Empty,
@@ -193,8 +201,19 @@ public static class Export
         xml.Write("""<number:text>-</number:text><number:month number:style="long"/>""");
         xml.Write("""<number:text>-</number:text><number:day number:style="long"/></number:date-style>""");
         xml.Write("""<number:boolean-style style:name="N-bool"><number:boolean/></number:boolean-style>""");
+        // Without truncate-on-overflow false, a runtime past a day starts over at 0 hours.
+        xml.Write("""<number:time-style style:name="N-duration" number:truncate-on-overflow="false"><number:hours/>""");
+        xml.Write("""<number:text>:</number:text><number:minutes number:style="long"/>""");
+        xml.Write("""<number:text>:</number:text><number:seconds number:style="long"/></number:time-style>""");
+        xml.Write("""<number:number-style style:name="N-bytes"><number:number number:decimal-places="0" number:min-integer-digits="1" number:grouping="true"/>""");
+        xml.Write("""<number:text> B</number:text></number:number-style>""");
+        xml.Write("""<number:number-style style:name="N-bitrate"><number:number number:decimal-places="0" number:min-integer-digits="1" number:grouping="true"/>""");
+        xml.Write("""<number:text> bit/s</number:text></number:number-style>""");
         xml.Write("""<style:style style:name="C-date" style:family="table-cell" style:data-style-name="N-date"/>""");
         xml.Write("""<style:style style:name="C-bool" style:family="table-cell" style:data-style-name="N-bool"/>""");
+        xml.Write("""<style:style style:name="C-duration" style:family="table-cell" style:data-style-name="N-duration"/>""");
+        xml.Write("""<style:style style:name="C-bytes" style:family="table-cell" style:data-style-name="N-bytes"/>""");
+        xml.Write("""<style:style style:name="C-bitrate" style:family="table-cell" style:data-style-name="N-bitrate"/>""");
         xml.Write("</office:automatic-styles>");
         xml.Write("<office:body><office:spreadsheet>");
         xml.Write(string.Create(CultureInfo.InvariantCulture, $"""<table:table table:name="{Escape(SheetName(sheetName))}">"""));
@@ -216,7 +235,7 @@ public static class Export
             xml.Write("<table:table-row>");
             foreach (var column in columns)
             {
-                xml.Write(Cell(row.Values.GetValueOrDefault(column.Key), yes, no));
+                xml.Write(Cell(row.Values.GetValueOrDefault(column.Key), column.Format, yes, no));
             }
 
             xml.Write("</table:table-row>");
@@ -225,12 +244,18 @@ public static class Export
         xml.Write("</table:table></office:spreadsheet></office:body></office:document-content>");
     }
 
-    private static string Cell(object? value, string yes, string no)
+    private static string Cell(object? value, ColumnFormat format, string yes, string no)
     {
         switch (value)
         {
             case null:
                 return "<table:table-cell/>";
+            case double seconds when format == ColumnFormat.Duration:
+                var time = TimeSpan.FromMilliseconds(Math.Round(seconds * 1000));
+                var whole = TimeSpan.FromSeconds(Math.Round(time.TotalSeconds));
+                var span = string.Create(CultureInfo.InvariantCulture, $"PT{(long)time.TotalHours}H{time.Minutes}M{time.Seconds + (time.Milliseconds / 1000d)}S");
+                var clock = string.Create(CultureInfo.InvariantCulture, $"{(long)whole.TotalHours}:{whole.Minutes:00}:{whole.Seconds:00}");
+                return string.Create(CultureInfo.InvariantCulture, $"""<table:table-cell table:style-name="C-duration" office:value-type="time" office:time-value="{span}"><text:p>{clock}</text:p></table:table-cell>""");
             case bool flag:
                 // The text is what a reader that brings no format of its own puts on screen.
                 var truth = flag ? "true" : "false";
@@ -240,7 +265,13 @@ public static class Export
                 return string.Create(CultureInfo.InvariantCulture, $"""<table:table-cell table:style-name="C-date" office:value-type="date" office:date-value="{stamp}"><text:p>{stamp}</text:p></table:table-cell>""");
             case IFormattable number:
                 var text = number.ToString(null, CultureInfo.InvariantCulture);
-                return string.Create(CultureInfo.InvariantCulture, $"""<table:table-cell office:value-type="float" office:value="{text}"><text:p>{text}</text:p></table:table-cell>""");
+                var style = format switch
+                {
+                    ColumnFormat.Bytes or ColumnFormat.BytesPerHour => """table:style-name="C-bytes" """,
+                    ColumnFormat.Bitrate => """table:style-name="C-bitrate" """,
+                    _ => string.Empty
+                };
+                return string.Create(CultureInfo.InvariantCulture, $"""<table:table-cell {style}office:value-type="float" office:value="{text}"><text:p>{text}</text:p></table:table-cell>""");
             default:
                 return string.Create(CultureInfo.InvariantCulture, $"""<table:table-cell office:value-type="string"><text:p>{Escape(value.ToString() ?? string.Empty)}</text:p></table:table-cell>""");
         }

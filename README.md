@@ -36,7 +36,7 @@ Inventory then appears in the catalog under General. Restart the server after in
 | Group | Columns |
 | --- | --- |
 | General | Name, Series, Season, Episode, Year, Library, Items, Container, Size, Duration, Size/hour, Bitrate, Date added, Path |
-| Video | Video codec, Profile, Resolution, Height, Video bitrate, Framerate, Bit depth, HDR, Dolby Vision, Pixel format, Interlaced |
+| Video | Video codec, Profile, Resolution, Quality, Height, Video bitrate, Framerate, Bit depth, HDR, Dolby Vision, Pixel format, Interlaced |
 | Audio | Audio codec, Layout, Channels, Audio bitrate, Sample rate, Spatial, Audio tracks, Audio languages |
 | Subtitles | Subtitle tracks, Subtitle languages |
 | Playback | Last played, Last played (all users), Plays, Plays (all users), Fully played, Fully played by |
@@ -47,14 +47,14 @@ Six endpoints under `/Inventory`, all requiring an administrator token. An API k
 
 | Endpoint | Parameters | Answers with |
 | --- | --- | --- |
-| `GET Schema` | `culture` | The populated media types with their levels, every column with the operators it can be filtered by, the page size, the most conditions `filters` may carry, the interface strings and the culture they were answered in |
+| `GET Schema` | `culture` | The populated media types with their levels, every column with the operators it can be filtered by and, for quality, its classes in order, the page size, the most conditions `filters` may carry, the interface strings and the culture they were answered in |
 | `GET Items` | `mediaType`, `level`, `parentIds`, `columnLevel`, `search`, `filters`, `sortBy`, `descending`, `startIndex`, `limit`, `culture` | One page of rows with the columns they are keyed by, how many rows there are in total, and the size and runtime behind them; `parentIds` returns the whole child set rather than a page |
 | `GET Export` | `mediaType`, `level`, `columnLevel`, `format`, `search`, `filters`, `sortBy`, `descending`, `culture` | Every matching row as a `csv` or `ods` file, less the ones a match above them already accounts for |
 | `POST Columns` | `level`, and the column keys as a JSON array in the body | The stored selection |
 | `POST Expand` | `mediaType`, `level` | The stored level |
 | `POST PageSize` | `size` | The stored number of rows per page |
 
-`filters` is a JSON array of up to 20 conditions, and a row has to meet all of them: `[{"column":"height","op":"ge","value":1080}]`. `op` is one of the operators `Schema` lists for the column, out of `eq`, `ne`, `ge`, `le`, `contains`, `notContains`, `empty` and `notEmpty`, the last two taking no `value`. A value is in the unit `Items` answers in, which is bytes, seconds or bits per second, and a date is `yyyy-MM-dd`. An empty cell meets only `ne`, `notContains` and `empty`, and a cell that reads as mixed meets no condition.
+`filters` is a JSON array of up to 20 conditions, and a row has to meet all of them: `[{"column":"height","op":"ge","value":1080}]`. `op` is one of the operators `Schema` lists for the column, out of `eq`, `ne`, `ge`, `le`, `contains`, `notContains`, `empty` and `notEmpty`, the last two taking no `value`. A value is in the unit `Items` answers in, which is bytes, seconds or bits per second, a date is `yyyy-MM-dd`, and a quality is one of the classes `Schema` lists, compared by its place in that list. An empty cell meets only `ne`, `notContains` and `empty`, and a cell that reads as mixed meets no condition.
 
 ## License
 

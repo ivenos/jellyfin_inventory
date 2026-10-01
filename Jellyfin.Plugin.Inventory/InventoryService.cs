@@ -690,6 +690,7 @@ public sealed class InventoryService : IDisposable
         row.VideoCodec = Common(children, c => c.VideoCodec, mixed, "videoCodec");
         row.VideoProfile = Common(children, c => c.VideoProfile, mixed, "videoProfile");
         row.Resolution = Common(children, c => c.Resolution, mixed, "resolution");
+        row.Quality = Common(children, c => c.Quality, mixed, "quality");
         row.VideoRange = Common(children, c => c.VideoRange, mixed, "videoRange");
         row.DolbyVision = Common(children, c => c.DolbyVision, mixed, "dolbyVision");
         row.PixelFormat = Common(children, c => c.PixelFormat, mixed, "pixelFormat");
@@ -840,6 +841,9 @@ public sealed class InventoryService : IDisposable
             row.Interlaced = video.IsInterlaced;
             row.Resolution = video.Width is > 0 && video.Height is > 0
                 ? string.Create(CultureInfo.InvariantCulture, $"{video.Width}x{video.Height}")
+                : null;
+            row.Quality = video.Width is > 0 && video.Height is > 0
+                ? VideoQuality.Of(video.Width.Value, video.Height.Value, video.IsInterlaced)
                 : null;
             row.VideoRange = video.VideoRangeType == VideoRangeType.Unknown ? null : video.VideoRangeType.ToString();
             row.DolbyVision = video.VideoDoViTitle;

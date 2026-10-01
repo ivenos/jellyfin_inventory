@@ -35,6 +35,7 @@ public static class Columns
         new("videoProfile", "Video", ColumnFormat.Text, r => r.VideoProfile),
         // Ordered by area, since "960x540" reads as the larger of the two next to "1920x1080".
         new("resolution", "Video", ColumnFormat.Text, r => r.Resolution, r => (long?)r.Width * r.Height),
+        new("quality", "Video", ColumnFormat.Quality, r => r.Quality, r => VideoQuality.Rank(r.Quality)),
         new("height", "Video", ColumnFormat.Plain, r => r.Height),
         new("videoBitrate", "Video", ColumnFormat.Bitrate, r => r.VideoBitrate),
         new("frameRate", "Video", ColumnFormat.FrameRate, r => r.FrameRate),

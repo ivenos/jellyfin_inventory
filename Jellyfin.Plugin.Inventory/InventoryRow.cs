@@ -263,6 +263,11 @@ public class InventoryRow
     public string? Resolution { get; set; }
 
     /// <summary>
+    /// Gets or sets the class the resolution falls in, such as 1080p.
+    /// </summary>
+    public string? Quality { get; set; }
+
+    /// <summary>
     /// Returns a copy, so playback data can be attached per user without touching the shared cache.
     /// </summary>
     /// <returns>A shallow copy of this row.</returns>

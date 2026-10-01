@@ -53,6 +53,7 @@
   "column.videoCodec": "Video codec",
   "column.videoProfile": "Profile",
   "column.resolution": "Resolution",
+  "column.quality": "Quality",
   "column.height": "Height",
   "column.videoBitrate": "Video bitrate",
   "column.frameRate": "Framerate",

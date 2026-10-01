@@ -570,18 +570,23 @@
                 row.appendChild(op.parentNode);
 
                 var valued = !bare[filter.op];
-                if (valued && format === 'Boolean') {
-                    var flag = picker(t('FilterValue', 'Value'));
-                    choice(flag, 'true', t('Yes', 'Yes'));
-                    choice(flag, 'false', t('No', 'No'));
+                var offered = columnOf(filter.column).Values;
+                if (valued && (format === 'Boolean' || offered)) {
+                    var pick = picker(t('FilterValue', 'Value'));
+                    if (offered) {
+                        offered.forEach(function (name) { choice(pick, name, name); });
+                    } else {
+                        choice(pick, 'true', t('Yes', 'Yes'));
+                        choice(pick, 'false', t('No', 'No'));
+                    }
                     // A select has no empty state to wait in, so the condition holds as it appears.
-                    if (filter.value === '') { filter.value = 'true'; }
-                    flag.value = filter.value;
-                    flag.addEventListener('change', function () {
-                        filter.value = flag.value;
+                    if (filter.value === '') { filter.value = offered ? offered[0] : 'true'; }
+                    pick.value = filter.value;
+                    pick.addEventListener('change', function () {
+                        filter.value = pick.value;
                         applyFilters();
                     });
-                    row.appendChild(flag.parentNode);
+                    row.appendChild(pick.parentNode);
                 } else if (valued) {
                     var value = document.createElement('input');
                     value.className = 'emby-input';

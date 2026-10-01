@@ -211,8 +211,8 @@ RECIPE=$(cat <<'FIXTURES'
         $FF -y -loglevel error -f lavfi -i testsrc2=size=320x240:rate=10:duration=2 \
             -c:v libx264 -preset ultrafast -crf 40 -pix_fmt yuv420p \
             "/media/movies/Blue Harbour (2021)/behind the scenes/Making Of.mkv"
-        # A title a spreadsheet would evaluate rather than print.
-        $FF -y -loglevel error -f lavfi -i testsrc2=size=320x240:rate=10:duration=2 \
+        # A title a spreadsheet would evaluate rather than print, filmed upright.
+        $FF -y -loglevel error -f lavfi -i testsrc2=size=240x320:rate=10:duration=2 \
             -c:v libx264 -preset ultrafast -crf 40 -pix_fmt yuv420p \
             "/media/movies/=Formula Trap (2024)/=Formula Trap (2024).mkv"
         # Two seasons, and a codec that differs between them, so the series aggregates to mixed.
@@ -233,8 +233,9 @@ RECIPE=$(cat <<'FIXTURES'
         dd if=/dev/urandom of="/media/shows/Patchy (2021)/Season 01/Patchy S01E06.mkv" \
             bs=1024 count=2048 status=none
         # A name a spreadsheet has to be protected from, a CSV has to quote and an XML has to escape.
+        # Cropped to scope, which leaves a 1080p film shorter than 1080 lines.
         mkdir -p "/media/movies/Ärger, \"Quoted\" & <Mövie> (2018)"
-        $FF -y -loglevel error -f lavfi -i testsrc2=size=320x240:rate=10:duration=2 \
+        $FF -y -loglevel error -f lavfi -i testsrc2=size=1920x800:rate=10:duration=2 \
             -c:v libx264 -preset ultrafast -crf 40 -pix_fmt yuv420p \
             "/media/movies/Ärger, \"Quoted\" & <Mövie> (2018)/Ärger, \"Quoted\" & <Mövie> (2018).mkv"
         # The file named after the folder is the film, and the second cut beside it is split in two.
@@ -586,7 +587,7 @@ check "and takes its own bitrate from the bytes and the runtime it adds up" \
     "$(printf '%s\n' "$SERIES" | field "(lambda v: v['totalBitrate'] == int(v['size'] * 8 / v['duration']))([r['Values'] for r in json.load(sys.stdin)['Rows'] if r['Values']['name']=='Harbour Lights'][0])")" "True"
 curl -sf -X POST "$BASE/Inventory/Columns?level=MusicVideo" \
     -H "Authorization: MediaBrowser Token=\"$TOKEN\"" -H "$JSON" \
-    -d '["name","series","container","videoCodec","videoProfile","resolution","height","videoBitrate","frameRate","bitDepth","videoRange","dolbyVision","pixelFormat","interlaced","audioCodec","audioLayout","audioChannels","audioBitrate","audioSampleRate","spatialAudio","audioTracks","audioLanguages","subtitleTracks","subtitleLanguages"]' \
+    -d '["name","series","container","videoCodec","videoProfile","resolution","quality","height","videoBitrate","frameRate","bitDepth","videoRange","dolbyVision","pixelFormat","interlaced","audioCodec","audioLayout","audioChannels","audioBitrate","audioSampleRate","spatialAudio","audioTracks","audioLanguages","subtitleTracks","subtitleLanguages"]' \
     >/dev/null || refused "Inventory/Columns?level=MusicVideo"
 api 'Inventory/Items?mediaType=Series&columnLevel=MusicVideo' > "$WORK/folders.json"
 api 'Inventory/Items?mediaType=Series&level=Episode&columnLevel=MusicVideo' > "$WORK/leaves.json"
@@ -728,7 +729,7 @@ check "an export adds up to the total the table shows, rather than to the levels
         -H "Authorization: MediaBrowser Token=\"$TOKEN\"" | python3 -c "
 import csv, io, sys
 rows = list(csv.reader(io.StringIO(sys.stdin.buffer.read().decode('utf-8-sig'))))
-size = rows[0].index('Size')
+size = rows[0].index('Size (B)')
 print(sum(int(r[size] or 0) for r in rows[1:]))")" \
     "$(api 'Inventory/Items?mediaType=Series&search=Long%20Run' | field "json.load(sys.stdin)['TotalSize']")"
 check "a number the children disagree on is worded, not left looking unrecorded" \
@@ -751,6 +752,15 @@ check "while a rate over items that are all measured is still given" \
 check "resolution sorts by how many pixels it is, not by how the text reads" \
     "$(api 'Inventory/Items?mediaType=Photo&sortBy=resolution' \
         | field "json.load(sys.stdin)['Rows'][0]['Values']['resolution']")" "800x600"
+QUALITY=$(api 'Inventory/Items?mediaType=Movie&columnLevel=MusicVideo&sortBy=quality')
+check "a frame is named by its class, the way jellyfin names it" \
+    "$(printf '%s\n' "$QUALITY" | named 'Blue Harbour (2021)' quality)/$(printf '%s\n' "$QUALITY" | named 'Night Signal (2023)' quality)" "1080p/4K"
+check "a film cropped to scope is still the class its width puts it in" \
+    "$(printf '%s\n' "$QUALITY" | field "[r['Values']['quality'] for r in json.load(sys.stdin)['Rows'] if r['Values']['name'].startswith(chr(196))][0]")" "1080p"
+check "and one filmed upright is classed by its long side" \
+    "$(printf '%s\n' "$QUALITY" | named '=Formula Trap (2024)' quality)" "240p"
+check "quality sorts by class, not by how the text reads" \
+    "$(printf '%s\n' "$QUALITY" | field "','.join(dict.fromkeys(r['Values']['quality'] for r in json.load(sys.stdin)['Rows']))")" "240p,360p,1080p,4K"
 check "umlauts sort where the language puts them, not where their code point does" \
     "$(api 'Inventory/Items?mediaType=Movie&sortBy=name' \
         | field "(lambda n: n.index([x for x in n if x.startswith(chr(196))][0]) < n.index('Blue Harbour (2021)'))([r['Values']['name'] for r in json.load(sys.stdin)['Rows']])")" "True"
@@ -772,6 +782,14 @@ check "and the totals are those of what is left" \
 check "a number is held against the value it was given" \
     "$(api "Inventory/Items?mediaType=Movie&filters=$(filtered '[{"column":"height","op":"ge","value":1080}]')" | names)" \
     "Blue Harbour (2021),Night Signal (2023)"
+check "a class finds the film its height alone would miss" \
+    "$(api "Inventory/Items?mediaType=Movie&filters=$(filtered '[{"column":"quality","op":"eq","value":"1080p"}]')" \
+        | field "json.load(sys.stdin)['TotalCount']")" "2"
+check "and a class is held against another by its place among them, not by how it reads" \
+    "$(api "Inventory/Items?mediaType=Movie&filters=$(filtered '[{"column":"quality","op":"ge","value":"1080p"}]')" \
+        | field "json.load(sys.stdin)['TotalCount']")/$(api "Inventory/Items?mediaType=Movie&filters=$(filtered '[{"column":"quality","op":"le","value":"360p"}]')" \
+        | field "json.load(sys.stdin)['TotalCount']")/$(api "Inventory/Items?mediaType=Movie&filters=$(filtered '[{"column":"quality","op":"eq","value":"4k"}]')" | names)" \
+    "3/4/Night Signal (2023)"
 check "text is held against the value whatever its case" \
     "$(api "Inventory/Items?mediaType=Movie&filters=$(filtered '[{"column":"videoCodec","op":"eq","value":"HEVC"}]')" | names)" "Night Signal (2023)"
 check "a rate is held against the digits the table shows, not the ones it is kept as" \
@@ -840,7 +858,8 @@ for bad in '[{"column":"siez","op":"ge","value":"1"}]' '[{"column":"height","op"
     '[{"column":"height","op":"ge","value":"tall"}]' '[{"column":"name","op":"contains"}]' '{"column":"name"}' 'not json' \
     '[{"column":"name","op":"ge","value":"a"}]' '[{"column":"interlaced","op":"ne","value":true}]' \
     '[{"column":"size","op":"ge","value":"Infinity"}]' '[null]' '[{"column":"size","op":"eq","value":1}]' \
-    '[{"column":"name","op":"contains","value":"\ud800"}]'; do
+    '[{"column":"name","op":"contains","value":"\ud800"}]' '[{"column":"quality","op":"ge","value":"1090p"}]' \
+    '[{"column":"quality","op":"contains","value":"1080"}]'; do
     check "a filter that cannot be read is refused: $bad" \
         "$(curl -s -o /dev/null -w '%{http_code}' "$BASE/Inventory/Items?mediaType=Movie&filters=$(filtered "$bad")" \
             -H "Authorization: MediaBrowser Token=\"$TOKEN\"")" "400"
@@ -861,8 +880,11 @@ check "an export refuses a filter it cannot read, rather than writing every row"
     "$(curl -s -o /dev/null -w '%{http_code}' "$BASE/Inventory/Export?mediaType=Movie&format=csv&filters=$(filtered '[{"column":"siez","op":"ge","value":"1"}]')" \
         -H "Authorization: MediaBrowser Token=\"$TOKEN\"")" "400"
 check "the schema says which conditions a column can be held against" \
-    "$(printf '%s\n' "$SCHEMA" | field "' '.join('%s=%s' % (c['Key'], ','.join(c['Operators'])) for c in json.load(sys.stdin)['Columns'] if c['Key'] in ('name', 'size', 'height', 'played'))")" \
-    "name=contains,notContains,eq,ne,empty,notEmpty size=ge,le,empty,notEmpty height=ge,le,eq,ne,empty,notEmpty played=eq,empty,notEmpty"
+    "$(printf '%s\n' "$SCHEMA" | field "' '.join('%s=%s' % (c['Key'], ','.join(c['Operators'])) for c in json.load(sys.stdin)['Columns'] if c['Key'] in ('name', 'size', 'quality', 'height', 'played'))")" \
+    "name=contains,notContains,eq,ne,empty,notEmpty size=ge,le,empty,notEmpty quality=ge,le,eq,ne,empty,notEmpty height=ge,le,eq,ne,empty,notEmpty played=eq,empty,notEmpty"
+check "and the classes a quality can be held against, in their order" \
+    "$(printf '%s\n' "$SCHEMA" | field "' '.join('%s=%s' % (c['Key'], ','.join(c['Values'])) for c in json.load(sys.stdin)['Columns'] if c.get('Values'))")" \
+    "quality=144p,240p,360p,384p,404p,480p,540p,576p,720p,1080p,1440p,4K,8K"
 
 check "album totals the channel count of its tracks" \
     "$(api 'Inventory/Items?mediaType=MusicAlbum' | named 'Test Pattern' audioChannels)" "1"
@@ -997,7 +1019,7 @@ print('ok' if not bad else bad)")" "ok"
 # because german numbers use the comma the fields would otherwise be split on.
 check "the export follows the language it was asked for" \
     "$(curl -sf "$BASE/Inventory/Export?mediaType=Movie&format=csv&culture=de" \
-        -H "Authorization: MediaBrowser Token=\"$TOKEN\"" | head -1 | tr -d '\r' | cut -d';' -f2)" "Größe"
+        -H "Authorization: MediaBrowser Token=\"$TOKEN\"" | head -1 | tr -d '\r' | cut -d';' -f2)" "Größe (B)"
 check "a truth value is written in the language of the header beside it" \
     "$(curl -sf "$BASE/Inventory/Export?mediaType=Movie&format=csv&culture=de" \
         -H "Authorization: MediaBrowser Token=\"$TOKEN\"" | python3 -c "
@@ -1015,7 +1037,7 @@ check "and writes its decimals the way that language does" \
         -H "Authorization: MediaBrowser Token=\"$TOKEN\"" | python3 -c "
 import csv, io, sys
 rows = list(csv.reader(io.StringIO(sys.stdin.buffer.read().decode('utf-8-sig')), delimiter=';'))
-at = rows[0].index('Laufzeit')
+at = rows[0].index('Laufzeit (s)')
 values = [r[at] for r in rows[1:] if r[at]]
 print('ok' if values and any(',' in v for v in values) and not any('.' in v for v in values) else values)")" "ok"
 check "a language whose decimal separator no spreadsheet reads writes its numbers the invariant way" \
@@ -1033,7 +1055,7 @@ for invented in x-invented root de-x-private; do
 done
 check "while the same export in english keeps the comma between its fields" \
     "$(curl -sf "$BASE/Inventory/Export?mediaType=Series&level=Episode&format=csv" \
-        -H "Authorization: MediaBrowser Token=\"$TOKEN\"" | head -1 | tr -d '\r' | cut -d, -f2)" "Duration"
+        -H "Authorization: MediaBrowser Token=\"$TOKEN\"" | head -1 | tr -d '\r' | cut -d, -f2)" "Duration (s)"
 # Items is second in the Series selection, Duration in the Episode one.
 check "an export of an expanded level carries the columns the table is showing" \
     "$(curl -sf "$BASE/Inventory/Export?mediaType=Series&level=Episode&columnLevel=Series&format=csv" \
@@ -1043,7 +1065,7 @@ check "a runtime added up from seventy-two episodes is written for a spreadsheet
         -H "Authorization: MediaBrowser Token=\"$TOKEN\"" | python3 -c "
 import csv, io, sys
 rows = list(csv.reader(io.StringIO(sys.stdin.buffer.read().decode('utf-8-sig'))))
-at = [rows[0].index(name) for name in ('Duration', 'Size/hour')]
+at = [rows[0].index(name) for name in ('Duration (s)', 'Size/hour (B)')]
 print('ok' if all(len(r[i].partition('.')[2]) <= 3 for r in rows[1:] for i in at) else rows[1:])")" "ok"
 check "csv export is offered as a file" \
     "$(curl -sf -o /dev/null -D - "$BASE/Inventory/Export?mediaType=Movie&format=csv" -H "Authorization: MediaBrowser Token=\"$TOKEN\"" | grep -ci 'filename=inventory-movie.csv')" "1"
@@ -1114,6 +1136,32 @@ import zipfile
 with zipfile.ZipFile('$WORK/export.ods') as book:
     content = book.read('content.xml').decode()
 print('ok' if 'office:value-type=\"float\"' in content else 'no typed cells')")" "ok"
+check "the csv names the unit of a number in its header, having no format to show it in" \
+    "$(curl -sf "$BASE/Inventory/Export?mediaType=Series&format=csv" \
+        -H "Authorization: MediaBrowser Token=\"$TOKEN\"" | head -1 | tr -d '\r' | cut -d, -f2-6)" \
+    "Items,Size (B),Duration (s),Bitrate (bit/s),Size/hour (B)"
+api 'Inventory/Items?mediaType=Series' > "$WORK/series.json"
+curl -sf "$BASE/Inventory/Export?mediaType=Series&format=ods" -H "Authorization: MediaBrowser Token=\"$TOKEN\"" -o "$WORK/series.ods" \
+    || refused "Inventory/Export?mediaType=Series&format=ods" GET
+check "a runtime in the ods is a time, the one the table shows, counted in hours past a day" \
+    "$(python3 -c "
+import json, re, zipfile
+content = zipfile.ZipFile('$WORK/series.ods').read('content.xml').decode()
+want = {r['Values']['name']: r['Values']['duration'] for r in json.load(open('$WORK/series.json'))['Rows']}
+got = {}
+for row in re.findall(r'<table:table-row>(.*?)</table:table-row>', content, re.S)[1:]:
+    span = re.search(r'table:style-name=\"C-duration\" office:value-type=\"time\" office:time-value=\"PT(\d+)H(\d+)M([\d.]+)S\"', row)
+    if span:
+        got[re.search(r'<text:p>(.*?)</text:p>', row).group(1)] = int(span[1]) * 3600 + int(span[2]) * 60 + float(span[3])
+print('ok' if 'number:truncate-on-overflow=\"false\"' in content and got
+      and got.keys() == {n for n, v in want.items() if v} and all(abs(got[n] - want[n]) < 0.001 for n in got) else (got, want))")" "ok"
+check "while a size and a bitrate stay numbers and carry their unit in the format" \
+    "$(python3 -c "
+import re, zipfile
+content = zipfile.ZipFile('$WORK/series.ods').read('content.xml').decode()
+styled = set(re.findall(r'table:style-name=\"C-(bytes|bitrate)\" office:value-type=\"float\"', content))
+units = re.findall(r'<number:number-style style:name=\"N-(bytes|bitrate)\">.*?<number:text>([^<]*)</number:text>', content)
+print('ok' if styled == {'bytes', 'bitrate'} and dict(units) == {'bytes': ' B', 'bitrate': ' bit/s'} else (styled, units))")" "ok"
 check "a name with a comma stays one cell, and its umlauts survive" \
     "$(python3 -c "
 import csv, io
@@ -1382,9 +1430,11 @@ check "a page turned while a changed condition is still waiting lists that condi
 check "a condition on a column the server no longer offers is dropped rather than breaking the page" \
     "$(rendered gone.asked)/$(rendered gone.button)/$(rendered gone.rows)" "1/Filters/7"
 check "a value is sent in the unit the server keeps, and a decimal comma is read as a point" \
-    "$(rendered units.sent)" "5400|128000|2147483648|1610612736|none|none|2024-03-01|true"
+    "$(rendered units.sent)" "5400|128000|2147483648|1610612736|none|none|2024-03-01|true|144p"
 check "while one that cannot be read is marked and asks for nothing" \
-    "$(rendered units.invalid)" "false|false|false|false|true|true|false|-"
+    "$(rendered units.invalid)" "false|false|false|false|true|true|false|-|-"
+check "a quality is picked from its classes, in their order, rather than typed" \
+    "$(rendered units.classes)/$(rendered units.picked)" "144p,240p,360p,384p,404p,480p,540p,576p,720p,1080p,1440p,4K,8K/720p"
 check "a ticked column is stored behind the last chosen one the picker offers before it" \
     "$(rendered controls.ticked)" '["name","year","size","duration","sizePerHour","videoCodec","interlaced"]'
 check "ctrl with an arrow key moves a column" \

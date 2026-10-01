@@ -33,5 +33,8 @@ public enum ColumnFormat
     Date,
 
     /// <summary>A boolean.</summary>
-    Boolean
+    Boolean,
+
+    /// <summary>A video quality class such as 1080p, ordered from the smallest frame up.</summary>
+    Quality
 }

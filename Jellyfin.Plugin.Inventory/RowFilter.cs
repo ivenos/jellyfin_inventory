@@ -174,6 +174,7 @@ public sealed class RowFilter
             ColumnFormat.Text => string.IsNullOrEmpty(text) ? null : text,
             ColumnFormat.Boolean => bool.TryParse(text, out var flag) ? flag : null,
             ColumnFormat.Date => DateTime.TryParseExact(text, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var day) ? day : null,
+            ColumnFormat.Quality => VideoQuality.Rank(text),
             _ => double.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out var number) && double.IsFinite(number) ? number : null
         };
 
@@ -202,6 +203,7 @@ public sealed class RowFilter
         bool flag => cell is bool held ? held.CompareTo(flag) : -1,
         // The day the table shows, which is the one the server keeps and not the browser's.
         DateTime day => cell is DateTime held ? held.Date.CompareTo(day) : -1,
+        int rank => VideoQuality.Rank(cell.ToString()) is { } held ? held.CompareTo(rank) : -1,
         // To the digits the table shows, or 23.976 never equals the 23.976025 it is kept as.
         double number => Math.Round(Convert.ToDouble(cell, CultureInfo.InvariantCulture), 3).CompareTo(Math.Round(number, 3)),
         _ => -1
