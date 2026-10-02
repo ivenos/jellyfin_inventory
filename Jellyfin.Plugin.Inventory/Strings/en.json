@@ -8,6 +8,8 @@
   "RowsPerPage": "Rows per page",
   "Empty": "Nothing here.",
   "LoadFailed": "Could not load the inventory.",
+  "SaveFailed": "Could not save the columns.",
+  "ExportFailed": "Could not export the inventory.",
   "ItemsOne": "{0} item",
   "ItemsMany": "{0} items",
   "Mixed": "Mixed",

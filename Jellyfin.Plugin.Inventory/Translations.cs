@@ -72,11 +72,20 @@ public static class Translations
     /// </summary>
     /// <param name="culture">The requested culture, such as "de" or "de-DE".</param>
     /// <returns>The culture the strings come from.</returns>
-    public static string Resolve(string? culture)
+    public static string Resolve(string? culture) => Match(culture) ?? FallbackCulture;
+
+    /// <summary>
+    /// Tells whether the plugin ships strings for a culture or for its language.
+    /// </summary>
+    /// <param name="culture">The requested culture, such as "de" or "de-DE".</param>
+    /// <returns>Whether a lookup in it is answered without falling back.</returns>
+    public static bool Has(string? culture) => Match(culture) is not null;
+
+    private static string? Match(string? culture)
     {
         if (string.IsNullOrWhiteSpace(culture))
         {
-            return FallbackCulture;
+            return null;
         }
 
         var exact = Available.FirstOrDefault(c => string.Equals(c, culture, StringComparison.OrdinalIgnoreCase));
@@ -87,8 +96,7 @@ public static class Translations
 
         // "de-DE" and Jellyfin's lowercased "de-de" both fall back to the language on its own.
         var language = culture.Split('-')[0];
-        return Available.FirstOrDefault(c => string.Equals(c, language, StringComparison.OrdinalIgnoreCase))
-            ?? FallbackCulture;
+        return Available.FirstOrDefault(c => string.Equals(c, language, StringComparison.OrdinalIgnoreCase));
     }
 
     private static IReadOnlyDictionary<string, string> Load(string culture)

@@ -52,6 +52,7 @@ async function render(items, mode) {
                 getJSON: (url) => {
                     asked.push(url);
                     if (url.startsWith('Inventory/Schema')) {
+                        if (mode === 'down' || (mode === 'offline' && failing)) { return Promise.reject(new Error('no')); }
                         if (mode === 'stuck' || mode === 'filter' || mode === 'tree') { return Promise.resolve(deep); }
                         const call = ++served;
                         if (mode === 'gone') { return Promise.resolve(call > 1 ? narrowed : schema); }
@@ -96,7 +97,7 @@ async function render(items, mode) {
                 showLoadingMsg() { overlay++; },
                 hideLoadingMsg() { overlay = 0; },
                 alert(message) {
-                    if (!['failed', 'retry', 'stuck', 'switch'].includes(mode)) {
+                    if (!['failed', 'retry', 'stuck', 'switch', 'down', 'offline'].includes(mode)) {
                         throw new Error('the page gave up: ' + message);
                     }
                 },
@@ -178,12 +179,42 @@ async function render(items, mode) {
     rows.open();
     await settle();
 
-    if (mode === 'failed') {
+    if (mode === 'failed' || mode === 'down') {
         const report = {
             message: page.querySelector('#invEmpty').textContent.trim(),
             shown: page.querySelector('#invEmpty').style.display !== 'none',
             columns: page.querySelector('#invColumnsBtn').disabled,
         };
+        window.close();
+        return report;
+    }
+
+    if (mode === 'offline') {
+        leave();
+        await settle();
+        failing = true;
+        show();
+        await settle();
+        const report = {
+            filters: page.querySelector('#invFilterBtn').disabled,
+            rows: page.querySelectorAll('#invBody tr').length,
+        };
+        window.close();
+        return report;
+    }
+
+    if (mode === 'scroll') {
+        const scroller = page.querySelector('.invScroll');
+        scroller.scrollTop = 300;
+        click('#invColumnsBtn');
+        const year = page.querySelector('#invGroups input[data-key="year"]');
+        year.checked = true;
+        year.dispatchEvent(new window.Event('change', { bubbles: true }));
+        await settle();
+        const kept = scroller.scrollTop;
+        click('#invNext');
+        await settle();
+        const report = { kept: kept, turned: scroller.scrollTop };
         window.close();
         return report;
     }
@@ -436,7 +467,7 @@ async function render(items, mode) {
         const sent = [];
         const invalid = [];
         for (const [column, value] of [['duration', '90'], ['totalBitrate', '128'], ['sizePerHour', '2'],
-            ['size', '1,5'], ['size', 'abc'], ['dateAdded', '20245-01-01'], ['dateAdded', '2024-03-01'], ['interlaced', null],
+            ['size', '1,5'], ['audioSampleRate', '48,000'], ['size', 'abc'], ['dateAdded', '20245-01-01'], ['dateAdded', '2024-03-01'], ['interlaced', null],
             ['quality', null]]) {
             if (page.querySelector('#invFilters select').value !== column) {
                 change(page.querySelector('#invFilters select'), column, 'change');
@@ -542,8 +573,8 @@ for (const [prefix, file] of [['one', itemFiles[1]], ['exact', itemFiles[2]]]) {
     }
 }
 
-for (const mode of ['hide', 'export', 'stale', 'overlay', 'hung', 'failed', 'retry', 'stuck', 'switch', 'beyond', 'filter',
-    'tree', 'twice', 'revisit', 'debounce', 'gone', 'units', 'controls']) {
+for (const mode of ['hide', 'export', 'stale', 'overlay', 'hung', 'failed', 'down', 'offline', 'retry', 'stuck', 'switch', 'beyond',
+    'filter', 'tree', 'twice', 'revisit', 'debounce', 'gone', 'units', 'scroll', 'controls']) {
     const extra = await render(read(itemFiles[0]), mode);
     for (const [key, value] of Object.entries(extra)) { console.log(`${mode}.${key}=${value}`); }
 }

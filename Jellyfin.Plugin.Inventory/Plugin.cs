@@ -65,7 +65,8 @@ public class Plugin : BasePlugin<PluginConfiguration>, IHasWebPages
     // dashboard menu follows the one their browser asks in.
     private string? Language()
         => _requests.HttpContext?.Request.GetTypedHeaders().AcceptLanguage
+            .Where(language => language.Quality != 0)
             .OrderByDescending(language => language.Quality ?? 1)
             .Select(language => language.Value.Value)
-            .FirstOrDefault(tag => !string.Equals(Translations.Resolve(tag), Translations.FallbackCulture, StringComparison.Ordinal));
+            .FirstOrDefault(Translations.Has);
 }

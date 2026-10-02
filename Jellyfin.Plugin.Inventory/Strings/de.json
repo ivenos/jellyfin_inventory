@@ -8,6 +8,8 @@
   "RowsPerPage": "Zeilen pro Seite",
   "Empty": "Nichts hier.",
   "LoadFailed": "Das Inventar konnte nicht geladen werden.",
+  "SaveFailed": "Die Spalten konnten nicht gespeichert werden.",
+  "ExportFailed": "Das Inventar konnte nicht exportiert werden.",
   "ItemsOne": "{0} Eintrag",
   "ItemsMany": "{0} Einträge",
   "Mixed": "Gemischt",

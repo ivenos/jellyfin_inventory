@@ -11,7 +11,7 @@ docker run --rm --security-opt label=disable -u "$(id -u):$(id -g)" -e HOME=/tmp
 ```
 
 - The build lands in `Jellyfin.Plugin.Inventory/bin/Release/net10.0/`.
-- A server picks it up from a folder of its own under `plugins`, after a restart.
+- A server picks it up from a folder of its own under `plugins`, beside a `meta.json` written by `.github/scripts/make-meta.py`, after a restart.
 
 ## Tests
 
@@ -24,7 +24,7 @@ sh test/run.sh --keep         # leave the server up to click through
 ```
 
 - It needs Docker, python3, curl and the npm registry.
-- `PORT` gives a run its own container and working directory.
+- `PORT` gives a run its own container and working directory. Runs side by side share the build, so all but one take `--no-build`.
 - CI runs it once per major and minor Jellyfin release from `targetAbi` in `build.yaml` on, as listed by `test/versions.py`. The same sweep locally: `for v in $(python3 test/versions.py); do JELLYFIN_IMAGE=jellyfin/jellyfin:$v sh test/run.sh; done`
 - There are no unit tests on the server side. `test/page.mjs` renders the page in jsdom against the answers the same run recorded.
 - `.github/scripts/screenshots.sh` rebuilds the README screenshots from a showcase library, on the newest release the test matrix covers. Run it when a change alters what the table looks like.
@@ -41,7 +41,7 @@ sh test/run.sh --keep         # leave the server up to click through
 
 - The field on `InventoryRow`, the line that fills it in `InventoryService`, and the entry in `Columns`.
 - A line in `Fold` if it rolls up to a series or an album, or in `FoldPlayback` or `FoldEveryone` if it is read per user.
-- `column.<key>` in every file under `Strings/` and a row in the README table.
+- `column.<key>` in every file under `Strings/` and its English name in the README table, in the row of its group.
 - A column that is not in the README does not exist.
 - Keys are fixed once released.
 
@@ -56,16 +56,16 @@ sh test/run.sh --keep         # leave the server up to click through
 
 - Take colors from the theme variables (`--jf-palette-*`), never from a literal outside a `var()` fallback.
 - Controls are `emby-input`, `emby-button` and `emby-select`, each with the class the web client would add to it.
-- An input carries the class without `is="emby-input"`. The upgrade throws on an input that already has it.
+- An input carries the class without `is="emby-input"`.
 - The page is a flex column in the height the web client gives it, and the table takes what is left. Nothing is sized in `vh`.
-- The table header sticks as a `thead`. Firefox draws sticky cells a little low after a wheel scroll, and the rows show above them.
+- The table header sticks as a `thead`, not cell by cell.
 - Nothing waits for the web client's upgrade module. Anything it would insert, such as the arrow on a select, the page draws itself.
 
 ## Jellyfin versions
 
 - A new Jellyfin release moves these together: the `Jellyfin.Controller` and `Jellyfin.Model` versions, `targetAbi` in `build.yaml`, `IMAGE` in `test/run.sh`, and the version named in the README and under Build. `test/run.sh` checks that they agree.
 - `targetAbi` is the floor of the test matrix.
-- A new .NET release also moves `TargetFramework` in the csproj, `framework` in `build.yaml`, `SDK_IMAGE` in `test/run.sh`, the SDK image in the release workflow and under Build, and `net10.0` in the output path in `test/run.sh`, `.github/scripts/screenshots.sh`, the release workflow and under Build.
+- A new .NET release also moves `TargetFramework` in the csproj, `framework` in `build.yaml`, `SDK_IMAGE` in `test/run.sh`, the SDK image in the release workflow and under Build, and `net10.0` in the output path in `test/run.sh`, `.github/scripts/screenshots.sh`, the release workflow and under Build, and the version named under Build and Code style.
 
 ## Commits
 
@@ -74,7 +74,8 @@ Conventional Commits (https://www.conventionalcommits.org/en/v1.0.0/) with a sho
 ## Releases
 
 - A `v1.2.0` tag builds a draft release. A tag that is not three numbers is refused.
-- Publishing the draft adds the version to `manifest.json`. Publishing it as a pre-release does not.
+- Publishing the draft adds the version to `manifest.json`, with the release notes as its changelog. Publishing it as a pre-release does not.
+- Notes edited after publishing, and a release that is deleted, reach `manifest.json` by hand.
 - Rebuild the README screenshots before every release.
 - The changelog lives in the GitHub release notes, in Keep a Changelog style (https://keepachangelog.com/en/1.1.0/). There is no CHANGELOG.md.
 
@@ -90,4 +91,4 @@ Conventional Commits (https://www.conventionalcommits.org/en/v1.0.0/) with a sho
 - Only the PR author and the maintainer commit to it.
 - `sh test/run.sh` must pass.
 - The test plan names the media types you exercised. Aggregation changes need a series or a season, not only movies.
-- Fill in the PR template, including the CLA checkbox.
+- Fill in the PR template, including the test plan and the CLA checkbox.

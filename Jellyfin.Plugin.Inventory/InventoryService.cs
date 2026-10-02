@@ -607,9 +607,17 @@ public sealed class InventoryService : IDisposable
             // Reading the path of the others would name a folder rip "2049" after its own name.
             var fromPath = kind is BaseItemKind.Book or BaseItemKind.Photo or BaseItemKind.AudioBook;
 
+            // Jellyfin keeps the scale of the reading progress in a book's runtime.
+            var timed = kind is not BaseItemKind.Book;
+
             foreach (var item in items)
             {
                 var row = NewRow(item, roots, libraries, listed);
+                if (!timed)
+                {
+                    row.Duration = null;
+                }
+
                 if (streamed)
                 {
                     ApplyStreams(row, _mediaSourceManager.GetMediaStreams(item.Id));
@@ -745,6 +753,17 @@ public sealed class InventoryService : IDisposable
                 row.Duration = ticks > 0 ? ticks / (double)TimeSpan.TicksPerSecond : null;
             }
 
+            // Jellyfin weighs a disc folder by the first file of its title, and a .strm by the address in it.
+            if (video.VideoType is VideoType.Dvd or VideoType.BluRay)
+            {
+                row.Size = FolderSize(item.Path);
+                row.Rateable = false;
+            }
+            else if (video.IsShortcut)
+            {
+                row.Rateable = false;
+            }
+
             // Jellyfin 12.1 lists a version filed in another library as a row of its own, which weighs itself.
             var versions = video.PrimaryVersionId is null
                 && (video.LocalAlternateVersions.Length > 0 || video.LinkedAlternateVersions.Length > 0)
@@ -804,6 +823,20 @@ public sealed class InventoryService : IDisposable
 
     private static Guid? Identifier(Guid value) => value.Equals(default) ? null : value;
 
+    private static long? FolderSize(string? path)
+    {
+        try
+        {
+            return Directory.Exists(path)
+                ? new DirectoryInfo(path).EnumerateFiles("*", SearchOption.AllDirectories).Sum(f => f.Length)
+                : null;
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            return null;
+        }
+    }
+
     // Jellyfin names no container for a photo, a book or an audiobook, and keeps a photo's
     // dimensions on the item rather than on a stream. Both are only read where nothing was found.
     private static void ApplyFile(InventoryRow row, BaseItem item)
@@ -835,7 +868,7 @@ public sealed class InventoryService : IDisposable
             row.VideoBitrate = video.BitRate;
             row.Width = video.Width is > 0 ? video.Width : null;
             row.Height = video.Height is > 0 ? video.Height : null;
-            row.FrameRate = video.ReferenceFrameRate;
+            row.FrameRate = video.ReferenceFrameRate is { } rate ? MathF.Round(rate, 3) : null;
             row.BitDepth = video.BitDepth;
             row.PixelFormat = video.PixelFormat;
             row.Interlaced = video.IsInterlaced;

@@ -48,6 +48,7 @@ echo "== library =="
 # Five encodings the table can tell apart, cut to a different length per title so no two rows
 # carry the same numbers.
 RECIPE=$(cat <<'FIXTURES'
+        set -e
         FF=/usr/lib/jellyfin-ffmpeg/ffmpeg
         M=/media
         rm -rf "$M/movies" "$M/shows" "$M/music" "$M/photos" "$M/seed"
@@ -135,7 +136,7 @@ if [ "$(cat "$WORK/media/.complete" 2>/dev/null || true)" != "$STAMP" ]; then
     printf '%s\n' "$BOOKS" | while IFS='|' read -r title author; do
         python3 "$ROOT/test/make-book.py" "$WORK/media/books/$title.epub" "$title" "$author"
     done
-    docker run --rm --security-opt label=disable --user "$(id -u):$(id -g)" \
+    docker run --rm --init --security-opt label=disable --user "$(id -u):$(id -g)" \
         -v "$WORK/media:/media" --entrypoint /bin/sh "$IMAGE" -c "$RECIPE"
     printf '%s' "$STAMP" > "$WORK/media/.complete"
 fi
@@ -261,7 +262,7 @@ await page.screenshot({ path: '/out/series.png' });
 await browser.close();
 EOF
 
-docker run --rm --security-opt label=disable --user "$(id -u):$(id -g)" \
+docker run --rm --init --security-opt label=disable --user "$(id -u):$(id -g)" \
     --network "$NETWORK" --ipc=host -e HOME=/tmp \
     -v "$WORK/browser:/b" -v "$ROOT/.github/assets:/out" -w /b "$BROWSER_IMAGE" sh -c \
     "set -e

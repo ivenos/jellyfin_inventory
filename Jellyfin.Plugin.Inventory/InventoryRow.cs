@@ -247,7 +247,7 @@ public class InventoryRow
 
     /// <summary>
     /// Gets or sets a value indicating whether the size and the runtime measure the same files, which
-    /// several cuts of one film, or a folder with an unmeasured item below it, do not.
+    /// several cuts of one film, a disc folder, a .strm, or a folder with an unmeasured item below it, do not.
     /// </summary>
     public bool Rateable { get; set; } = true;
 

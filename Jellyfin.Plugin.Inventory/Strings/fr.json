@@ -8,6 +8,8 @@
   "RowsPerPage": "Lignes par page",
   "Empty": "Il n'y a rien ici.",
   "LoadFailed": "Impossible de charger l'inventaire.",
+  "SaveFailed": "Impossible d'enregistrer les colonnes.",
+  "ExportFailed": "Impossible d'exporter l'inventaire.",
   "ItemsOne": "{0} élément",
   "ItemsMany": "{0} éléments",
   "Mixed": "Mixte",

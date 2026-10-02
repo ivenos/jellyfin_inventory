@@ -204,7 +204,7 @@ public sealed class RowFilter
         // The day the table shows, which is the one the server keeps and not the browser's.
         DateTime day => cell is DateTime held ? held.Date.CompareTo(day) : -1,
         int rank => VideoQuality.Rank(cell.ToString()) is { } held ? held.CompareTo(rank) : -1,
-        // To the digits the table shows, or 23.976 never equals the 23.976025 it is kept as.
+        // To the digits the table shows, or 23.976 never equals the float it is kept as.
         double number => Math.Round(Convert.ToDouble(cell, CultureInfo.InvariantCulture), 3).CompareTo(Math.Round(number, 3)),
         _ => -1
     };

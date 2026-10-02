@@ -42,7 +42,7 @@
                     background: var(--jf-palette-primary-main, #00a4dc);
                     color: var(--jf-palette-primary-contrastText, #000);
                 }
-                .invType .invCount { opacity: .7; margin-left: .5em; display: inline-block;
+                .invType .invCount { opacity: .7; margin-inline-start: .5em; display: inline-block;
                     min-width: .95em; text-align: right; position: relative; }
                 .invType.invLoad .invCount { visibility: hidden; }
                 .invType.invLoad .invCount::after { content: ""; visibility: visible;
@@ -68,7 +68,7 @@
                 .invGroups { display: flex; flex-wrap: wrap; gap: 2em; }
                 .invGroup h4 { margin: 0 0 .5em; color: var(--jf-palette-text-secondary, inherit); font-weight: 500; }
                 .invGroup label { display: block; padding: .15em 0; cursor: pointer; }
-                .invGroup input { margin-right: .5em; accent-color: var(--jf-palette-primary-main, #00a4dc); }
+                .invGroup input { margin-inline-end: .5em; accent-color: var(--jf-palette-primary-main, #00a4dc); }
                 .invFilter { display: flex; flex-wrap: wrap; gap: .5em; align-items: center; margin-bottom: .6em; }
                 .invFilter select { width: auto; min-width: 9em; }
                 .invFilter .invOp select { min-width: 5em; }
@@ -115,7 +115,7 @@
                 .invTable tr[data-depth="1"] { background: var(--jf-palette-action-hover, rgba(127,127,127,.05)); }
                 .invTable tr[data-depth="2"] { background: var(--jf-palette-action-selected, rgba(127,127,127,.09)); }
                 .invTwisty {
-                    border: none; background: none; cursor: pointer; padding: 0 .4em 0 0;
+                    border: none; background: none; cursor: pointer; padding: 0; padding-inline-end: .4em;
                     color: var(--jf-palette-text-secondary, inherit); font-size: .8em;
                     width: 2em; min-width: 24px; min-height: 24px;
                 }
@@ -330,10 +330,21 @@
 
             var bare = { empty: true, notEmpty: true };
 
+            function ungrouped(text) {
+                var group = new Intl.NumberFormat(culture).formatToParts(1234567)
+                    .filter(function (part) { return part.type === 'group'; })[0];
+                if (!group) { return text; }
+                var mark = /\s/.test(group.value) ? '\\s' : '\\' + group.value;
+                return new RegExp('^[+-]?\\d{1,3}(' + mark + '\\d{3})+([.,]\\d*)?$').test(text)
+                    ? text.replace(new RegExp(mark, 'g'), '')
+                    : text;
+            }
+
             function operand(filter, format) {
                 var text = filter.value;
                 if (format === 'Date') { return /^\d{4}-\d{2}-\d{2}$/.test(text) ? text : null; }
                 if (!isNumeric(format)) { return text === '' ? null : text; }
+                text = ungrouped(text);
                 var number = /^[+-]?(\d+([.,]\d*)?|[.,]\d+)$/.test(text) ? Number(text.replace(',', '.')) : NaN;
                 return isFinite(number) ? String(number * scale(format).by) : null;
             }
@@ -470,13 +481,16 @@
             function setPageSize(size) {
                 state.limit = size;
                 state.start = 0;
-
-                ApiClient.ajax({
-                    type: 'POST',
-                    url: url('PageSize', { size: size })
-                }).catch(function () { /* the view is already updated; remembering is best effort */ });
+                remember(url('PageSize', { size: size }));
 
                 load();
+            }
+
+            function remember(target) {
+                saving = saving.then(function () {
+                    return ApiClient.ajax({ type: 'POST', url: target })
+                        .catch(function () { /* the view is already updated; remembering is best effort */ });
+                });
             }
 
             function setExpansion(depth) {
@@ -487,10 +501,7 @@
                     if (type.MediaType === state.type) { type.ExpandedTo = level; }
                 });
 
-                ApiClient.ajax({
-                    type: 'POST',
-                    url: url('Expand', { mediaType: state.type, level: level })
-                }).catch(function () { /* the view is already updated; remembering is best effort */ });
+                remember(url('Expand', { mediaType: state.type, level: level }));
 
                 // A filtered table lists that level itself, and its pages are not the ones before.
                 if (conditions().length) { state.start = 0; }
@@ -662,7 +673,8 @@
                 var says = isOpen ? t('Collapse', 'Collapse') : t('Expand', 'Expand');
                 twisty.setAttribute('aria-label', what ? says + ' ' + what : says);
                 var glyph = twisty.querySelector('span') || twisty;
-                glyph.textContent = isOpen ? '\u25bc' : '\u25b6';
+                var closed = document.documentElement.getAttribute('dir') === 'rtl' ? '\u25c0' : '\u25b6';
+                glyph.textContent = isOpen ? '\u25bc' : closed;
             }
 
             // One request per level rather than one per row: expanding a page of series would
@@ -911,7 +923,7 @@
                         load();
                     }).catch(function () {
                         outstanding--;
-                        if (showing) { Dashboard.alert(t('LoadFailed', 'Could not load the inventory.')); }
+                        if (showing) { Dashboard.alert(t('SaveFailed', 'Could not save the columns.')); }
                         load();
                     });
                 });
@@ -1272,6 +1284,7 @@
 
                     busy(false);
                     state.total = result.TotalCount;
+                    var before = drawn;
                     drawn = {
                         type: state.type,
                         level: state.level,
@@ -1285,6 +1298,11 @@
                         total: state.total
                     };
                     renderTable(result);
+                    // The scroller keeps its place when its rows are replaced, which is the end of the page before.
+                    if (!before || Object.keys(drawn).some(function (key) { return key !== 'total' && before[key] !== drawn[key]; })) {
+                        page.querySelector('.invScroll').scrollTop = 0;
+                    }
+
                     renderFooter(result);
                     renderColumnPicker();
                     if (state.expandTo > 0 && nestedView) { expandTo(state.expandTo); }
@@ -1390,7 +1408,7 @@
                     })
                     .catch(function () {
                         done(buttons, held, pressed, mine);
-                        if (showing) { Dashboard.alert(t('LoadFailed', 'Could not load the inventory.')); }
+                        if (showing) { Dashboard.alert(t('ExportFailed', 'Could not export the inventory.')); }
                     });
             }
 
@@ -1521,6 +1539,13 @@
                     if (mine !== visit) { return; }
                     Dashboard.hideLoadingMsg();
                     applyStaticLabels();
+                    page.querySelector('#invFilterBtn').disabled = !schema.columns.length;
+                    if (!schema.columns.length) {
+                        var blank = page.querySelector('#invEmpty');
+                        blank.textContent = t('LoadFailed', 'Could not load the inventory.');
+                        blank.style.display = '';
+                    }
+
                     Dashboard.alert(t('LoadFailed', 'Could not load the inventory.'));
                 });
             });

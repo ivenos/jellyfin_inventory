@@ -43,6 +43,8 @@ refused() {
 trap cleanup EXIT
 trap 'exit 130' INT TERM
 
+curl() { command curl --max-time 120 "$@"; }
+
 # printf, because the echo of dash, which is sh on the CI runner, reads backslashes in a value.
 check() {
     if [ -z "$2" ] || [ "$2" = "<unparseable>" ] || [ "$3" = "<unparseable>" ]; then
@@ -86,13 +88,15 @@ check "the page script parses" \
         node --check /w/page.js >/dev/null 2>&1 && echo ok || echo broken)" "ok"
 
 # Only the tabs that hold something reach the schema, so an empty level would go unnamed.
-check "every level a tab can hold is named in the strings" \
+check "every tab and every level a tab can hold is named in the strings" \
     "$(python3 -c "
 import json, pathlib, re
-kinds = re.findall(r'BaseItemKind\.(\w+)', pathlib.Path('$ROOT/Jellyfin.Plugin.Inventory/Hierarchy.cs').read_text(encoding='utf-8'))
+tabs = re.findall(r'^\s*\[(BaseItemKind\.[^\]]+)\]', pathlib.Path('$ROOT/Jellyfin.Plugin.Inventory/Hierarchy.cs').read_text(encoding='utf-8'), re.M)
+tabs = [re.findall(r'BaseItemKind\.(\w+)', tab) for tab in tabs]
 strings = json.loads(pathlib.Path('$ROOT/Jellyfin.Plugin.Inventory/Strings/en.json').read_text(encoding='utf-8'))
-missing = sorted({'level.' + k for k in kinds} - set(strings))
-print('ok' if not missing else missing)")" "ok"
+wanted = {'level.' + k for tab in tabs for k in tab} | {'mediaType.' + tab[0] for tab in tabs}
+missing = sorted(wanted - set(strings))
+print('ok' if tabs and not missing else missing)")" "ok"
 # CONTRIBUTING puts it the other way round: a column that is not in the README does not exist.
 check "the readme lists exactly the columns there are" \
     "$(python3 -c "
@@ -117,7 +121,7 @@ seen = {
     'build.yaml': (r'^targetAbi: \"(\d+\.\d+)', 'build.yaml'),
     'csproj': (r'\"Jellyfin\.\w+\" Version=\"(\d+\.\d+)', 'Jellyfin.Plugin.Inventory/Jellyfin.Plugin.Inventory.csproj'),
     'run.sh': (r'jellyfin/jellyfin:(\d+\.\d+)', 'test/run.sh'),
-    'README.md': (r'Jellyfin (\d+\.\d+)', 'README.md'),
+    'README.md': (r'Jellyfin[ -](\d+\.\d+)', 'README.md'),
     'CONTRIBUTING.md': (r'Jellyfin (\d+\.\d+)', 'CONTRIBUTING.md'),
 }
 found = {name: sorted(set(re.findall(p, (root / f).read_text(encoding='utf-8'), re.M)))
@@ -215,13 +219,13 @@ RECIPE=$(cat <<'FIXTURES'
         $FF -y -loglevel error -f lavfi -i testsrc2=size=240x320:rate=10:duration=2 \
             -c:v libx264 -preset ultrafast -crf 40 -pix_fmt yuv420p \
             "/media/movies/=Formula Trap (2024)/=Formula Trap (2024).mkv"
-        # Two seasons, and a codec that differs between them, so the series aggregates to mixed.
-        $FF -y -loglevel error -f lavfi -i testsrc2=size=640x360:rate=25:duration=4 \
+        # Two seasons that differ in codec, so the series aggregates to mixed, and in rate only past the digits anyone reads.
+        $FF -y -loglevel error -f lavfi -i testsrc2=size=640x360:rate=24000/1001:duration=4 \
             -f lavfi -i sine=frequency=500:duration=4 \
             -c:v libx264 -preset ultrafast -crf 40 -pix_fmt yuv420p -c:a aac -ac 2 \
             "/media/shows/Long Run (2020)/Season 01/Long Run S01E01.mkv"
-        $FF -y -loglevel error -f lavfi -i testsrc2=size=320x180:rate=25:duration=4 \
-            -f lavfi -i sine=frequency=500:duration=4 \
+        $FF -y -loglevel error -f lavfi -i testsrc2=size=320x180:rate=2997/125:duration=2 \
+            -f lavfi -i sine=frequency=500:duration=2 \
             -c:v libx265 -preset ultrafast -crf 40 -pix_fmt yuv420p -c:a aac -ac 2 \
             "/media/shows/Long Run (2020)/Season 02/Long Run S02E01.mkv"
         # One episode carries bytes but nothing else, which is what an unreadable file looks like.
@@ -276,6 +280,13 @@ RECIPE=$(cat <<'FIXTURES'
             -f lavfi -i sine=frequency=500:duration=4 \
             -c:v libx264 -preset ultrafast -crf 40 -pix_fmt yuv420p -c:a aac -ac 2 \
             "/media/movies/Two Part Feature (2019)/Two Part Feature (2019) - part2.mkv"
+        # A disc folder, kept outside the libraries until the run moves it into one.
+        mkdir -p "/media/spare/Disc Rip (2001)/VIDEO_TS"
+        for n in 1 2 3; do
+            $FF -y -loglevel error -f lavfi -i testsrc2=size=720x576:rate=25:duration=2 \
+                -f lavfi -i sine=frequency=500:duration=2 \
+                -c:v mpeg2video -c:a ac3 -ac 2 -f vob "/media/spare/Disc Rip (2001)/VIDEO_TS/VTS_01_$n.VOB"
+        done
         # A photo carries no stream, so its size and dimensions have to come off the item.
         mkdir -p /media/photos/Trip
         $FF -y -loglevel error -f lavfi -i testsrc2=size=4032x3024:rate=1:duration=1 \
@@ -313,14 +324,14 @@ if [ "$(cat "$WORK/media/.complete" 2>/dev/null || true)" != "$STAMP" ]; then
         "$BOOK_TITLE" "$BOOK_AUTHOR"
     python3 "$ROOT/test/make-book.py" "$WORK/media/shelf/$SHELF_TITLE.epub" \
         "$SHELF_TITLE" "$BOOK_AUTHOR"
-    docker run --rm --security-opt label=disable --user "$(id -u):$(id -g)" \
+    docker run --rm --init --security-opt label=disable --user "$(id -u):$(id -g)" \
         -v "$WORK/media:/media" --entrypoint /bin/sh "$IMAGE" -c "$RECIPE"
     # Written last, so an interrupted run does not leave half a set that looks complete.
     printf '%s' "$STAMP" > "$WORK/media/.complete"
 fi
 
 # Left behind by the growing-library check, and it would throw off this run's counts.
-rm -rf "${WORK:?}/media/movies/Late Arrival (2025)" "${WORK:?}/media/copies"
+rm -rf "${WORK:?}/media/movies/Late Arrival (2025)" "${WORK:?}/media/movies/Disc Rip (2001)" "${WORK:?}/media/copies"
 
 echo "== start =="
 docker rm -f "$CONTAINER" >/dev/null 2>&1 || true
@@ -404,7 +415,7 @@ until [ "$(api 'Inventory/Schema' | field "
     i=$((i + 1))
     [ "$i" -gt 60 ] && { echo; echo "library did not settle" >&2; api 'Inventory/Schema'; exit 1; }
     [ $((i % 10)) = 0 ] && curl -sf -X POST "$BASE/Library/Refresh" \
-        -H "Authorization: MediaBrowser Token=\"$TOKEN\"" >/dev/null 2>&1
+        -H "Authorization: MediaBrowser Token=\"$TOKEN\"" >/dev/null 2>&1 || true
     printf '.'
     sleep 3
 done
@@ -423,7 +434,7 @@ until [ "$(api 'Inventory/Items?mediaType=MusicAlbum' | field "','.join(sorted({
     i=$((i + 1))
     [ "$i" -gt 60 ] && { echo; echo "media was never analyzed" >&2; api 'Inventory/Items?mediaType=MusicAlbum'; exit 1; }
     [ $((i % 5)) = 0 ] && curl -sf -X POST "$BASE/Library/Refresh" \
-        -H "Authorization: MediaBrowser Token=\"$TOKEN\"" >/dev/null 2>&1
+        -H "Authorization: MediaBrowser Token=\"$TOKEN\"" >/dev/null 2>&1 || true
     printf '.'
     sleep 3
 done
@@ -610,6 +621,9 @@ for folder in folders:
             wrong.append((folder['Values']['name'], key, got, want))
 print('ok' if folders and below and not wrong else wrong)")" "ok"
 
+check "a rate that differs between episodes only past the digits the table shows is one rate, not mixed" \
+    "$(field "[r['Values']['frameRate'] for r in json.load(open('$WORK/folders.json'))['Rows'] if r['Values']['name']=='Long Run'][0]" </dev/null)" "23.976"
+
 SERIES_ID=$(printf '%s\n' "$SERIES" | identify 'Harbour Lights')
 SEASONS=$(api "Inventory/Items?mediaType=Series&level=Season&parentIds=$SERIES_ID")
 check "expanding a series yields its season" \
@@ -707,6 +721,8 @@ check "a row names the library it was found in" \
     "$(api 'Inventory/Items?mediaType=Book' | field "json.load(sys.stdin)['Rows'][0]['Values']['library']")" "Books"
 check "and one of the same kind in another library names that one" \
     "$(api 'Inventory/Items?mediaType=Book' | named 'The Second Shelf' library)" "Shelf"
+check "nor does a book run for the second jellyfin measures its reading progress in" \
+    "$(api 'Inventory/Items?mediaType=Book' | field "json.load(sys.stdin)['TotalDuration']")" "0"
 check "a book is not given a size per hour" \
     "$(api 'Inventory/Items?mediaType=Book' | field "'sizePerHour' in [c['Key'] for c in json.load(sys.stdin)['Columns']]")" "False"
 curl -sf -X POST "$BASE/Inventory/Columns?level=Book" \
@@ -782,6 +798,10 @@ check "and the totals are those of what is left" \
 check "a number is held against the value it was given" \
     "$(api "Inventory/Items?mediaType=Movie&filters=$(filtered '[{"column":"height","op":"ge","value":1080}]')" | names)" \
     "Blue Harbour (2021),Night Signal (2023)"
+check "a size, a runtime and a rate are held against bytes, seconds and bits per second" \
+    "$(api "Inventory/Items?mediaType=Movie&filters=$(filtered "[{\"column\":\"size\",\"op\":\"ge\",\"value\":$FEATURE}]")" | names)/$(api "Inventory/Items?mediaType=Movie&filters=$(filtered '[{"column":"duration","op":"le","value":3}]')" \
+        | field "json.load(sys.stdin)['TotalCount']")/$(api "Inventory/Items?mediaType=Movie&filters=$(filtered '[{"column":"sizePerHour","op":"ge","value":2000000000}]')" | names)/$(api "Inventory/Items?mediaType=Movie&filters=$(filtered '[{"column":"audioBitrate","op":"ge","value":600000}]')" | names)" \
+    "Blue Harbour (2021)/2/Blue Harbour (2021),Night Signal (2023)/Night Signal (2023)"
 check "a class finds the film its height alone would miss" \
     "$(api "Inventory/Items?mediaType=Movie&filters=$(filtered '[{"column":"quality","op":"eq","value":"1080p"}]')" \
         | field "json.load(sys.stdin)['TotalCount']")" "2"
@@ -1233,6 +1253,8 @@ menu() {
 }
 check "and its name is worded in the language the browser asks in, by the weight it gives each one" \
     "$(menu 'de-DE,de;q=0.9,en;q=0.8')/$(menu 'de;q=0.3, fr;q=0.9')/$(menu 'nl,en-GB;q=0.5')" "Inventar/Inventaire/Inventory"
+check "english asked for first is not passed over for a language further down, nor is one that was ruled out taken" \
+    "$(menu 'en-US,en;q=0.9,de;q=0.8')/$(menu 'nl,de;q=0')" "Inventory/Inventory"
 
 # The rows are cached per user, so a second administrator has to see his own playback and not
 # the one the first has just written.
@@ -1346,7 +1368,7 @@ curl -sf -X POST "$BASE/Inventory/PageSize?size=2" \
 api 'Inventory/Schema' > "$WORK/page/schema.json"
 api 'Inventory/Items?mediaType=Movie&sortBy=size&descending=true&limit=100' > "$WORK/page/items.json"
 api 'Inventory/Items?mediaType=Movie&search=Two%20Part' > "$WORK/page/one.json"
-docker run --rm --security-opt label=disable --user "$(id -u):$(id -g)" -e HOME=/tmp \
+docker run --rm --init --security-opt label=disable --user "$(id -u):$(id -g)" -e HOME=/tmp \
     -e TZ=Asia/Tokyo -e "JSDOM=$JSDOM_VERSION" -v "$WORK/page:/w" -w /w "$NODE_IMAGE" sh -c \
     'set -e
      [ -f "node_modules/.jsdom-$JSDOM" ] || { rm -rf node_modules
@@ -1387,6 +1409,10 @@ check "an export that never lands does not hold the buttons past the visit" \
 check "and leaves no spinner behind on the way out" "$(rendered hung.spinning)" "0"
 check "a first load that fails says so where the table would be" \
     "$(rendered failed.shown)/$(rendered failed.message)" "true/Could not load the inventory."
+check "nor does a visit whose schema never arrived, which leaves no filter to open" \
+    "$(rendered down.shown)/$(rendered down.message)" "true/Could not load the inventory."
+check "while a table drawn on an earlier visit stays, and stays filterable, when the server is gone on the way back" \
+    "$(rendered offline.rows)/$(rendered offline.filters)" "7/false"
 check "a page turn that fails does not skip the page behind it" \
     "$(rendered retry.asked)" "startIndex=2"
 check "and leaves the pager on the page that is drawn" \
@@ -1429,12 +1455,14 @@ check "a page turned while a changed condition is still waiting lists that condi
     "$(rendered debounce.asked)/$(rendered debounce.pager)" "startIndex=0/1 / 4"
 check "a condition on a column the server no longer offers is dropped rather than breaking the page" \
     "$(rendered gone.asked)/$(rendered gone.button)/$(rendered gone.rows)" "1/Filters/7"
-check "a value is sent in the unit the server keeps, and a decimal comma is read as a point" \
-    "$(rendered units.sent)" "5400|128000|2147483648|1610612736|none|none|2024-03-01|true|144p"
+check "a value is sent in the unit the server keeps, a decimal comma is read as a point and digits grouped the way the table prints them as one number" \
+    "$(rendered units.sent)" "5400|128000|2147483648|1610612736|48000|none|none|2024-03-01|true|144p"
 check "while one that cannot be read is marked and asks for nothing" \
-    "$(rendered units.invalid)" "false|false|false|false|true|true|false|-|-"
+    "$(rendered units.invalid)" "false|false|false|false|false|true|true|false|-|-"
 check "a quality is picked from its classes, in their order, rather than typed" \
     "$(rendered units.classes)/$(rendered units.picked)" "144p,240p,360p,384p,404p,480p,540p,576p,720p,1080p,1440p,4K,8K/720p"
+check "the table keeps its place when a column is ticked, and opens another page of rows at the top" \
+    "$(rendered scroll.kept)/$(rendered scroll.turned)" "300/0"
 check "a ticked column is stored behind the last chosen one the picker offers before it" \
     "$(rendered controls.ticked)" '["name","year","size","duration","sizePerHour","videoCodec","interlaced"]'
 check "ctrl with an arrow key moves a column" \
@@ -1587,27 +1615,36 @@ echo "== a growing library =="
 cp -r "$WORK/media/movies/Blue Harbour (2021)" "$WORK/media/movies/Late Arrival (2025)"
 mv "$WORK/media/movies/Late Arrival (2025)/Blue Harbour (2021).mkv" \
    "$WORK/media/movies/Late Arrival (2025)/Late Arrival (2025).mkv"
+cp -r "$WORK/media/spare/Disc Rip (2001)" "$WORK/media/movies/"
+curl -sf -X POST "$BASE/Inventory/Columns?level=Video" \
+    -H "Authorization: MediaBrowser Token=\"$TOKEN\"" -H "$JSON" \
+    -d '["name","size","duration","sizePerHour","videoCodec"]' >/dev/null || refused "Inventory/Columns?level=Video"
 curl -sf -X POST "$BASE/Library/Refresh" -H "Authorization: MediaBrowser Token=\"$TOKEN\"" >/dev/null || refused "Library/Refresh"
-printf 'waiting for the new film'
+printf 'waiting for the new films'
 i=0
-until [ "$(api 'Inventory/Items?mediaType=Movie' | field "json.load(sys.stdin)['TotalCount']")" = "8" ]; do
+until [ "$(api 'Inventory/Items?mediaType=Movie&columnLevel=Video&limit=100' \
+    | field "(lambda d: '%s/%s' % (d['TotalCount'], [bool(r['Values']['videoCodec']) for r in d['Rows'] if r['Values']['name'] == 'Disc Rip (2001)']))(json.load(sys.stdin))")" = "9/[True]" ]; do
     i=$((i + 1))
-    [ "$i" -gt 40 ] && { echo; echo "the new film never arrived" >&2; exit 1; }
+    [ "$i" -gt 40 ] && { echo; echo "the new films never arrived" >&2; exit 1; }
     [ $((i % 10)) = 0 ] && curl -sf -X POST "$BASE/Library/Refresh" \
-        -H "Authorization: MediaBrowser Token=\"$TOKEN\"" >/dev/null 2>&1
+        -H "Authorization: MediaBrowser Token=\"$TOKEN\"" >/dev/null 2>&1 || true
     printf '.'
     sleep 3
 done
 echo
 check "a film added while the server runs reaches the table without a restart" \
-    "$(api 'Inventory/Items?mediaType=Movie' | field "json.load(sys.stdin)['TotalCount']")" "8"
-rm -rf "$WORK/media/movies/Late Arrival (2025)"
+    "$(api 'Inventory/Items?mediaType=Movie' | field "json.load(sys.stdin)['TotalCount']")" "9"
+check "a disc folder weighs every file in it, not the one jellyfin probed, and takes no rate from a runtime that is not theirs" \
+    "$(api 'Inventory/Items?mediaType=Movie&columnLevel=Video&search=Disc%20Rip' \
+        | field "(lambda v: '%s/%s/%s' % (v['size'], v['duration'] is not None, v['sizePerHour']))(json.load(sys.stdin)['Rows'][0]['Values'])")" \
+    "$(find "$WORK/media/movies/Disc Rip (2001)" -type f -exec cat {} + | wc -c | tr -d ' ')/True/None"
+rm -rf "$WORK/media/movies/Late Arrival (2025)" "$WORK/media/movies/Disc Rip (2001)"
 curl -sf -X POST "$BASE/Library/Refresh" -H "Authorization: MediaBrowser Token=\"$TOKEN\"" >/dev/null || refused "Library/Refresh"
 i=0
 until [ "$(api 'Inventory/Items?mediaType=Movie' | field "json.load(sys.stdin)['TotalCount']")" = "7" ] || [ "$i" -gt 40 ]; do
     i=$((i + 1))
     [ $((i % 10)) = 0 ] && curl -sf -X POST "$BASE/Library/Refresh" \
-        -H "Authorization: MediaBrowser Token=\"$TOKEN\"" >/dev/null 2>&1
+        -H "Authorization: MediaBrowser Token=\"$TOKEN\"" >/dev/null 2>&1 || true
     sleep 3
 done
 check "and one taken away leaves it again" \
@@ -1621,7 +1658,7 @@ i=0
 until [ "$(api 'Inventory/Items?mediaType=Movie&search=Night%20Signal' | field "json.load(sys.stdin)['TotalCount']")" = "2" ] || [ "$i" -gt 40 ]; do
     i=$((i + 1))
     [ $((i % 10)) = 0 ] && curl -sf -X POST "$BASE/Library/Refresh" \
-        -H "Authorization: MediaBrowser Token=\"$TOKEN\"" >/dev/null 2>&1
+        -H "Authorization: MediaBrowser Token=\"$TOKEN\"" >/dev/null 2>&1 || true
     sleep 3
 done
 curl -sf -X POST "$BASE/Videos/MergeVersions?ids=$(api 'Inventory/Items?mediaType=Movie&search=Night%20Signal' \

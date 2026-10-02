@@ -43,7 +43,7 @@ Inventory then appears in the catalog under General. Restart the server after in
 
 ## API
 
-Six endpoints under `/Inventory`, all requiring an administrator token. An API key carries no user, so the playback columns that are the caller's own are empty for one. `mediaType` names a tab, `level` one of the levels inside it; those and the column keys all come from `Schema`.
+Six endpoints under `/Inventory`, all requiring an administrator token. An API key carries no user, so Last played, Plays and Fully played are empty for one. `mediaType` names a tab, `level` one of the levels inside it; those and the column keys all come from `Schema`.
 
 | Endpoint | Parameters | Answers with |
 | --- | --- | --- |
@@ -54,7 +54,9 @@ Six endpoints under `/Inventory`, all requiring an administrator token. An API k
 | `POST Expand` | `mediaType`, `level` | The stored level |
 | `POST PageSize` | `size` | The stored number of rows per page |
 
-`filters` is a JSON array of up to 20 conditions, and a row has to meet all of them: `[{"column":"height","op":"ge","value":1080}]`. `op` is one of the operators `Schema` lists for the column, out of `eq`, `ne`, `ge`, `le`, `contains`, `notContains`, `empty` and `notEmpty`, the last two taking no `value`. A value is in the unit `Items` answers in, which is bytes, seconds or bits per second, a date is `yyyy-MM-dd`, and a quality is one of the classes `Schema` lists, compared by its place in that list. An empty cell meets only `ne`, `notContains` and `empty`, and a cell that reads as mixed meets no condition.
+`filters` is a JSON array of up to 20 conditions, and a row has to meet all of them: `[{"column":"height","op":"ge","value":1080}]`. `op` is one of the operators `Schema` lists for the column, out of `eq`, `ne`, `ge`, `le`, `contains`, `notContains`, `empty` and `notEmpty`, the last two taking no `value`. A value is in the unit `Items` answers in, which is bytes, bytes per hour, seconds or bits per second, a date is `yyyy-MM-dd`, a truth value is `true` or `false`, and a quality is one of the classes `Schema` lists, compared by its place in that list. An empty cell meets only `ne`, `notContains` and `empty`, and a cell that reads as mixed meets no condition.
+
+`search` is a substring of the name, the series name or the path. On the outermost level it reaches every level of the tab, and `Export` then leaves out a row whose series, season or album matched as well. A `csv` names the unit in its header and takes its decimal and field separators from `culture`, an `ods` types its cells.
 
 ## License
 

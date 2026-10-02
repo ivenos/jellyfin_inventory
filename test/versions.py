@@ -2,11 +2,11 @@
 """Lists the Jellyfin releases to test against: every major.minor from the targetAbi on."""
 
 import argparse
+import http.client
 import json
 import pathlib
 import re
 import time
-import urllib.error
 import urllib.request
 
 REGISTRY = "https://registry-1.docker.io"
@@ -31,7 +31,7 @@ def get(url, headers=None):
         try:
             with urllib.request.urlopen(request, timeout=60) as answer:
                 return json.load(answer), answer.headers
-        except (urllib.error.URLError, TimeoutError, json.JSONDecodeError):
+        except (OSError, http.client.HTTPException, json.JSONDecodeError):
             if attempt == 2:
                 raise
             time.sleep(5 * (attempt + 1))
