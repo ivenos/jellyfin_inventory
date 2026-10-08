@@ -11,7 +11,7 @@ ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)
 IMAGE="${JELLYFIN_IMAGE:-jellyfin/jellyfin:$(python3 "$ROOT/test/versions.py" --root "$ROOT" | tail -n 1)}"
 # Taken from the test run, so the versions stay in one place.
 SDK_IMAGE="${SDK_IMAGE:-$(sed -n 's/^SDK_IMAGE=.*:-\(.*\)}"/\1/p' "$ROOT/test/run.sh")}"
-BROWSER_IMAGE="${PLAYWRIGHT_IMAGE:-mcr.microsoft.com/playwright:v1.63.0-noble}"
+BROWSER_IMAGE="${PLAYWRIGHT_IMAGE:-mcr.microsoft.com/playwright:v1.64.0-noble}"
 # The image carries the browsers but not the library, and the two have to be the same release.
 BROWSER_VERSION=$(printf '%s' "$BROWSER_IMAGE" | sed -n 's/.*:v\([0-9.]*\).*/\1/p')
 case "$IMAGE" in *:) echo "test/versions.py named no Jellyfin release" >&2; exit 1 ;; esac
