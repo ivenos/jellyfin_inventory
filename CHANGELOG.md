@@ -4,6 +4,18 @@ All notable changes to this project are documented in this file, in the format o
 
 ## [Unreleased]
 
+### Fixed
+
+- An mp4, mov or webm file showed a list of formats as its container.
+- Names and other text sorted 10 ahead of 2.
+- An audio .strm file took its size per hour from the size of the text file.
+- A frame rate typed as 23.976 found nothing in languages with a decimal comma.
+- A filter read a value such as 0,125 as 125.
+- Right-to-left languages showed sizes, runtimes and paths in the wrong order.
+- Clicking a column header while a tab loaded sorted it by a hidden column.
+- After a first load that failed, buttons could be clicked but did nothing.
+- Search and filters missed names with accents the way macOS stores them.
+
 ### Dependencies
 
 - jsdom 30.1.1 -> 30.1.2 (#8)

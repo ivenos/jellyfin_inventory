@@ -253,7 +253,7 @@ public static class Export
             case double seconds when format == ColumnFormat.Duration:
                 var time = TimeSpan.FromMilliseconds(Math.Round(seconds * 1000));
                 var whole = TimeSpan.FromSeconds(Math.Round(time.TotalSeconds));
-                var span = string.Create(CultureInfo.InvariantCulture, $"PT{(long)time.TotalHours}H{time.Minutes}M{time.Seconds + (time.Milliseconds / 1000d)}S");
+                var span = string.Create(CultureInfo.InvariantCulture, $"PT{(long)time.TotalHours}H{time.Minutes}M{time.Seconds + (time.Milliseconds / 1000m)}S");
                 var clock = string.Create(CultureInfo.InvariantCulture, $"{(long)whole.TotalHours}:{whole.Minutes:00}:{whole.Seconds:00}");
                 return string.Create(CultureInfo.InvariantCulture, $"""<table:table-cell table:style-name="C-duration" office:value-type="time" office:time-value="{span}"><text:p>{clock}</text:p></table:table-cell>""");
             case bool flag:

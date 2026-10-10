@@ -132,6 +132,7 @@ async function render(items, mode) {
     };
     const typed = () => new Promise((done) => window.setTimeout(done, 400));
 
+    if (mode === 'rtl') { window.document.documentElement.setAttribute('dir', 'rtl'); }
     show();
     await settle();
     const waiting = spinning();
@@ -184,6 +185,8 @@ async function render(items, mode) {
             message: page.querySelector('#invEmpty').textContent.trim(),
             shown: page.querySelector('#invEmpty').style.display !== 'none',
             columns: page.querySelector('#invColumnsBtn').disabled,
+            dead: ['#invColumnsBtn', '#invCsv', '#invOds', '#invPrev', '#invNext']
+                .map((id) => page.querySelector(id).disabled).join(','),
         };
         window.close();
         return report;
@@ -295,6 +298,27 @@ async function render(items, mode) {
             boxes: page.querySelectorAll('#invGroups input').length,
             pager: [page.querySelector('#invPage').textContent, page.querySelector('#invPrev').disabled,
                 page.querySelector('#invNext').disabled].join('/'),
+        };
+        window.close();
+        return report;
+    }
+
+    if (mode === 'early') {
+        const before = requests().length;
+        page.querySelectorAll('.invType')[1].dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+        page.querySelectorAll('#invHead th')[1].dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+        await settle();
+        const report = { sorts: requests().slice(before).map((url) => param(url, 'sortBy') || '-').join(',') };
+        window.close();
+        return report;
+    }
+
+    if (mode === 'rtl') {
+        const cells = [...page.querySelectorAll('#invBody td')];
+        const report = {
+            bare: cells.filter((td) => [...td.childNodes].some((node) => node.nodeType === 3 && node.nodeValue)).length,
+            name: page.querySelector('#invBody td a').dir,
+            totals: page.querySelectorAll('#invTotals bdi').length,
         };
         window.close();
         return report;
@@ -467,7 +491,7 @@ async function render(items, mode) {
         const sent = [];
         const invalid = [];
         for (const [column, value] of [['duration', '90'], ['totalBitrate', '128'], ['sizePerHour', '2'],
-            ['size', '1,5'], ['audioSampleRate', '48,000'], ['size', 'abc'], ['dateAdded', '20245-01-01'], ['dateAdded', '2024-03-01'], ['interlaced', null],
+            ['size', '1,5'], ['audioSampleRate', '48,000'], ['frameRate', '23,976'], ['size', '0,125'], ['size', 'abc'], ['dateAdded', '20245-01-01'], ['dateAdded', '2024-03-01'], ['interlaced', null],
             ['quality', null]]) {
             if (page.querySelector('#invFilters select').value !== column) {
                 change(page.querySelector('#invFilters select'), column, 'change');
@@ -574,7 +598,7 @@ for (const [prefix, file] of [['one', itemFiles[1]], ['exact', itemFiles[2]]]) {
 }
 
 for (const mode of ['hide', 'export', 'stale', 'overlay', 'hung', 'failed', 'down', 'offline', 'retry', 'stuck', 'switch', 'beyond',
-    'filter', 'tree', 'twice', 'revisit', 'debounce', 'gone', 'units', 'scroll', 'controls']) {
+    'filter', 'tree', 'twice', 'revisit', 'debounce', 'gone', 'units', 'scroll', 'controls', 'early', 'rtl']) {
     const extra = await render(read(itemFiles[0]), mode);
     for (const [key, value] of Object.entries(extra)) { console.log(`${mode}.${key}=${value}`); }
 }

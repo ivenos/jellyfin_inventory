@@ -155,6 +155,7 @@ public sealed class InventoryService : IDisposable
     {
         var kind = Hierarchy.Resolve(mediaType, level)
             ?? throw new ArgumentException($"Unknown media type '{mediaType}' or level '{level}'.", nameof(mediaType));
+        search = search?.Normalize();
 
         // The account list is what notices one that came or went, and a request that spans three
         // levels would otherwise ask the database for it three times over.
@@ -245,7 +246,7 @@ public sealed class InventoryService : IDisposable
             page,
             rows.Count,
             counted.Sum(r => r.Size ?? 0),
-            counted.Sum(r => r.Duration ?? 0));
+            Math.Round(counted.Sum(r => r.Duration ?? 0), 3));
     }
 
     /// <inheritdoc />
@@ -270,9 +271,10 @@ public sealed class InventoryService : IDisposable
             || (row.AncestorId.HasValue && present.Contains(row.AncestorId.Value));
 
     private static bool Matches(InventoryRow row, string search)
-        => row.Name.Contains(search, StringComparison.OrdinalIgnoreCase)
-            || (row.SeriesName?.Contains(search, StringComparison.OrdinalIgnoreCase) ?? false)
-            || (row.Path?.Contains(search, StringComparison.OrdinalIgnoreCase) ?? false);
+        => Holds(row.Name, search) || Holds(row.SeriesName, search) || Holds(row.Path, search);
+
+    private static bool Holds(string? text, string search)
+        => text is not null && RowFilter.Composed(text).Contains(search, StringComparison.OrdinalIgnoreCase);
 
     private static bool Meets(InventoryRow row, IReadOnlyList<RowFilter> filters) => filters.All(f => f.Matches(row));
 
@@ -734,7 +736,7 @@ public sealed class InventoryService : IDisposable
             Name = item.Name ?? string.Empty,
             Year = item.ProductionYear,
             Path = item.Path,
-            Container = item.Container,
+            Container = ContainerOf(item),
             Size = item.Size,
             DateAdded = item.DateCreated > DateTime.MinValue ? item.DateCreated : null,
             Duration = item.RunTimeTicks is > 0 ? item.RunTimeTicks.Value / (double)TimeSpan.TicksPerSecond : null,
@@ -753,14 +755,10 @@ public sealed class InventoryService : IDisposable
                 row.Duration = ticks > 0 ? ticks / (double)TimeSpan.TicksPerSecond : null;
             }
 
-            // Jellyfin weighs a disc folder by the first file of its title, and a .strm by the address in it.
+            // Jellyfin weighs a disc folder by the first file of its title.
             if (video.VideoType is VideoType.Dvd or VideoType.BluRay)
             {
                 row.Size = FolderSize(item.Path);
-                row.Rateable = false;
-            }
-            else if (video.IsShortcut)
-            {
                 row.Rateable = false;
             }
 
@@ -778,6 +776,11 @@ public sealed class InventoryService : IDisposable
                 row.Rateable = false;
                 row.Versions = versions.Select(v => v.Id).ToArray();
             }
+        }
+
+        if (item.IsShortcut)
+        {
+            row.Rateable = false;
         }
 
         if (item is Episode episode)
@@ -819,6 +822,19 @@ public sealed class InventoryService : IDisposable
         }
 
         return name;
+    }
+
+    // Jellyfin keeps every name ffprobe has for a format, "mov,mp4,m4a,3gp,3g2,mj2", and shows the one the file goes by.
+    private static string? ContainerOf(BaseItem item)
+    {
+        var names = item.Container?.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        if (names is not { Length: > 1 })
+        {
+            return item.Container;
+        }
+
+        var suffix = Path.GetExtension(item.Path)?.TrimStart('.');
+        return names.FirstOrDefault(n => string.Equals(n, suffix, StringComparison.OrdinalIgnoreCase)) ?? names[0];
     }
 
     private static Guid? Identifier(Guid value) => value.Equals(default) ? null : value;
@@ -991,10 +1007,10 @@ public sealed class InventoryService : IDisposable
             }
 
             // Linguistic rather than ordinal, or "Ärzte" sorts behind "Zulu" in four of the five
-            // languages this ships with.
+            // languages this ships with, and digits by their value, or "Season 10" sorts ahead of "Season 2".
 #pragma warning disable CA1309
             return _sign * (x is string a && y is string b
-                ? string.Compare(a, b, StringComparison.InvariantCultureIgnoreCase)
+                ? string.Compare(a, b, CultureInfo.InvariantCulture, CompareOptions.IgnoreCase | CompareOptions.NumericOrdering)
                 : x.CompareTo(y));
 #pragma warning restore CA1309
         }

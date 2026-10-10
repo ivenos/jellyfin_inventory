@@ -335,7 +335,7 @@
                     .filter(function (part) { return part.type === 'group'; })[0];
                 if (!group) { return text; }
                 var mark = /\s/.test(group.value) ? '\\s' : '\\' + group.value;
-                return new RegExp('^[+-]?\\d{1,3}(' + mark + '\\d{3})+([.,]\\d*)?$').test(text)
+                return new RegExp('^[+-]?[1-9]\\d{0,2}(' + mark + '\\d{3})+([.,]\\d*)?$').test(text)
                     ? text.replace(new RegExp(mark, 'g'), '')
                     : text;
             }
@@ -344,7 +344,7 @@
                 var text = filter.value;
                 if (format === 'Date') { return /^\d{4}-\d{2}-\d{2}$/.test(text) ? text : null; }
                 if (!isNumeric(format)) { return text === '' ? null : text; }
-                text = ungrouped(text);
+                if (format !== 'FrameRate') { text = ungrouped(text); }
                 var number = /^[+-]?(\d+([.,]\d*)?|[.,]\d+)$/.test(text) ? Number(text.replace(',', '.')) : NaN;
                 return isFinite(number) ? String(number * scale(format).by) : null;
             }
@@ -967,11 +967,17 @@
 
                     link.href = '#/details?id=' + encodeURIComponent(row.Id) + '&serverId=' + encodeURIComponent(ApiClient.serverId());
                     link.textContent = text;
+                    link.dir = 'auto';
                     td.appendChild(link);
                 } else if (column.Key === 'path' && text) {
                     var full = document.createElement('span');
                     full.textContent = text;
+                    full.dir = 'ltr';
                     td.appendChild(full);
+                } else if (text && document.documentElement.getAttribute('dir') === 'rtl') {
+                    var plain = document.createElement('bdi');
+                    plain.textContent = text;
+                    td.appendChild(plain);
                 } else {
                     td.appendChild(document.createTextNode(text));
                 }
@@ -1094,6 +1100,7 @@
                     th.className = (isNumeric(column.Format) && !tree(column) ? 'num' : '') + (sorted ? ' sorted' : '');
 
                     var sort = function () {
+                        if (columnLevel !== state.level) { return; }
                         state.descending = state.sortBy === column.Key ? !state.descending : isNumeric(column.Format);
                         state.sortBy = column.Key;
                         state.start = 0;
@@ -1202,11 +1209,18 @@
             function renderFooter(result) {
                 var count = result.TotalCount;
                 var one = plural.select(count) === 'one';
-                page.querySelector('#invTotals').textContent = [
+                var totals = page.querySelector('#invTotals');
+                totals.textContent = '';
+                [
                     (one ? t('ItemsOne') : t('ItemsMany')).replace('{0}', count.toLocaleString(culture)),
                     result.TotalSize ? bytes(result.TotalSize) : '',
                     duration(result.TotalDuration)
-                ].filter(Boolean).join(' · ');
+                ].filter(Boolean).forEach(function (part, index) {
+                    if (index) { totals.appendChild(document.createTextNode(' · ')); }
+                    var piece = document.createElement('bdi');
+                    piece.textContent = part;
+                    totals.appendChild(piece);
+                });
 
                 var pages = Math.max(1, Math.ceil(count / state.limit));
                 var current = Math.floor(state.start / state.limit) + 1;
@@ -1541,6 +1555,9 @@
                     applyStaticLabels();
                     page.querySelector('#invFilterBtn').disabled = !schema.columns.length;
                     if (!schema.columns.length) {
+                        clear();
+                        page.querySelector('#invCsv').disabled = true;
+                        page.querySelector('#invOds').disabled = true;
                         var blank = page.querySelector('#invEmpty');
                         blank.textContent = t('LoadFailed', 'Could not load the inventory.');
                         blank.style.display = '';

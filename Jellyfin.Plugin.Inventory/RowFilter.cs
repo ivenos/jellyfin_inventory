@@ -145,6 +145,8 @@ public sealed class RowFilter
         };
     }
 
+    internal static string Composed(string text) => text.IsNormalized() ? text : text.Normalize();
+
     private static RowFilter? Read(JsonElement entry, out string? error)
     {
         var key = entry.ValueKind == JsonValueKind.Object ? Text(entry, "column") : null;
@@ -171,7 +173,7 @@ public sealed class RowFilter
         var text = Text(entry, "value");
         object? value = column.Format switch
         {
-            ColumnFormat.Text => string.IsNullOrEmpty(text) ? null : text,
+            ColumnFormat.Text => string.IsNullOrEmpty(text) ? null : text.Normalize(),
             ColumnFormat.Boolean => bool.TryParse(text, out var flag) ? flag : null,
             ColumnFormat.Date => DateTime.TryParseExact(text, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var day) ? day : null,
             ColumnFormat.Quality => VideoQuality.Rank(text),
@@ -195,11 +197,11 @@ public sealed class RowFilter
             : null;
 
     private bool Holds(object cell)
-        => (cell.ToString() ?? string.Empty).Contains((string)_value!, StringComparison.OrdinalIgnoreCase);
+        => Composed(cell.ToString() ?? string.Empty).Contains((string)_value!, StringComparison.OrdinalIgnoreCase);
 
     private int Compare(object cell) => _value switch
     {
-        string text => string.Compare(cell.ToString(), text, StringComparison.OrdinalIgnoreCase),
+        string text => string.Compare(Composed(cell.ToString() ?? string.Empty), text, StringComparison.OrdinalIgnoreCase),
         bool flag => cell is bool held ? held.CompareTo(flag) : -1,
         // The day the table shows, which is the one the server keeps and not the browser's.
         DateTime day => cell is DateTime held ? held.Date.CompareTo(day) : -1,
