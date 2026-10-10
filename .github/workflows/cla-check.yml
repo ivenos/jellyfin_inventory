@@ -40,7 +40,8 @@ jobs:
           : > "$errors"
 
           agreement="- [x] I agree to the [Contributor License Agreement](https://github.com/$REPO/blob/main/.github/CLA.md) for this pull request and every commit I add to it."
-          if ! tr -d '\r' <<< "$PR_BODY" | grep -qixF -- "$agreement"; then
+          visible=$(tr -d '\r' <<< "$PR_BODY" | perl -0777 -pe 's/<!--.*?(?:-->|\z)//gs; s/^ {0,3}((`|~)\2{2,}).*?(?:^ {0,3}\1\2*[ \t]*$|\z)//gms')
+          if ! grep -qixF -- "$agreement" <<< "$visible"; then
             echo "The CLA checkbox is not ticked. Edit the pull request description and tick the box under \"Contributor License Agreement\"." >> "$errors"
           fi
 
@@ -95,7 +96,7 @@ jobs:
               "",
               "<details><summary>Pull request description at merge</summary>",
               "",
-              "<pre>\(.[:50000] | @html)</pre>",
+              "<pre>\(@html | .[:50000])</pre>",
               "",
               "</details>"
             ] | join("\n"))}

@@ -8,6 +8,12 @@
   "minimumReleaseAgeBehaviour": "timestamp-optional",
   "platformAutomerge": false,
   "automergeStrategy": "squash",
+  "rebaseWhen": "behind-base-branch",
+  "postUpgradeTasks": {
+    "commands": ["sh .github/scripts/changelog.sh dependency"],
+    "dataFileTemplate": "{{{depName}}}\t{{#if (equals datasource 'docker')}}{{{currentValue}}}{{else}}{{#if currentVersion}}{{{currentVersion}}}{{else}}{{{currentValue}}}{{/if}}{{/if}}\t{{#if (equals datasource 'docker')}}{{{newValue}}}{{else}}{{#if newVersion}}{{{newVersion}}}{{else}}{{{newValue}}}{{/if}}{{/if}}\n",
+    "fileFilters": ["CHANGELOG.md"]
+  },
   "customManagers": [
     {
       "customType": "regex",

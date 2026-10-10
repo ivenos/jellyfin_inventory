@@ -69,25 +69,46 @@ sh test/run.sh --keep         # leave the server up to click through
 
 ## Commits
 
-Conventional Commits (https://www.conventionalcommits.org/en/v1.0.0/) with a short imperative subject.
+- Conventional Commits (https://www.conventionalcommits.org/en/v1.0.0/) with a short imperative subject.
+- A commit that does more than one thing lists its changes in the body, under the changelog section names as plain words. Changes to CI and tests are listed there too:
+
+```
+Added
+- A Quality column that sorts and filters by class
+
+Changed
+- CI tests every Jellyfin release from 12.0 on
+
+Fixed
+- A DVD folder counted only its first file
+```
+
+## Changelog
+
+- `CHANGELOG.md` follows Keep a Changelog (https://keepachangelog.com/en/1.1.0/), with `Breaking changes` as the first section and `Dependencies` as the last.
+- Every commit that changes something for users adds its entry under `Unreleased`. CI, tests and refactoring stay out.
+- An entry is one short sentence in plain words that anyone understands. Details belong in the README.
+- What users have to act on after an update goes under `Breaking changes`.
+- An entry that goes back to an issue or a pull request ends with its number: `(#12)`.
 
 ## Releases
 
-- A `v1.2.0` tag builds a draft release. A tag that is not three numbers is refused.
+- Run the Release workflow with the new version, such as `1.5.0`. It turns `Unreleased` into that version, tags the commit and builds a draft release with the plugin archive and the notes from `CHANGELOG.md`.
+- A tag pushed by hand builds the draft too, from the section of its version.
+- A version that is not three numbers is refused.
 - Publishing the draft adds the version to `manifest.json`, with the release notes as its changelog. Publishing it as a pre-release does not.
 - Notes edited after publishing, and a release that is deleted, reach `manifest.json` by hand.
 - Rebuild the README screenshots before every release.
-- The changelog lives in the GitHub release notes, in Keep a Changelog style (https://keepachangelog.com/en/1.1.0/). There is no CHANGELOG.md.
 
 ## Dependencies
 
 - GitHub Actions and Docker images stay on version tags, never commit SHAs or digests.
-- Renovate opens the bumps, including Node, jsdom and Playwright in `test/run.sh` and `.github/scripts/screenshots.sh`. Other PRs leave dependencies alone.
+- Renovate opens the bumps, including Node, jsdom and Playwright in `test/run.sh` and `.github/scripts/screenshots.sh`, and adds each one to the changelog. The release adds the numbers of their pull requests. Other PRs leave dependencies alone.
 - `Jellyfin.Controller`, `Jellyfin.Model`, and the Jellyfin and SDK images in `test/run.sh` move by hand, with the Jellyfin version.
 
 ## Pull requests
 
-- One concern per PR, with tests for behavior changes.
+- One concern per PR, with tests and a changelog entry for behavior changes.
 - Only the PR author and the maintainer commit to it.
 - `sh test/run.sh` must pass.
 - The test plan names the media types you exercised. Aggregation changes need a series or a season, not only movies.

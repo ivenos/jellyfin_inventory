@@ -213,7 +213,7 @@ print(sum(1 for r in json.load(sys.stdin)['Rows'] if r['Values'].get('videoCodec
     i=$((i + 1))
     [ "$i" -gt 60 ] && { echo; echo "library did not settle" >&2; exit 1; }
     [ $((i % 10)) = 0 ] && curl -sf -X POST "$BASE/Library/Refresh" \
-        -H "Authorization: MediaBrowser Token=\"$TOKEN\"" >/dev/null 2>&1
+        -H "Authorization: MediaBrowser Token=\"$TOKEN\"" >/dev/null 2>&1 || true
     printf '.'
     sleep 3
 done

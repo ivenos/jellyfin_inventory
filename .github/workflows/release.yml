@@ -1,6 +1,12 @@
 name: Release
 
 on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: The new version, such as 1.5.0
+        required: true
+        type: string
   push:
     tags: ["v*"]
   release:
@@ -9,62 +15,91 @@ on:
 permissions:
   contents: write
 
+env:
+  VERSION: ${{ inputs.version || github.ref_name }}
+
 jobs:
   build:
-    if: github.event_name == 'push'
+    if: github.event_name != 'release'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     concurrency:
       group: release-build-${{ github.ref }}
     steps:
       - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
 
-      - name: Read the version from the tag
+      - name: Read the version
         run: |
-          version="${GITHUB_REF_NAME#v}"
+          version="${VERSION#v}"
           printf '%s\n' "$version" \
             | grep -Eq '^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$' || {
-            echo "tag $GITHUB_REF_NAME does not name a three part version of digits" >&2
+            echo "$VERSION does not name a three part version of digits" >&2
             exit 1
           }
-          echo "VERSION=$version.0" >> "$GITHUB_ENV"
+          echo "TAG=v$version" >> "$GITHUB_ENV"
+          echo "PLUGIN_VERSION=$version.0" >> "$GITHUB_ENV"
+
+      - name: Stamp the changelog and tag the commit
+        if: github.event_name == 'workflow_dispatch'
+        run: |
+          if [ "$GITHUB_REF" != refs/heads/main ]; then
+            echo "::error::A release is started from main"
+            exit 1
+          fi
+          sh .github/scripts/changelog.sh release "$VERSION"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "chore: release $VERSION" CHANGELOG.md
+          git tag -a "v$VERSION" -m "v$VERSION"
 
       - name: Build
         run: |
           docker run --rm -u "$(id -u):$(id -g)" -e HOME=/tmp \
             -v "$PWD:/src" -w /src mcr.microsoft.com/dotnet/sdk:10.0 \
             dotnet build -c Release --nologo \
-            -p:Version="$VERSION" -p:AssemblyVersion="$VERSION" -p:FileVersion="$VERSION"
+            -p:Version="$PLUGIN_VERSION" -p:AssemblyVersion="$PLUGIN_VERSION" -p:FileVersion="$PLUGIN_VERSION"
 
       - name: Package
         run: |
-          python3 .github/scripts/make-meta.py --version "$VERSION" --out meta.json
+          python3 .github/scripts/make-meta.py --version "$PLUGIN_VERSION" --out meta.json
           dll=Jellyfin.Plugin.Inventory/bin/Release/net10.0/Jellyfin.Plugin.Inventory.dll
           # zip only fails where nothing at all matched, not where one name did not.
           [ -f "$dll" ] || { echo "the build left no assembly at $dll" >&2; exit 1; }
-          zip -j "inventory_$VERSION.zip" meta.json "$dll" .github/assets/thumb.png
+          zip -j "inventory_$PLUGIN_VERSION.zip" meta.json "$dll" .github/assets/thumb.png
 
-      # A release created in the web interface is published as it tags and stays published.
+      - name: Push the commit and the tag
+        if: github.event_name == 'workflow_dispatch'
+        run: git push --atomic origin HEAD:main "v$VERSION"
+
+      # A release created in the web interface is published as it tags, stays published and keeps its notes.
       - name: Publish release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          asset="inventory_$VERSION.zip"
-          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+          asset="inventory_$PLUGIN_VERSION.zip"
+          notes="$RUNNER_TEMP/notes.md"
+          if gh release view "$TAG" >/dev/null 2>&1; then
             # Outside the condition, so a failed query still stops the step.
-            draft=$(gh release view "$GITHUB_REF_NAME" --json isDraft -q .isDraft)
-            assets=$(gh release view "$GITHUB_REF_NAME" --json assets -q '.assets[].name')
+            draft=$(gh release view "$TAG" --json isDraft -q .isDraft)
+            assets=$(gh release view "$TAG" --json assets -q '.assets[].name')
             [ "$draft" = "true" ] || [ "$draft" = "false" ] || {
-              echo "could not read whether $GITHUB_REF_NAME is still a draft" >&2
+              echo "could not read whether $TAG is still a draft" >&2
               exit 1
             }
             if [ "$draft" = "false" ] && printf '%s\n' "$assets" | grep -qFx "$asset"; then
-              echo "$GITHUB_REF_NAME is published and already carries $asset" >&2
+              echo "$TAG is published and already carries $asset" >&2
               exit 1
             fi
-            gh release upload "$GITHUB_REF_NAME" "$asset" --clobber
+            if [ "$draft" = "true" ]; then
+              sh .github/scripts/changelog.sh notes "${TAG#v}" > "$notes"
+              gh release edit "$TAG" --notes-file "$notes"
+            fi
+            gh release upload "$TAG" "$asset" --clobber
           else
-            gh release create "$GITHUB_REF_NAME" "$asset" --draft --title "$GITHUB_REF_NAME"
+            sh .github/scripts/changelog.sh notes "${TAG#v}" > "$notes"
+            gh release create "$TAG" "$asset" --draft --title "$TAG" --notes-file "$notes"
           fi
 
   manifest:
