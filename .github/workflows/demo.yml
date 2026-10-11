@@ -1,0 +1,53 @@
+name: Demo
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+  release:
+    types: [released]
+  # An artifact is gone after 90 days, so the one of the latest release is rebuilt before that.
+  schedule:
+    - cron: "0 5 1 * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: demo-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  demo:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Find the latest release
+        id: latest
+        if: github.event_name == 'release' || github.event_name == 'schedule'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: echo "tag=$(gh release view --repo "$GITHUB_REPOSITORY" --json tagName --jq .tagName)" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ steps.latest.outputs.tag }}
+
+      - name: Record the sample library and check the demo against the server
+        # A release from before the demo has nothing to record.
+        if: hashFiles('demo/record.sh') != ''
+        run: sh demo/record.sh
+
+      - name: Name the version
+        if: github.event_name != 'push' && github.event_name != 'pull_request' && hashFiles('demo/web/data.json') != ''
+        env:
+          VERSION: ${{ steps.latest.outputs.tag || github.ref_name }}
+        run: printf '%s' "$VERSION" > demo/web/version
+
+      - uses: actions/upload-artifact@v7
+        if: github.event_name != 'push' && github.event_name != 'pull_request' && hashFiles('demo/web/data.json') != ''
+        with:
+          name: demo
+          path: demo/web
+          retention-days: 90

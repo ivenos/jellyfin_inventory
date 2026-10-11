@@ -5,4 +5,5 @@ obj/
 artifacts
 *.user
 *.zip
+demo/web/data.json
 .DS_Store

@@ -27,7 +27,16 @@ sh test/run.sh --keep         # leave the server up to click through
 - `PORT` gives a run its own container and working directory. Runs side by side share the build, so all but one take `--no-build`.
 - CI runs it once per major and minor Jellyfin release from `targetAbi` in `build.yaml` on, as listed by `test/versions.py`. The same sweep locally: `for v in $(python3 test/versions.py); do JELLYFIN_IMAGE=jellyfin/jellyfin:$v sh test/run.sh; done`
 - There are no unit tests on the server side. `test/page.mjs` renders the page in jsdom against the answers the same run recorded.
-- `.github/scripts/screenshots.sh` rebuilds the README screenshots from a showcase library, on the newest release the test matrix covers. Run it when a change alters what the table looks like.
+
+## Demo
+
+Everything under `demo/` belongs to one sample library, which the README screenshots and the web demo are both taken from.
+
+- `demo/serve.sh` starts a Jellyfin with the plugin and that library, on the newest release the test matrix covers. The media files are empty: `library.py` writes what ffprobe would say about each, and `probe.sh` answers with it.
+- `.github/scripts/screenshots.sh` rebuilds the README screenshots from it. Run it when a change alters what the table looks like.
+- `demo/record.sh` records it into `demo/web/data.json` and checks the web demo against the server. `python3 -m http.server` in the repository then shows the demo under `/demo/web/`.
+- The web demo answers the page from that recording. A change to how the API filters, sorts or exports goes into `backend.js` or `export.js` there too, or the check fails.
+- The Demo workflow runs that check on every push. On a release, once a month and when started by hand it also keeps `demo/web/` as the artifact `demo`, which is what a site showing the demo fetches.
 
 ## Code style
 
@@ -65,7 +74,8 @@ sh test/run.sh --keep         # leave the server up to click through
 
 - A new Jellyfin release moves these together: the `Jellyfin.Controller` and `Jellyfin.Model` versions, `targetAbi` in `build.yaml`, `IMAGE` in `test/run.sh`, and the version named in the README and under Build. `test/run.sh` checks that they agree.
 - `targetAbi` is the floor of the test matrix.
-- A new .NET release also moves `TargetFramework` in the csproj, `framework` in `build.yaml`, `SDK_IMAGE` in `test/run.sh`, the SDK image in the release workflow and under Build, and `net10.0` in the output path in `test/run.sh`, `.github/scripts/screenshots.sh`, the release workflow and under Build, and the version named under Build and Code style.
+- The dashboard around the demo is drawn after Jellyfin's own in `demo/web/shell.js` and `demo.css`. It follows a redesign by hand, and `.github/scripts/screenshots.sh` warns when the two differ.
+- A new .NET release also moves `TargetFramework` in the csproj, `framework` in `build.yaml`, `SDK_IMAGE` in `test/run.sh`, the SDK image in the release workflow and under Build, and `net10.0` in the output path in `test/run.sh`, `demo/serve.sh`, the release workflow and under Build, and the version named under Build and Code style.
 
 ## Commits
 

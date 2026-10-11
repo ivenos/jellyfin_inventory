@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Inventory demo</title>
+    <meta name="description" content="Try the Inventory plugin for Jellyfin on a sample library.">
+    <link rel="stylesheet" href="demo.css">
+    <script type="module" src="demo.js"></script>
+</head>
+<body>
+<nav id="demoDrawer" aria-label="Dashboard"></nav>
+<header class="demoBar">
+    <button type="button" id="demoMenu" class="demoRound" aria-label="Menu" data-icon="menu"></button>
+    <span class="demoRound" data-icon="arrowBack"></span>
+    <div class="demoLanguage">
+        <label class="selectLabel" for="demoCulture">Language</label>
+        <div class="invSelect">
+            <select id="demoCulture" class="emby-select"></select>
+        </div>
+    </div>
+    <span class="demoUser" data-icon="person"></span>
+</header>
+<main id="demoView" data-page="configPage.html"></main>
+<div id="demoLoading" hidden></div>
+<div id="demoToast" role="status" aria-live="polite" hidden></div>
+</body>
+</html>
