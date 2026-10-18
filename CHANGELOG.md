@@ -18,7 +18,7 @@ All notable changes to this project are documented in this file, in the format o
 
 ### Dependencies
 
-- jsdom 30.1.1 -> 30.1.2 (#8)
+- jsdom 30.1.1 -> 30.1.3 (#8)
 - mcr.microsoft.com/playwright v1.63.0-noble -> v1.64.1-noble (#9)
 
 ## [1.1.0] - 2026-10-02
