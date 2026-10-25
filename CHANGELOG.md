@@ -4,6 +4,8 @@ All notable changes to this project are documented in this file, in the format o
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-10-25
+
 ### Added
 
 - A Genres column (#12).
@@ -143,7 +145,8 @@ All notable changes to this project are documented in this file, in the format o
 - Export of the current view as CSV or ODS.
 - English, German, Spanish, French and Italian.
 
-[Unreleased]: https://github.com/ivenos/jellyfin_inventory/compare/v1.1.0...HEAD
+[Unreleased]: https://github.com/ivenos/jellyfin_inventory/compare/v1.2.0...HEAD
+[1.2.0]: https://github.com/ivenos/jellyfin_inventory/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/ivenos/jellyfin_inventory/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/ivenos/jellyfin_inventory/compare/v0.2.0...v1.0.0
 [0.2.0]: https://github.com/ivenos/jellyfin_inventory/compare/v0.1.0...v0.2.0
