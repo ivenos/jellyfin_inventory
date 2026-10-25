@@ -34,12 +34,23 @@
       "matchManagers": ["github-actions"],
       "groupName": "GitHub Actions",
       "commitMessagePrefix": "ci:",
-      "automerge": true
+      "automerge": true,
+      "postUpgradeTasks": { "commands": [] }
+    },
+    {
+      "description": "Test tools reach no user, so they get no changelog line.",
+      "matchFileNames": ["test/**", "tests/**"],
+      "postUpgradeTasks": { "commands": [] }
+    },
+    {
+      "matchDepTypes": ["devDependencies"],
+      "postUpgradeTasks": { "commands": [] }
     },
     {
       "matchManagers": ["nuget"],
       "groupName": "Analyzers",
-      "commitMessagePrefix": "ci:"
+      "commitMessagePrefix": "ci:",
+      "postUpgradeTasks": { "commands": [] }
     },
     {
       "matchManagers": ["nuget"],
@@ -49,7 +60,8 @@
     {
       "matchManagers": ["custom.regex"],
       "groupName": "Test tooling",
-      "commitMessagePrefix": "ci:"
+      "commitMessagePrefix": "ci:",
+      "postUpgradeTasks": { "commands": [] }
     },
     {
       "matchManagers": ["custom.regex"],

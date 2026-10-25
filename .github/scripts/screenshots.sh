@@ -9,6 +9,9 @@ BROWSER_IMAGE="${PLAYWRIGHT_IMAGE:-mcr.microsoft.com/playwright:v1.64.1-noble}"
 BROWSER_VERSION=$(printf '%s' "$BROWSER_IMAGE" | sed -n 's/.*:v\([0-9.]*\).*/\1/p')
 trap 'docker rm -f "${CONTAINER:-}" >/dev/null 2>&1 || true' EXIT
 trap 'exit 130' INT TERM
+PORT="${PORT:-8093}"
+CONTAINER="jellyfin_inventory-screenshots-$PORT"
+INVENTORY_DEMO_DIR="$HOME/.cache/jellyfin_inventory-screenshots-$PORT"
 . "$ROOT/demo/serve.sh"
 
 echo "== shots =="
@@ -19,8 +22,8 @@ import { chromium } from 'playwright';
 
 const BASE = 'http://localhost:8096';
 const browser = await chromium.launch({ args: ['--no-sandbox'] });
-// Wide enough for the whole column set, and drawn at a density a reader can still zoom into.
-const screen = { viewport: { width: 1500, height: 950 }, deviceScaleFactor: 1.4, locale: 'en-US' };
+// Wide enough for the whole column set and the toolbar on one line, and drawn at a density a reader can still zoom into.
+const screen = { viewport: { width: 1580, height: 950 }, deviceScaleFactor: 1.4, locale: 'en-US' };
 const page = await browser.newPage(screen);
 
 await page.goto(BASE + '/web/index.html#/login', { waitUntil: 'domcontentloaded' });
@@ -36,8 +39,13 @@ await page.goto(BASE + '/web/index.html#/configurationpage?name=Inventory', { wa
 await page.waitForSelector('#invBody tr', { timeout: 60000 });
 await page.waitForTimeout(2500);
 
+if (await page.evaluate(() => document.querySelector('.invTools').getBoundingClientRect().top
+    >= document.querySelector('.invTypes').getBoundingClientRect().bottom)) {
+    console.log(`WARNING: the toolbar wraps at ${screen.viewport.width} px, the shots need a wider window`);
+}
+
 await page.click('.invType[data-type="Movie"]');
-await page.waitForSelector('#invBody tr', { timeout: 30000 });
+await page.waitForSelector('.invType[data-type="Movie"][aria-pressed="true"]:not([aria-busy])', { timeout: 30000 });
 await page.waitForTimeout(1500);
 await page.screenshot({ path: '/out/movies.png' });
 

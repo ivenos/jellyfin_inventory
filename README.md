@@ -6,6 +6,7 @@
   <img alt="Inventory" src=".github/assets/jellyfin_inventory-logo-auto.svg" width="50%">
 </picture>
 
+<a href="https://inventory.ivenos.de"><picture><source media="(prefers-color-scheme: dark)" srcset="https://shieldcn.dev/badge/Try_the_demo.svg?variant=secondary&amp;mode=dark&amp;logo=data%3Aimage%2Fsvg%2Bxml%3Bbase64%2CPHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCI%2BPHBhdGggZD0iTTUgNWEyIDIgMCAwIDEgMy4wMDgtMS43MjhsMTEuOTk3IDYuOTk4YTIgMiAwIDAgMSAuMDAzIDMuNDU4bC0xMiA3QTIgMiAwIDAgMSA1IDE5eiIvPjwvc3ZnPg%3D%3D&amp;logoColor=00A4DC"><img alt="Demo" src="https://shieldcn.dev/badge/Try_the_demo.svg?variant=secondary&amp;mode=light&amp;logo=data%3Aimage%2Fsvg%2Bxml%3Bbase64%2CPHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCI%2BPHBhdGggZD0iTTUgNWEyIDIgMCAwIDEgMy4wMDgtMS43MjhsMTEuOTk3IDYuOTk4YTIgMiAwIDAgMSAuMDAzIDMuNDU4bC0xMiA3QTIgMiAwIDAgMSA1IDE5eiIvPjwvc3ZnPg%3D%3D&amp;logoColor=00A4DC"></picture></a>
 <a href="#installation"><picture><source media="(prefers-color-scheme: dark)" srcset="https://shieldcn.dev/badge/Jellyfin-12.0%2B.svg?variant=secondary&amp;mode=dark&amp;logo=jellyfin"><img alt="Jellyfin compatibility" src="https://shieldcn.dev/badge/Jellyfin-12.0%2B.svg?variant=secondary&amp;mode=light&amp;logo=jellyfin"></picture></a>
 <a href="https://github.com/ivenos/jellyfin_inventory/releases"><picture><source media="(prefers-color-scheme: dark)" srcset="https://shieldcn.dev/github/downloads/ivenos/jellyfin_inventory.svg?variant=secondary&amp;mode=dark"><img alt="Downloads" src="https://shieldcn.dev/github/downloads/ivenos/jellyfin_inventory.svg?variant=secondary&amp;mode=light"></picture></a>
 <a href="LICENSE"><picture><source media="(prefers-color-scheme: dark)" srcset="https://shieldcn.dev/badge/license-GPL_3.0.svg?variant=secondary&amp;mode=dark"><img alt="License" src="https://shieldcn.dev/badge/license-GPL_3.0.svg?variant=secondary&amp;mode=light"></picture></a>
@@ -21,7 +22,7 @@ Inventory is a Jellyfin plugin that puts everything in your libraries into one s
 
 ## Installation
 
-Requires Jellyfin 12.0 or newer. On anything older, Inventory does not appear in the catalog.
+Requires Jellyfin 12.0 or newer. On anything older, this plugin does not appear in the catalog.
 
 Add the repository under Dashboard → Plugins → Repositories:
 
@@ -29,13 +30,13 @@ Add the repository under Dashboard → Plugins → Repositories:
 https://raw.githubusercontent.com/ivenos/jellyfin_inventory/main/manifest.json
 ```
 
-Inventory then appears in the catalog under General. Restart the server after installing; the table has its own entry under Plugins in the dashboard sidebar. A manual install is the zip from the [latest release](https://github.com/ivenos/jellyfin_inventory/releases/latest) unpacked into a folder `Inventory` in the `plugins` directory of the server's data directory, which is `/config/plugins` in the Docker image.
+The Inventory plugin then appears in the catalog under General. Restart the server after installing; the table has its own entry under Plugins in the dashboard sidebar. A manual install is the zip from the [latest release](https://github.com/ivenos/jellyfin_inventory/releases/latest) unpacked into a folder `Inventory` in the `plugins` directory of the server's data directory, which is `/config/plugins` in the Docker image.
 
 ## Columns
 
 | Group | Columns |
 | --- | --- |
-| General | Name, Series, Season, Episode, Year, Library, Items, Container, Size, Duration, Size/hour, Bitrate, Date added, Path |
+| General | Name, Series, Season, Episode, Year, Genres, Artists, Authors, Narrators, Library, Items, Container, Size, Duration, Size/hour, Bitrate, Date added, Path |
 | Video | Video codec, Profile, Resolution, Quality, Height, Video bitrate, Framerate, Bit depth, HDR, Dolby Vision, Pixel format, Interlaced |
 | Audio | Audio codec, Layout, Channels, Audio bitrate, Sample rate, Spatial, Audio tracks, Audio languages |
 | Subtitles | Subtitle tracks, Subtitle languages |
@@ -43,7 +44,7 @@ Inventory then appears in the catalog under General. Restart the server after in
 
 ## API
 
-Six endpoints under `/Inventory`, all requiring an administrator token. An API key carries no user, so Last played, Plays and Fully played are empty for one. `mediaType` names a tab, `level` one of the levels inside it; those and the column keys all come from `Schema`.
+Six endpoints under `/Inventory`, all requiring an administrator token. An API key carries no user, so Last played, Plays and Fully played are empty for one. `mediaType` names a tab, `level` one of the levels inside it, by default the one the tab is named after; those and the column keys all come from `Schema`.
 
 | Endpoint | Parameters | Answers with |
 | --- | --- | --- |
@@ -54,14 +55,14 @@ Six endpoints under `/Inventory`, all requiring an administrator token. An API k
 | `POST Expand` | `mediaType`, `level` | The stored level |
 | `POST PageSize` | `size` | The stored number of rows per page |
 
-`filters` is a JSON array of up to 20 conditions, and a row has to meet all of them: `[{"column":"height","op":"ge","value":1080}]`. `op` is one of the operators `Schema` lists for the column, out of `eq`, `ne`, `ge`, `le`, `contains`, `notContains`, `empty` and `notEmpty`, the last two taking no `value`. A value is in the unit `Items` answers in, which is bytes, bytes per hour, seconds or bits per second, a date is `yyyy-MM-dd`, a truth value is `true` or `false`, and a quality is one of the classes `Schema` lists, compared by its place in that list. An empty cell meets only `ne`, `notContains` and `empty`, and a cell that reads as mixed meets no condition.
+`filters` is a JSON array of up to 20 conditions, and a row has to meet all of them: `[{"column":"height","op":"ge","value":1080}]`. `op` is one of the operators `Schema` lists for the column, out of `eq`, `ne`, `ge`, `le`, `contains`, `notContains`, `empty` and `notEmpty`, the last two taking no `value`. A value is in the unit `Items` answers in, which is bytes, bytes per hour, seconds or bits per second, a date is `yyyy-MM-dd`, a truth value is `true` or `false`, and a quality is one of the classes `Schema` lists, compared by its place in that list. In a column `Schema` marks as `List`, `eq` and `ne` check each value on its own. An empty cell meets only `ne`, `notContains` and `empty`, and a cell that reads as mixed meets no condition.
 
-`search` is a substring of the name, the series name or the path. On the outermost level it reaches every level of the tab, and `Export` then leaves out a row whose series, season or album matched as well. A `csv` names the unit in its header and takes its decimal and field separators from `culture`, an `ods` types its cells.
+`search` is a substring of the name, the series name, the path, an artist, an author or a narrator. On the outermost level it reaches every level of the tab, and `Export` then leaves out a row whose series, season, album or book matched as well. A `csv` names the unit in its header and takes its decimal and field separators from `culture`, an `ods` types its cells.
 
 ## License
 
-Copyright © Iven Schlösser. Inventory is free software, licensed under the [GNU General Public License v3.0 only](LICENSE). You may use, modify and redistribute it. Anyone distributing a modified version must release it under the same license and make its source code available.
+Copyright © Iven Schlösser. The Inventory plugin is free software, licensed under the [GNU General Public License v3.0 only](LICENSE). You may use, modify and redistribute it. Anyone distributing a modified version must release it under the same license and make its source code available.
 
-Inventory builds on the Jellyfin.Controller and Jellyfin.Model packages, licensed under the GNU General Public License v3.0 only. The title of its dashboard page is set in Plus Jakarta Sans, whose Latin letters it embeds under the SIL Open Font License 1.1.
+It builds on the Jellyfin.Controller and Jellyfin.Model packages, licensed under the GNU General Public License v3.0 only. The title of its dashboard page is set in Plus Jakarta Sans, whose Latin letters it embeds under the SIL Open Font License 1.1.
 
-Inventory is not affiliated with or endorsed by the Jellyfin project.
+The Inventory plugin is not affiliated with or endorsed by the Jellyfin project.

@@ -46,7 +46,7 @@ window.Dashboard = {
 };
 
 window.fetch = (target, options) => String(target).startsWith('Inventory/Export')
-    ? request('GET', target).then((sheet) => new Response(exportFile(sheet)))
+    ? request('GET', target).then((sheet) => new Response(exportFile(sheet), { headers: { 'Content-Disposition': `attachment; filename=${sheet.FileName}` } }))
     : load(target, options);
 
 const cultures = Object.keys(data.Schemas);

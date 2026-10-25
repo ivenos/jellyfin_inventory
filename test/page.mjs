@@ -17,6 +17,7 @@ async function render(items, mode) {
     let overlay = 0;
     let served = 0;
     let downloads = 0;
+    const saved = [];
     let failing = false;
     let shrunk = false;
     const schemaGates = [gate(), gate()];
@@ -104,10 +105,15 @@ async function render(items, mode) {
             };
             window.URL.createObjectURL = () => 'blob:export';
             window.URL.revokeObjectURL = () => {};
+            window.HTMLAnchorElement.prototype.click = function () { saved.push(this.download); };
             // The first export of a hung run never lands, the way a half open connection behaves.
             window.fetch = (target) => (fetched.push(target), mode === 'hung' && ++downloads === 1
                 ? new Promise(() => {})
-                : download.held.then(() => ({ ok: true, blob: () => Promise.resolve('bytes') })));
+                : download.held.then(() => ({
+                    ok: true,
+                    headers: { get: (name) => (name === 'Content-Disposition' ? 'attachment; filename=inventory-sent.csv' : null) },
+                    blob: () => Promise.resolve('bytes'),
+                })));
         },
     });
 
@@ -559,7 +565,7 @@ async function render(items, mode) {
         await settle();
         download.open();
         await settle();
-        const report = { during: during, after: disabled() + ',' + spinning() };
+        const report = { during: during, after: disabled() + ',' + spinning(), saved: saved.at(-1) };
         window.close();
         return report;
     }

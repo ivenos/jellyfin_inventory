@@ -59,6 +59,31 @@ public class InventoryRow
     public int? Year { get; set; }
 
     /// <summary>
+    /// Gets or sets the genres, comma separated.
+    /// </summary>
+    public string? Genres { get; set; }
+
+    /// <summary>
+    /// Gets or sets the artists of a track or a music video, or the album artists of an album, comma separated.
+    /// </summary>
+    public string? Artists { get; set; }
+
+    /// <summary>
+    /// Gets or sets the authors of a book, comma separated.
+    /// </summary>
+    public string? Authors { get; set; }
+
+    /// <summary>
+    /// Gets or sets the narrators of an audiobook, comma separated.
+    /// </summary>
+    public string? Narrators { get; set; }
+
+    /// <summary>
+    /// Gets or sets the album an audiobook file names, which its book is called after.
+    /// </summary>
+    public string? Album { get; set; }
+
+    /// <summary>
     /// Gets or sets the name of the library the item lives in.
     /// </summary>
     public string? Library { get; set; }

@@ -80,7 +80,7 @@ for (const tab of english.MediaTypes) {
     }
 
     const places = (answer) => answer.Rows.map((row) => index.get(row.Id));
-    const top = places(await call('Items', { mediaType, limit: LIMIT }));
+    const top = places(await call('Items', { mediaType, level: levels[0], limit: LIMIT }));
 
     const natural = {};
     for (const [depth, level] of levels.entries()) {
@@ -96,7 +96,7 @@ for (const tab of english.MediaTypes) {
         order[key] = [];
         for (const descending of [false, true]) {
             // A search for the slash every path holds lists all levels at once.
-            const ranked = places(await call('Items', { mediaType, search: '/', sortBy: key, descending, limit: LIMIT }));
+            const ranked = places(await call('Items', { mediaType, level: levels[0], search: '/', sortBy: key, descending, limit: LIMIT }));
             if (new Set(ranked).size !== rows.length) { throw new Error(`${mediaType} sorted by ${key} misses rows`); }
             order[key].push(ranked);
         }
@@ -168,7 +168,7 @@ for (const culture of ['en', 'de', 'de-DE', 'fr-CA', 'xx', '']) { add('Schema', 
 
 for (const [mediaType, tab] of Object.entries(tabs)) {
     tab.Levels.forEach((name, depth) => {
-        const level = depth === 0 ? undefined : name;
+        const level = name === mediaType ? undefined : name;
         const held = tab.Rows.filter((row) => row.Level === name);
         add('Items', { mediaType, level });
         add('Items', { mediaType, level, culture: 'de' });

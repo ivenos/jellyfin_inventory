@@ -4,6 +4,7 @@ using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
+using Jellyfin.Data.Enums;
 using Jellyfin.Database.Implementations.Entities;
 using Jellyfin.Plugin.Inventory.Configuration;
 using MediaBrowser.Common.Api;
@@ -113,13 +114,13 @@ public class InventoryController : ControllerBase
     /// Gets one page of rows.
     /// </summary>
     /// <param name="mediaType">The media type to list.</param>
-    /// <param name="level">The level within it, or empty for the outermost.</param>
+    /// <param name="level">The level within it, or empty for the one the tab is named after.</param>
     /// <param name="parentIds">Comma separated ids; when given, only the children of those rows are
     /// returned, and the whole set comes back unpaged since it belongs to rows already on screen.</param>
     /// <param name="columnLevel">The level whose column selection to use, for children shown inside
     /// their parent's table. Defaults to the level being listed.</param>
     /// <param name="culture">The culture to translate the column headers into.</param>
-    /// <param name="search">An optional substring the name, series or path must contain.</param>
+    /// <param name="search">An optional substring the name, series, path or a person must contain.</param>
     /// <param name="filters">Conditions every row has to meet, as a JSON array of objects with
     /// "column", "op" and "value".</param>
     /// <param name="sortBy">The column to sort on.</param>
@@ -147,14 +148,12 @@ public class InventoryController : ControllerBase
         [FromQuery] int? limit = null)
     {
         var config = Configuration;
-        if (Hierarchy.Resolve(mediaType, level) is null)
+        if (Hierarchy.Resolve(mediaType, level) is not { } listed)
         {
             return BadRequest($"Unknown media type '{mediaType}' or level '{level}'.");
         }
 
-        var selection = string.IsNullOrEmpty(columnLevel)
-            ? (string.IsNullOrEmpty(level) ? mediaType : level)
-            : columnLevel;
+        var selection = string.IsNullOrEmpty(columnLevel) ? listed.ToString() : columnLevel;
 
         if (Hierarchy.Level(selection) is null)
         {
@@ -215,7 +214,7 @@ public class InventoryController : ControllerBase
     /// Exports everything the filter matches, with the columns chosen for the level.
     /// </summary>
     /// <param name="mediaType">The media type to export.</param>
-    /// <param name="level">The level to export, or empty for the outermost.</param>
+    /// <param name="level">The level to export, or empty for the one the tab is named after.</param>
     /// <param name="columnLevel">The level whose column selection to use. Defaults to the level
     /// being exported.</param>
     /// <param name="format">Either "csv" or "ods".</param>
@@ -293,7 +292,7 @@ public class InventoryController : ControllerBase
         var name = Translations.Get(culture, "level." + exported);
         var yes = Translations.Get(culture, "Yes");
         var no = Translations.Get(culture, "No");
-        var attachment = $"attachment; filename=inventory-{exported.ToLowerInvariant()}.{(isOds ? "ods" : "csv")}";
+        var attachment = $"attachment; filename=inventory-{FileName(kind.Value)}.{(isOds ? "ods" : "csv")}";
 
         // Written to a file first: a spreadsheet is filled in by seeking back over it, and a
         // failure halfway through still becomes an error rather than half a download.
@@ -333,7 +332,7 @@ public class InventoryController : ControllerBase
     }
 
     /// <summary>
-    /// Stores the columns shown at a level.
+    /// Stores the columns shown at a level. Books that show what their files were given keep that once the files change.
     /// </summary>
     /// <param name="level">The level the selection applies to.</param>
     /// <param name="columns">The column keys, in display order.</param>
@@ -374,10 +373,16 @@ public class InventoryController : ControllerBase
         lock (_configLock)
         {
             var config = plugin.Configuration;
-            config.Presets = config.Presets
-                .Where(p => p is not null && !string.Equals(p.Level, known.ToString(), StringComparison.OrdinalIgnoreCase))
-                .Append(new ColumnPreset { Level = known.ToString(), Columns = chosen })
-                .ToArray();
+            var presets = config.Presets
+                .Where(p => p is not null && !string.Equals(p.Level, known.ToString(), StringComparison.OrdinalIgnoreCase));
+
+            var books = nameof(BaseItemKind.Folder);
+            if (known == BaseItemKind.AudioBook && !config.Presets.Any(p => string.Equals(p?.Level, books, StringComparison.OrdinalIgnoreCase)))
+            {
+                presets = presets.Append(new ColumnPreset { Level = books, Columns = config.GetColumns(books) ?? [] });
+            }
+
+            config.Presets = presets.Append(new ColumnPreset { Level = known.ToString(), Columns = chosen }).ToArray();
 
             plugin.UpdateConfiguration(config);
             return Ok(new { Level = known.ToString(), Columns = chosen });
@@ -441,7 +446,7 @@ public class InventoryController : ControllerBase
         }
 
         var canonical = known.ToString();
-        var tab = Hierarchy.Levels(mediaType)![0].ToString();
+        var tab = Hierarchy.Tab(Hierarchy.Levels(mediaType)!).ToString();
 
         lock (_configLock)
         {
@@ -456,6 +461,13 @@ public class InventoryController : ControllerBase
         }
     }
 
+    private static string FileName(BaseItemKind kind) => kind switch
+    {
+        BaseItemKind.Folder => "audiobook",
+        BaseItemKind.AudioBook => "audiobook-files",
+        _ => kind.ToString().ToLowerInvariant()
+    };
+
     // The headers are translated, so the numbers beside them are written the same way round.
     private static CultureInfo Locale(string? culture)
         => culture is not null && _cultures.Contains(culture) ? CultureInfo.GetCultureInfo(culture) : CultureInfo.InvariantCulture;
@@ -467,6 +479,7 @@ public class InventoryController : ControllerBase
         Group = Translations.Get(culture, "group." + column.Group),
         GroupKey = column.Group,
         Format = column.Format.ToString(),
+        column.List,
         Operators = RowFilter.Operators(column.Format),
         Values = column.Format == ColumnFormat.Quality ? VideoQuality.Names : null
     };

@@ -43,7 +43,8 @@ public class PluginConfiguration : BasePluginConfiguration
     }
 
     /// <summary>
-    /// Returns the columns stored for a level, or null if the user has not chosen any.
+    /// Returns the columns stored for a level, or null if the user has not chosen any. The books of the
+    /// audiobook tab take what was stored for its files, from before the books were a level of their own.
     /// </summary>
     /// <param name="level">The level key.</param>
     /// <returns>The stored column keys, or null.</returns>
@@ -55,6 +56,11 @@ public class PluginConfiguration : BasePluginConfiguration
             {
                 return preset!.Columns is { Length: > 0 } columns ? columns : null;
             }
+        }
+
+        if (string.Equals(level, "Folder", StringComparison.OrdinalIgnoreCase))
+        {
+            return GetColumns("AudioBook");
         }
 
         return null;

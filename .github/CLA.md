@@ -1,6 +1,6 @@
 # Contributor License Agreement
 
-This agreement is between you and Iven Schlösser, the maintainer of Inventory. You accept it by ticking its checkbox in the description of a pull request.
+This agreement is between you and Iven Schlösser, the maintainer of the Inventory plugin. You accept it by ticking its checkbox in the description of a pull request.
 
 1. It covers everything you submit in that pull request, including every commit you add after ticking the box (your contribution).
 2. You keep the copyright in your contribution. You grant the maintainer a perpetual, worldwide, irrevocable, non-exclusive, royalty-free license to use, reproduce, modify, prepare derivative works of, publicly display, publicly perform, distribute and commercially exploit your contribution, under any license terms the maintainer chooses. This includes relicensing the project, sublicensing to third parties and granting commercial licenses.

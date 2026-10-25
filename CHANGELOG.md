@@ -4,9 +4,20 @@ All notable changes to this project are documented in this file, in the format o
 
 ## [Unreleased]
 
+### Added
+
+- A Genres column (#12).
+- Artists, Authors and Narrators columns, with the artists shown for albums and tracks by default.
+- An audiobook kept in several files is one row that opens to its files.
+- Search also finds artists, authors and narrators.
+
+### Changed
+
+- Filtering genres, people or languages with = or ≠ checks each value on its own.
+
 ### Fixed
 
-- An mp4, mov or webm file showed a list of formats as its container.
+- An mp4, m4v, mov or webm file showed a list of formats as its container.
 - Names and other text sorted 10 ahead of 2.
 - An audio .strm file took its size per hour from the size of the text file.
 - A frame rate typed as 23.976 found nothing in languages with a decimal comma.
@@ -15,11 +26,8 @@ All notable changes to this project are documented in this file, in the format o
 - Clicking a column header while a tab loaded sorted it by a hidden column.
 - After a first load that failed, buttons could be clicked but did nothing.
 - Search and filters missed names with accents the way macOS stores them.
-
-### Dependencies
-
-- jsdom 30.1.1 -> 30.1.3 (#8)
-- mcr.microsoft.com/playwright v1.63.0-noble -> v1.64.1-noble (#9)
+- The page title sat lower than on Jellyfin's own dashboard pages.
+- In a narrow window the buttons wrapped one by one instead of together.
 
 ## [1.1.0] - 2026-10-02
 
@@ -46,10 +54,6 @@ All notable changes to this project are documented in this file, in the format o
 - A failed first load left an empty page or a disabled filter button.
 - Quick changes to the rows per page or the expand level could be saved out of order.
 - The spacing was off in right-to-left languages.
-
-### Dependencies
-
-- jsdom 30.1.0 -> 30.1.1 (#4)
 
 ## [1.0.0] - 2026-09-17
 

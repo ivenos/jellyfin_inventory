@@ -12,10 +12,12 @@ namespace Jellyfin.Plugin.Inventory;
 /// <param name="Value">Reads the value out of a row.</param>
 /// <param name="Sort">Reads what the column is ordered by, where that is not the value shown.</param>
 /// <param name="Source">Where the value comes from.</param>
+/// <param name="List">Whether the value lists several, comma separated.</param>
 public sealed record ColumnDefinition(
     string Key,
     string Group,
     ColumnFormat Format,
     Func<InventoryRow, object?> Value,
     Func<InventoryRow, object?>? Sort = null,
-    ColumnSource Source = ColumnSource.Item);
+    ColumnSource Source = ColumnSource.Item,
+    bool List = false);

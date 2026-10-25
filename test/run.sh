@@ -94,7 +94,7 @@ import json, pathlib, re
 tabs = re.findall(r'^\s*\[(BaseItemKind\.[^\]]+)\]', pathlib.Path('$ROOT/Jellyfin.Plugin.Inventory/Hierarchy.cs').read_text(encoding='utf-8'), re.M)
 tabs = [re.findall(r'BaseItemKind\.(\w+)', tab) for tab in tabs]
 strings = json.loads(pathlib.Path('$ROOT/Jellyfin.Plugin.Inventory/Strings/en.json').read_text(encoding='utf-8'))
-wanted = {'level.' + k for tab in tabs for k in tab} | {'mediaType.' + tab[0] for tab in tabs}
+wanted = {'level.' + k for tab in tabs for k in tab} | {'mediaType.' + (tab[-1] if tab[0] == 'Folder' else tab[0]) for tab in tabs}
 missing = sorted(wanted - set(strings))
 print('ok' if tabs and not missing else missing)")" "ok"
 # CONTRIBUTING puts it the other way round: a column that is not in the README does not exist.
@@ -195,6 +195,8 @@ RECIPE=$(cat <<'FIXTURES'
             -f lavfi -i sine=frequency=440:duration=20 \
             -c:v libx264 -preset ultrafast -crf 30 -pix_fmt yuv420p -c:a aac -ac 2 -b:a 128k \
             "/media/movies/Blue Harbour (2021)/Blue Harbour (2021).mkv"
+        printf '<movie><genre>Mystery</genre><genre>Drama</genre></movie>\n' \
+            > "/media/movies/Blue Harbour (2021)/Blue Harbour (2021).nfo"
         # HDR10 has to go into the bitstream; the muxer-level color flags do not survive here.
         $FF -y -loglevel error -f lavfi -i testsrc2=size=3840x2160:rate=24:duration=15 \
             -f lavfi -i sine=frequency=300:duration=15 \
@@ -213,6 +215,9 @@ RECIPE=$(cat <<'FIXTURES'
                 -c:s srt -metadata:s:s:0 language=eng \
                 "/media/shows/Harbour Lights (2022)/Season 01/Harbour Lights S01E$e.mkv"
         done
+        printf '<tvshow><genre>Documentary</genre></tvshow>\n' > "/media/shows/Harbour Lights (2022)/tvshow.nfo"
+        printf '<episodedetails><genre>Comedy</genre></episodedetails>\n' \
+            > "/media/shows/Harbour Lights (2022)/Season 01/Harbour Lights S01E03.nfo"
         # An extra belongs to the film it sits with, not to a tab of its own.
         mkdir -p "/media/movies/Blue Harbour (2021)/behind the scenes"
         $FF -y -loglevel error -f lavfi -i testsrc2=size=320x240:rate=10:duration=2 \
@@ -293,6 +298,9 @@ RECIPE=$(cat <<'FIXTURES'
         mkdir -p "/media/spare/Late Arrival 10 (2025)"
         $FF -y -loglevel error -i "/media/movies/Blue Harbour (2021)/Blue Harbour (2021).mkv" -c copy \
             "/media/spare/Late Arrival 10 (2025)/Late Arrival 10 (2025).mp4"
+        mkdir -p "/media/spare/Late Arrival 11 (2025)"
+        $FF -y -loglevel error -i "/media/movies/Blue Harbour (2021)/Blue Harbour (2021).mkv" -c copy -f mp4 \
+            "/media/spare/Late Arrival 11 (2025)/Late Arrival 11 (2025).m4v"
         # A photo carries no stream, so its size and dimensions have to come off the item.
         mkdir -p /media/photos/Trip
         $FF -y -loglevel error -f lavfi -i testsrc2=size=4032x3024:rate=1:duration=1 \
@@ -304,8 +312,10 @@ RECIPE=$(cat <<'FIXTURES'
             -frames:v 1 /media/photos/Trip/Garden.jpg
         mkdir -p "/media/music/The Fixtures/Test Pattern"
         for n in 1 2; do
+            genre=$(echo Ambient Electronic | cut -d' ' -f$n)
             $FF -y -loglevel error -f lavfi -i sine=frequency=$((300 + n * 100)):duration=8 \
-                -c:a flac -metadata artist="The Fixtures" -metadata album="Test Pattern" \
+                -c:a flac -metadata artist="The Fixtures" -metadata album_artist="Fixture Ensemble" \
+                -metadata album="Test Pattern" -metadata genre="$genre" \
                 -metadata title="Track $n" -metadata track="$n" -metadata date=2024 \
                 "/media/music/The Fixtures/Test Pattern/0$n Track $n.flac"
         done
@@ -313,6 +323,33 @@ RECIPE=$(cat <<'FIXTURES'
         $FF -y -loglevel error -f lavfi -i sine=frequency=800:duration=12 \
             -c:a flac -metadata artist="Nobody" -metadata title="Loose Single" \
             "/media/music/Loose Single.flac"
+        # A book in three files, two alone in folders jellyfin keeps no item for, one on two discs and one filed loose.
+        mkdir -p "/media/audiobooks/Ada Author/Long Book (2020)" "/media/audiobooks/Ada Author/Short Story" \
+                 "/media/audiobooks/Ada Author/Second Story" "/media/audiobooks/Ada Author/Disc Book/CD1" \
+                 "/media/audiobooks/Ada Author/Disc Book/CD2"
+        for n in 1 2 3; do
+            $FF -y -loglevel error -f lavfi -i sine=frequency=$((200 + n * 50)):duration=6 \
+                -c:a libmp3lame -b:a 64k -metadata album="The Long Book" -metadata album_artist="Ada Author" \
+                -metadata artist="Ada Author" -metadata composer="Nick Narrator" -metadata genre="Mystery" \
+                -metadata title="Part $n" -metadata track="$n" -metadata date=2020 \
+                "/media/audiobooks/Ada Author/Long Book (2020)/0$n.mp3"
+        done
+        $FF -y -loglevel error -f lavfi -i sine=frequency=500:duration=4 \
+            -c:a aac -b:a 64k -metadata album="A Short Story" -metadata artist="Ada Author" \
+            -metadata title="Track 1" "/media/audiobooks/Ada Author/Short Story/Short Story.m4b"
+        $FF -y -loglevel error -f lavfi -i sine=frequency=550:duration=4 \
+            -c:a aac -b:a 64k -metadata album="A Second Story" -metadata artist="Ada Author" \
+            -metadata title="Track 1" "/media/audiobooks/Ada Author/Second Story/Second Story.m4b"
+        # Numbered from one on each disc, so only the folders tell the discs apart.
+        for part in 1/1 1/2 2/1; do
+            $FF -y -loglevel error -f lavfi -i sine=frequency=$((300 + ${part%/*} * 100 + ${part#*/} * 10)):duration=3 \
+                -c:a libmp3lame -b:a 64k -metadata album="The Disc Book" -metadata artist="Ada Author" \
+                -metadata title="Disc ${part%/*} Part ${part#*/}" -metadata track="${part#*/}" \
+                "/media/audiobooks/Ada Author/Disc Book/CD${part%/*}/0${part#*/}.mp3"
+        done
+        $FF -y -loglevel error -f lavfi -i sine=frequency=600:duration=4 \
+            -c:a libmp3lame -b:a 64k -metadata artist="Bo Writer" -metadata title="Loose Tale" \
+            "/media/audiobooks/Loose Tale.mp3"
 FIXTURES
 )
 BOOK_TITLE="The Fixture Manual"
@@ -338,7 +375,7 @@ fi
 
 # Left behind by the growing-library check, and it would throw off this run's counts.
 rm -rf "${WORK:?}/media/movies/Late Arrival 2 (2025)" "${WORK:?}/media/movies/Late Arrival 10 (2025)" \
-    "${WORK:?}/media/movies/Disc Rip (2001)" "${WORK:?}/media/copies"
+    "${WORK:?}/media/movies/Late Arrival 11 (2025)" "${WORK:?}/media/movies/Disc Rip (2001)" "${WORK:?}/media/copies"
 
 echo "== start =="
 docker rm -f "$CONTAINER" >/dev/null 2>&1 || true
@@ -408,6 +445,8 @@ curl -sf --max-time 600 -X POST "$BASE/Library/VirtualFolders?name=Books&collect
     -H "Authorization: MediaBrowser Token=\"$TOKEN\"" -H "$JSON" -d "$OFFLINE" >/dev/null || refused "Library/VirtualFolders?name=Books"
 curl -sf --max-time 600 -X POST "$BASE/Library/VirtualFolders?name=Shelf&collectionType=books&paths=/media/shelf&refreshLibrary=true" \
     -H "Authorization: MediaBrowser Token=\"$TOKEN\"" -H "$JSON" -d "$OFFLINE" >/dev/null || refused "Library/VirtualFolders?name=Shelf"
+curl -sf --max-time 600 -X POST "$BASE/Library/VirtualFolders?name=Audiobooks&collectionType=books&paths=/media/audiobooks&refreshLibrary=true" \
+    -H "Authorization: MediaBrowser Token=\"$TOKEN\"" -H "$JSON" -d "$OFFLINE" >/dev/null || refused "Library/VirtualFolders?name=Audiobooks"
 curl -sf --max-time 600 -X POST "$BASE/Library/VirtualFolders?name=Photos&collectionType=homevideos&paths=/media/photos&refreshLibrary=true" \
     -H "Authorization: MediaBrowser Token=\"$TOKEN\"" -H "$JSON" -d "$OFFLINE" >/dev/null || refused "Library/VirtualFolders?name=Photos"
 
@@ -417,7 +456,7 @@ printf 'waiting for the scan'
 i=0
 until [ "$(api 'Inventory/Schema' | field "
 (lambda have: 'ok' if all(have.get(k) == v for k, v in
-                          {'Movie': 7, 'Series': 3, 'MusicAlbum': 3, 'Book': 2, 'Photo': 3}.items()) else have)(
+                          {'Movie': 7, 'Series': 3, 'MusicAlbum': 3, 'Book': 2, 'AudioBook': 5, 'Photo': 3}.items()) else have)(
     {t['MediaType']: t['Count'] for t in json.load(sys.stdin)['MediaTypes']})")" = "ok" ]; do
     i=$((i + 1))
     [ "$i" -gt 60 ] && { echo; echo "library did not settle" >&2; api 'Inventory/Schema'; exit 1; }
@@ -435,6 +474,8 @@ i=0
 until [ "$(api 'Inventory/Items?mediaType=MusicAlbum' | field "','.join(sorted({r['Values'].get('audioCodec') or '' for r in json.load(sys.stdin)['Rows']}))")" = "flac" ] \
    && [ "$(api 'Inventory/Items?mediaType=Movie' \
         | field "all(r['Values'].get('videoCodec') for r in json.load(sys.stdin)['Rows'])")" = "True" ] \
+   && [ "$(api 'Inventory/Items?mediaType=AudioBook&level=AudioBook&columnLevel=MusicAlbum' \
+        | field "(lambda rows: len(rows) == 9 and all(r['Values'].get('audioCodec') for r in rows))(json.load(sys.stdin)['Rows'])")" = "True" ] \
    && [ "$(api 'Inventory/Items?mediaType=Series&level=Episode' \
         | field "all(r['Values'].get('videoCodec') for r in json.load(sys.stdin)['Rows']
                      if r['Values']['name'] != 'Patchy S01E06')")" = "True" ]; do
@@ -456,7 +497,7 @@ SCHEMA=$(api 'Inventory/Schema')
 check "movie count" \
     "$(printf '%s\n' "$SCHEMA" | field "[t['Count'] for t in json.load(sys.stdin)['MediaTypes'] if t['MediaType']=='Movie'][0]")" "7"
 check "seasons and episodes are not tabs of their own" \
-    "$(printf '%s\n' "$SCHEMA" | field "','.join(t['MediaType'] for t in json.load(sys.stdin)['MediaTypes'])")" "Movie,Series,MusicAlbum,Book,Photo"
+    "$(printf '%s\n' "$SCHEMA" | field "','.join(t['MediaType'] for t in json.load(sys.stdin)['MediaTypes'])")" "Movie,Series,MusicAlbum,Book,AudioBook,Photo"
 check "music is counted in tracks, the one filed loose among them" \
     "$(printf '%s\n' "$SCHEMA" | field "[t['Count'] for t in json.load(sys.stdin)['MediaTypes'] if t['MediaType']=='MusicAlbum'][0]")" "3"
 check "an album breaks down into its tracks" \
@@ -478,7 +519,10 @@ check "a movie table starts with the columns it was given" \
     "name,year,size,duration,sizePerHour,totalBitrate,videoCodec,resolution,videoRange,audioCodec,audioLayout"
 check "and a track table with its own" \
     "$(api 'Inventory/Items?mediaType=MusicAlbum&level=Audio&limit=1' | field "','.join(c['Key'] for c in json.load(sys.stdin)['Columns'])")" \
-    "name,year,size,duration,totalBitrate,audioCodec,audioChannels,audioSampleRate"
+    "name,artists,year,size,duration,totalBitrate,audioCodec,audioChannels,audioSampleRate"
+check "and the books and the files of an audiobook with theirs" \
+    "$(api 'Inventory/Items?mediaType=AudioBook&level=Folder&limit=1' | field "','.join(c['Key'] for c in json.load(sys.stdin)['Columns'])")/$(api 'Inventory/Items?mediaType=AudioBook&level=AudioBook&limit=1' | field "','.join(c['Key'] for c in json.load(sys.stdin)['Columns'])")" \
+    "name,authors,narrators,year,children,size,duration,sizePerHour,container/name,year,library,size,duration,sizePerHour,container"
 check "a sort column that names nothing is refused rather than quietly ignored" \
     "$(curl -s -o /dev/null -w '%{http_code}' "$BASE/Inventory/Items?mediaType=Movie&sortBy=siez" \
         -H "Authorization: MediaBrowser Token=\"$TOKEN\"")" "400"
@@ -556,10 +600,10 @@ check "a page behind the last one is empty and still counts every row, which the
 check "a level of another tab is refused" \
     "$(curl -s -o /dev/null -w '%{http_code}' "$BASE/Inventory/Items?mediaType=Movie&level=Episode" \
         -H "Authorization: MediaBrowser Token=\"$TOKEN\"")" "400"
-curl -sf -X POST "$BASE/Inventory/Columns?level=AudioBook" \
-    -H "Authorization: MediaBrowser Token=\"$TOKEN\"" -H "$JSON" -d '["size","name"]' >/dev/null || refused "Inventory/Columns?level=AudioBook"
+curl -sf -X POST "$BASE/Inventory/Columns?level=Video" \
+    -H "Authorization: MediaBrowser Token=\"$TOKEN\"" -H "$JSON" -d '["size","name"]' >/dev/null || refused "Inventory/Columns?level=Video"
 check "a table asked for no order is sorted by its first column" \
-    "$(api 'Inventory/Items?mediaType=Movie&columnLevel=AudioBook&sortBy=' \
+    "$(api 'Inventory/Items?mediaType=Movie&columnLevel=Video&sortBy=' \
         | field "(lambda sizes: sizes == sorted(sizes))([r['Values']['size'] for r in json.load(sys.stdin)['Rows']])")" "True"
 # A level no fixture fills, so its selection can be set without moving a table checked elsewhere.
 curl -sf -X POST "$BASE/Inventory/Columns?level=Video" \
@@ -793,6 +837,24 @@ check "and one filmed upright is classed by its long side" \
     "$(printf '%s\n' "$QUALITY" | named '=Formula Trap (2024)' quality)" "240p"
 check "quality sorts by class, not by how the text reads" \
     "$(printf '%s\n' "$QUALITY" | field "','.join(dict.fromkeys(r['Values']['quality'] for r in json.load(sys.stdin)['Rows']))")" "240p,360p,1080p,4K"
+curl -sf -X POST "$BASE/Inventory/Columns?level=MusicVideo" \
+    -H "Authorization: MediaBrowser Token=\"$TOKEN\"" -H "$JSON" -d '["name","series","genres"]' >/dev/null || refused "Inventory/Columns?level=MusicVideo"
+GENRES=$(api 'Inventory/Items?mediaType=Movie&columnLevel=MusicVideo')
+check "a film lists its genres in the order its metadata names them" \
+    "$(printf '%s\n' "$GENRES" | named 'Blue Harbour (2021)' genres)" "Mystery, Drama"
+check "and one without any is empty" \
+    "$(printf '%s\n' "$GENRES" | named 'Night Signal (2023)' genres)" "None"
+EPISODES=$(api 'Inventory/Items?mediaType=Series&level=Episode&columnLevel=MusicVideo')
+check "a series carries its own genres, and so do its season and an episode that has none" \
+    "$(api 'Inventory/Items?mediaType=Series&columnLevel=MusicVideo' | named 'Harbour Lights' genres)/$(api 'Inventory/Items?mediaType=Series&level=Season&columnLevel=MusicVideo' \
+        | field "[r['Values']['genres'] for r in json.load(sys.stdin)['Rows'] if r['Values']['series']=='Harbour Lights'][0]")/$(printf '%s\n' "$EPISODES" | named 'Harbour Lights S01E01' genres)" \
+    "Documentary/Documentary/Documentary"
+check "while an episode that names its own keeps them" \
+    "$(printf '%s\n' "$EPISODES" | named 'Harbour Lights S01E03' genres)" "Comedy"
+check "and one whose series has none is empty" \
+    "$(printf '%s\n' "$EPISODES" | named 'Long Run S01E01' genres)" "None"
+check "an album has every genre of its tracks rather than reading as mixed" \
+    "$(api 'Inventory/Items?mediaType=MusicAlbum&columnLevel=MusicVideo' | named 'Test Pattern' genres)" "Ambient, Electronic"
 check "umlauts sort where the language puts them, not where their code point does" \
     "$(api 'Inventory/Items?mediaType=Movie&sortBy=name' \
         | field "(lambda n: n.index([x for x in n if x.startswith(chr(196))][0]) < n.index('Blue Harbour (2021)'))([r['Values']['name'] for r in json.load(sys.stdin)['Rows']])")" "True"
@@ -827,6 +889,126 @@ check "and a class is held against another by its place among them, not by how i
     "3/4/Night Signal (2023)"
 check "text is held against the value whatever its case" \
     "$(api "Inventory/Items?mediaType=Movie&filters=$(filtered '[{"column":"videoCodec","op":"eq","value":"HEVC"}]')" | names)" "Night Signal (2023)"
+check "a genre is found among the others a film has" \
+    "$(api "Inventory/Items?mediaType=Movie&filters=$(filtered '[{"column":"genres","op":"contains","value":"drama"}]')" | names)" "Blue Harbour (2021)"
+check "= and ≠ hold a value against each one a list carries" \
+    "$(api "Inventory/Items?mediaType=Movie&filters=$(filtered '[{"column":"genres","op":"eq","value":"drama"}]')" | names)/$(api "Inventory/Items?mediaType=Movie&filters=$(filtered '[{"column":"genres","op":"ne","value":"drama"}]')" | field "json.load(sys.stdin)['TotalCount']")/$(api "Inventory/Items?mediaType=Series&level=Episode&filters=$(filtered '[{"column":"audioLanguages","op":"eq","value":"eng"}]')" | field "json.load(sys.stdin)['TotalCount']")" \
+    "Blue Harbour (2021)/6/3"
+check "and the schema says which columns are such lists" \
+    "$(printf '%s\n' "$SCHEMA" | field "','.join(c['Key'] for c in json.load(sys.stdin)['Columns'] if c['List'])")" \
+    "genres,artists,authors,narrators,audioLanguages,subtitleLanguages"
+check "and an episode by the genre of its series" \
+    "$(api "Inventory/Items?mediaType=Series&level=Episode&filters=$(filtered '[{"column":"genres","op":"eq","value":"documentary"}]')" | names)" \
+    "Harbour Lights S01E01,Harbour Lights S01E02"
+
+check "a script that names no level gets the files of the audiobook tab, as before books were a level" \
+    "$(api 'Inventory/Items?mediaType=AudioBook' | field "json.load(sys.stdin)['TotalCount']")" "9"
+GUID=$(field "json.load(open('$WORK/config/plugins/Inventory/meta.json'))['guid']" </dev/null)
+# Stores the audiobook presets as given, through jellyfin's own endpoint the way an older version left them.
+presets() {
+    curl -sf -X POST "$BASE/Plugins/$GUID/Configuration" -H "Authorization: MediaBrowser Token=\"$TOKEN\"" -H "$JSON" \
+        -d "$(api "Plugins/$GUID/Configuration" | field "json.dumps((lambda c: c | {'Presets': [p for p in c['Presets'] if p['Level'] not in ('Folder', 'AudioBook')] + $1})(json.load(sys.stdin)))")" \
+        >/dev/null || refused "Plugins/$GUID/Configuration"
+}
+shown() { api "Inventory/Items?mediaType=AudioBook&level=$1&limit=1" | field "','.join(c['Key'] for c in json.load(sys.stdin)['Columns'])"; }
+presets '[{"Level": "AudioBook", "Columns": ["name", "size"]}]'
+check "columns chosen for the audiobook tab before it had books show on its books" "$(shown Folder)" "name,size"
+curl -sf -X POST "$BASE/Inventory/Columns?level=AudioBook" \
+    -H "Authorization: MediaBrowser Token=\"$TOKEN\"" -H "$JSON" -d '["name","duration"]' >/dev/null || refused "Inventory/Columns?level=AudioBook"
+check "and stay there once its files are given others" "$(shown Folder)/$(shown AudioBook)" "name,size/name,duration"
+presets '[]'
+curl -sf -X POST "$BASE/Inventory/Columns?level=AudioBook" \
+    -H "Authorization: MediaBrowser Token=\"$TOKEN\"" -H "$JSON" -d '["name","duration"]' >/dev/null || refused "Inventory/Columns?level=AudioBook"
+check "while books that had none keep their defaults when only the files are given columns" \
+    "$(shown Folder)" "name,authors,narrators,year,children,size,duration,sizePerHour,container"
+curl -sf -X POST "$BASE/Inventory/Columns?level=Folder" \
+    -H "Authorization: MediaBrowser Token=\"$TOKEN\"" -H "$JSON" \
+    -d '["name","year","genres","artists","authors","narrators","children","size","duration","container","dateAdded","played"]' >/dev/null || refused "Inventory/Columns?level=Folder"
+BOOKS=$(api 'Inventory/Items?mediaType=AudioBook&level=Folder')
+check "an audiobook in several files is one row, and one alone in its folder or filed loose is its file" \
+    "$(printf '%s\n' "$BOOKS" | field "','.join(sorted(r['Values']['name'] for r in json.load(sys.stdin)['Rows']))")" \
+    "A Second Story,A Short Story,Loose Tale,The Disc Book,The Long Book"
+check "and one alone in its folder does not open, though its author's folder holds another" \
+    "$(printf '%s\n' "$BOOKS" | field "sorted((r['Values']['name'], r['Expandable'], r['Values']['children']) for r in json.load(sys.stdin)['Rows'] if r['Values']['name'] in ('A Short Story', 'A Second Story'))")" \
+    "[('A Second Story', False, None), ('A Short Story', False, None)]"
+DISC_BOOK=$(printf '%s\n' "$BOOKS" | identify 'The Disc Book')
+check "a book on two discs is one book, its files in the order they play" \
+    "$(api "Inventory/Items?mediaType=AudioBook&level=AudioBook&parentIds=$DISC_BOOK&columnLevel=Folder" | field "','.join(r['Values']['name'] for r in json.load(sys.stdin)['Rows'])")" \
+    "Disc 1 Part 1,Disc 1 Part 2,Disc 2 Part 1"
+check "a book is named after the album its files carry rather than its folder, and opens to them" \
+    "$(printf '%s\n' "$BOOKS" | field "[(r['Expandable'], r['Values']['children']) for r in json.load(sys.stdin)['Rows'] if r['Values']['name']=='The Long Book'][0]")" \
+    "(True, 3)"
+check "and takes its year, its genres and its people from them" \
+    "$(printf '%s\n' "$BOOKS" | field "(lambda v: '|'.join(str(v[k]) for k in ('year', 'genres', 'authors', 'narrators', 'artists')))([r['Values'] for r in json.load(sys.stdin)['Rows'] if r['Values']['name']=='The Long Book'][0])")" \
+    "2020|Mystery|Ada Author|Nick Narrator|None"
+check "it weighs and runs what its files do" \
+    "$(printf '%s\n' "$BOOKS" | field "(lambda v: '%s/%s' % (v['size'], round(v['duration'])))([r['Values'] for r in json.load(sys.stdin)['Rows'] if r['Values']['name']=='The Long Book'][0])")" \
+    "$(cat "$WORK/media/audiobooks/Ada Author/Long Book (2020)"/*.mp3 | wc -c | tr -d ' ')/18"
+LONG_BOOK=$(printf '%s\n' "$BOOKS" | identify 'The Long Book')
+BOOK_FILES=$(api "Inventory/Items?mediaType=AudioBook&level=AudioBook&parentIds=$LONG_BOOK&columnLevel=Folder")
+check "it was added when its first file was, not when a scan found its folder" \
+    "$(printf '%s\n' "$BOOKS" | named 'The Long Book' dateAdded)" \
+    "$(api "Inventory/Items?mediaType=AudioBook&level=AudioBook&parentIds=$LONG_BOOK&columnLevel=Video" | field "min(r['Values']['dateAdded'] for r in json.load(sys.stdin)['Rows'])")"
+check "and lists them in the order they play" \
+    "$(printf '%s\n' "$BOOK_FILES" | field "','.join(r['Values']['name'] for r in json.load(sys.stdin)['Rows'])")" "Part 1,Part 2,Part 3"
+check "a file of an audiobook leaves its artists to the authors column" \
+    "$(printf '%s\n' "$BOOK_FILES" | named 'Part 1' artists)/$(printf '%s\n' "$BOOK_FILES" | named 'Part 1' authors)" "None/Ada Author"
+check "a search from the top finds a book and its files, and counts their bytes once" \
+    "$(api 'Inventory/Items?mediaType=AudioBook&level=Folder&search=Long%20Book' | field "(lambda d: '%s/%s' % (d['TotalCount'], d['TotalSize']))(json.load(sys.stdin))")" \
+    "4/$(cat "$WORK/media/audiobooks/Ada Author/Long Book (2020)"/*.mp3 | wc -c | tr -d ' ')"
+play "$(printf '%s\n' "$BOOK_FILES" | identify 'Part 1')"
+play "$(printf '%s\n' "$BOOK_FILES" | identify 'Part 2')"
+check "a book is not played while a file of it is left" \
+    "$(api 'Inventory/Items?mediaType=AudioBook&level=Folder' | named 'The Long Book' played)" "False"
+play "$(printf '%s\n' "$BOOK_FILES" | identify 'Part 3')"
+check "and is once every file is" \
+    "$(api 'Inventory/Items?mediaType=AudioBook&level=Folder' | named 'The Long Book' played)" "True"
+check "an audiobook kept as an m4b names that as its container" \
+    "$(printf '%s\n' "$BOOKS" | field "[r['Values'].get('container') for r in json.load(sys.stdin)['Rows'] if r['Values']['name']=='A Short Story'][0]")" "m4b"
+check "a search finds a book and its files by who reads them" \
+    "$(api 'Inventory/Items?mediaType=AudioBook&level=Folder&search=nick' | names)" "Part 1,Part 2,Part 3,The Long Book"
+check "and an album by its album artist" \
+    "$(api 'Inventory/Items?mediaType=MusicAlbum&search=ensemble' | names)" "Test Pattern"
+check "a book is found by its author" \
+    "$(api "Inventory/Items?mediaType=AudioBook&level=Folder&filters=$(filtered '[{"column":"authors","op":"contains","value":"ada"}]')" | names)" \
+    "A Second Story,A Short Story,The Disc Book,The Long Book"
+check "an ebook names the author jellyfin read from it" \
+    "$(api 'Inventory/Items?mediaType=Book&columnLevel=Folder' | named 'The Fixture Manual' authors)" "A. Tester"
+check "a track names its artists, and an album its album artists" \
+    "$(api 'Inventory/Items?mediaType=MusicAlbum&level=Audio&columnLevel=Folder' | named 'Track 1' artists)/$(api 'Inventory/Items?mediaType=MusicAlbum&columnLevel=Folder' | named 'Test Pattern' artists)" \
+    "The Fixtures/Fixture Ensemble"
+curl -sf -X POST "$BASE/Inventory/Expand?mediaType=AudioBook&level=AudioBook" \
+    -H "Authorization: MediaBrowser Token=\"$TOKEN\"" >/dev/null || refused "Inventory/Expand?mediaType=AudioBook"
+check "the audiobook tab keeps how far it opens under its own name" \
+    "$(api 'Inventory/Schema' | field "[t['ExpandedTo'] for t in json.load(sys.stdin)['MediaTypes'] if t['MediaType']=='AudioBook'][0]")" "AudioBook"
+curl -sf -X POST "$BASE/Inventory/Expand?mediaType=AudioBook&level=Folder" \
+    -H "Authorization: MediaBrowser Token=\"$TOKEN\"" >/dev/null || refused "Inventory/Expand?mediaType=AudioBook"
+# Saves an item the way a client does, sending it back whole with the given fields changed.
+edit() {
+    python3 - "$BASE" "$TOKEN" "$USER_ID" "$1" "$2" <<'EDIT'
+import json, sys, urllib.request
+base, token, user, item, changes = sys.argv[1:]
+def call(path, body=None):
+    request = urllib.request.Request(base + path, None if body is None else json.dumps(body).encode(), method='GET' if body is None else 'POST',
+                                     headers={'Authorization': 'MediaBrowser Token="%s"' % token, 'Content-Type': 'application/json'})
+    return urllib.request.urlopen(request).read()
+call('/Items/' + item, json.loads(call('/Items/%s?userId=%s' % (item, user))) | json.loads(changes))
+EDIT
+}
+# Saved the way the audiobooks plugin saves an edit, since jellyfin's own editor locks nothing.
+edit "$LONG_BOOK" '{"Name": "The Edited Book", "Genres": ["Satire"], "LockedFields": ["Name", "Genres"]}'
+check "a book edited and locked in jellyfin shows the title and genres it was given" \
+    "$(api 'Inventory/Items?mediaType=AudioBook&level=Folder' | named 'The Edited Book' genres)" "Satire"
+edit "$LONG_BOOK" '{"Name": "Long Book (2020)"}'
+check "and one locked under the name of its folder keeps that name rather than its album's" \
+    "$(api 'Inventory/Items?mediaType=AudioBook&level=Folder' | named 'Long Book (2020)' genres)" "Satire"
+# Saved the way jellyfin's own editor saves it, which locks nothing.
+edit "$DISC_BOOK" '{"Name": "The Renamed Book", "Genres": ["Fable"], "LockedFields": []}'
+check "and one edited without a lock does too, since its folder no longer goes by its name on disk" \
+    "$(api 'Inventory/Items?mediaType=AudioBook&level=Folder' | named 'The Renamed Book' genres)" "Fable"
+edit "$DISC_BOOK" '{"Genres": [], "LockedFields": ["Genres"]}'
+check "while genres emptied and locked stay empty rather than falling back on its files" \
+    "$(api 'Inventory/Items?mediaType=AudioBook&level=Folder' | named 'The Renamed Book' genres)" "None"
 check "a rate is held against the digits the table shows, not the ones it is kept as" \
     "$(api "Inventory/Items?mediaType=Movie&filters=$(filtered '[{"column":"frameRate","op":"eq","value":23.976}]')" | names)" "Blue Harbour (2021)"
 check "a truth value that is false is a value, not an empty cell" \
@@ -1060,7 +1242,7 @@ check "a truth value is written in the language of the header beside it" \
         -H "Authorization: MediaBrowser Token=\"$TOKEN\"" | python3 -c "
 import csv, io, sys
 rows = list(csv.reader(io.StringIO(sys.stdin.buffer.read().decode('utf-8-sig')), delimiter=';'))
-played = rows[0].index('Vollständig gesehen')
+played = rows[0].index('Vollständig wiedergegeben')
 values = {r[played] for r in rows[1:]}
 print('ok' if 'Ja' in values and not values & {'true', 'false'} else sorted(values))")" "ok"
 
@@ -1104,6 +1286,8 @@ at = [rows[0].index(name) for name in ('Duration (s)', 'Size/hour (B)')]
 print('ok' if all(len(r[i].partition('.')[2]) <= 3 for r in rows[1:] for i in at) else rows[1:])")" "ok"
 check "csv export is offered as a file" \
     "$(curl -sf -o /dev/null -D - "$BASE/Inventory/Export?mediaType=Movie&format=csv" -H "Authorization: MediaBrowser Token=\"$TOKEN\"" | grep -ci 'filename=inventory-movie.csv')" "1"
+check "the books of the audiobook tab are exported under its name, their files beside them" \
+    "$(curl -sf -o /dev/null -D - "$BASE/Inventory/Export?mediaType=AudioBook&level=Folder&format=csv" -H "Authorization: MediaBrowser Token=\"$TOKEN\"" | grep -ci 'filename=inventory-audiobook.csv')/$(curl -sf -o /dev/null -D - "$BASE/Inventory/Export?mediaType=AudioBook&level=AudioBook&format=csv" -H "Authorization: MediaBrowser Token=\"$TOKEN\"" | grep -ci 'filename=inventory-audiobook-files.csv')" "1/1"
 curl -sf "$BASE/Inventory/Export?mediaType=Movie&format=ods" -H "Authorization: MediaBrowser Token=\"$TOKEN\"" -o "$WORK/export.ods" \
     || refused "Inventory/Export?format=ods" GET
 check "ods export opens as a spreadsheet" \
@@ -1414,7 +1598,7 @@ check "and handed back once it arrives, even if the table moved on meanwhile" \
 check "an answer that arrives too late still takes the loading message down" \
     "$(rendered stale.overlay)" "0"
 check "a table the user asked for does not discard the schema of the visit it was asked in" \
-    "$(rendered stale.tabs)" "New Movies 7,New Series 3,New Music 3,New Books 2,New Photos 3"
+    "$(rendered stale.tabs)" "New Movies 7,New Series 3,New Music 3,New Books 2,New Audiobooks 5,New Photos 3"
 check "and the answer to a visit that was left does not take down this visit's loading message" \
     "$(rendered overlay.pending)" "1"
 check "which comes down when this visit is answered" \
@@ -1467,7 +1651,9 @@ check "a page left behind the end of a library that shrank falls back to the las
 check "a row opened in the tree draws its children right below it, and closing it takes them away" \
     "$(rendered tree.opened)/$(rendered tree.closed)" "0,1,1,0,0,0,0,0,0/child 1,child 2/0,0,0,0,0,0,0"
 check "a second view of the page binds its own controls, not those of the view the web client kept" \
-    "$(rendered twice.tabs)/$(rendered twice.schemas)/$(rendered twice.exports)" "5/1/1"
+    "$(rendered twice.tabs)/$(rendered twice.schemas)/$(rendered twice.exports)" "6/1/1"
+check "an export is saved under the name the server gives it" \
+    "$(rendered export.saved)" "inventory-sent.csv"
 check "coming back to the tab that was open keeps its sort and its page" \
     "$(rendered revisit.asked)" "sortBy=size&descending=true&startIndex=2"
 check "a page turned while a changed condition is still waiting lists that condition from its first page" \
@@ -1495,7 +1681,7 @@ check "the page raises nothing while it is driven" "$(rendered raised)" "0"
 check "the page takes its column headers from the strings" \
     "$(rendered headers)" "Name,Size,Duration,Size/hour,Video codec,Interlaced"
 check "the page names every tab and how much it holds" \
-    "$(rendered tabs)" "Movies 7,Series 3,Music 3,Books 2,Photos 3"
+    "$(rendered tabs)" "Movies 7,Series 3,Music 3,Books 2,Audiobooks 5,Photos 3"
 check "the totals line counts the rows the server matched" \
     "$(rendered totals | cut -d' ' -f1-2)" "7 items"
 check "the pager counts the pages the rows need" "$(rendered pager)" "1 / 4"
@@ -1632,7 +1818,7 @@ echo "== a growing library =="
 cp -r "$WORK/media/movies/Blue Harbour (2021)" "$WORK/media/movies/Late Arrival 2 (2025)"
 mv "$WORK/media/movies/Late Arrival 2 (2025)/Blue Harbour (2021).mkv" \
    "$WORK/media/movies/Late Arrival 2 (2025)/Late Arrival 2 (2025).mkv"
-cp -r "$WORK/media/spare/Late Arrival 10 (2025)" "$WORK/media/spare/Disc Rip (2001)" "$WORK/media/movies/"
+cp -r "$WORK/media/spare/Late Arrival 10 (2025)" "$WORK/media/spare/Late Arrival 11 (2025)" "$WORK/media/spare/Disc Rip (2001)" "$WORK/media/movies/"
 curl -sf -X POST "$BASE/Inventory/Columns?level=Video" \
     -H "Authorization: MediaBrowser Token=\"$TOKEN\"" -H "$JSON" \
     -d '["name","container","size","duration","sizePerHour","videoCodec"]' >/dev/null || refused "Inventory/Columns?level=Video"
@@ -1640,7 +1826,7 @@ curl -sf -X POST "$BASE/Library/Refresh" -H "Authorization: MediaBrowser Token=\
 printf 'waiting for the new films'
 i=0
 until [ "$(api 'Inventory/Items?mediaType=Movie&columnLevel=Video&limit=100' \
-    | field "(lambda d: '%s/%s' % (d['TotalCount'], [bool(r['Values']['videoCodec']) for r in d['Rows'] if r['Values']['name'] in ('Disc Rip (2001)', 'Late Arrival 10 (2025)')]))(json.load(sys.stdin))")" = "10/[True, True]" ]; do
+    | field "(lambda d: '%s/%s' % (d['TotalCount'], [bool(r['Values']['videoCodec']) for r in d['Rows'] if r['Values']['name'] in ('Disc Rip (2001)', 'Late Arrival 10 (2025)', 'Late Arrival 11 (2025)')]))(json.load(sys.stdin))")" = "11/[True, True, True]" ]; do
     i=$((i + 1))
     [ "$i" -gt 40 ] && { echo; echo "the new films never arrived" >&2; exit 1; }
     [ $((i % 10)) = 0 ] && curl -sf -X POST "$BASE/Library/Refresh" \
@@ -1650,19 +1836,21 @@ until [ "$(api 'Inventory/Items?mediaType=Movie&columnLevel=Video&limit=100' \
 done
 echo
 check "a film added while the server runs reaches the table without a restart" \
-    "$(api 'Inventory/Items?mediaType=Movie' | field "json.load(sys.stdin)['TotalCount']")" "10"
+    "$(api 'Inventory/Items?mediaType=Movie' | field "json.load(sys.stdin)['TotalCount']")" "11"
 check "a container is the one name the file goes by, out of the six ffprobe has for an mp4" \
     "$(api 'Inventory/Items?mediaType=Movie&columnLevel=Video&search=Late%20Arrival' | named 'Late Arrival 10 (2025)' container)" "mp4"
+check "and an m4v keeps its own name, which is not among them" \
+    "$(api 'Inventory/Items?mediaType=Movie&columnLevel=Video&search=Late%20Arrival' | named 'Late Arrival 11 (2025)' container)" "m4v"
 check "names sort by the number in them, so 2 comes ahead of 10" \
     "$(api 'Inventory/Items?mediaType=Movie&search=Late%20Arrival&sortBy=name' \
         | field "','.join(r['Values']['name'] for r in json.load(sys.stdin)['Rows'])")" \
-    "Late Arrival 2 (2025),Late Arrival 10 (2025)"
+    "Late Arrival 2 (2025),Late Arrival 10 (2025),Late Arrival 11 (2025)"
 check "a disc folder weighs every file in it, not the one jellyfin probed, and takes no rate from a runtime that is not theirs" \
     "$(api 'Inventory/Items?mediaType=Movie&columnLevel=Video&search=Disc%20Rip' \
         | field "(lambda v: '%s/%s/%s' % (v['size'], v['duration'] is not None, v['sizePerHour']))(json.load(sys.stdin)['Rows'][0]['Values'])")" \
     "$(find "$WORK/media/movies/Disc Rip (2001)" -type f -exec cat {} + | wc -c | tr -d ' ')/True/None"
 rm -rf "$WORK/media/movies/Late Arrival 2 (2025)" "$WORK/media/movies/Late Arrival 10 (2025)" \
-    "$WORK/media/movies/Disc Rip (2001)"
+    "$WORK/media/movies/Late Arrival 11 (2025)" "$WORK/media/movies/Disc Rip (2001)"
 curl -sf -X POST "$BASE/Library/Refresh" -H "Authorization: MediaBrowser Token=\"$TOKEN\"" >/dev/null || refused "Library/Refresh"
 i=0
 until [ "$(api 'Inventory/Items?mediaType=Movie' | field "json.load(sys.stdin)['TotalCount']")" = "7" ] || [ "$i" -gt 40 ]; do
@@ -1698,7 +1886,6 @@ done
 check "a film grouped with a version in another library weighs both files once, whether or not that library lists it" \
     "$(api 'Inventory/Items?mediaType=Movie&search=Night%20Signal' | field "json.load(sys.stdin)['TotalSize']")" "$TWICE"
 
-GUID=$(field "json.load(open('$WORK/config/plugins/Inventory/meta.json'))['guid']" </dev/null)
 curl -sf -X POST "$BASE/Plugins/$GUID/Configuration" -H "Authorization: MediaBrowser Token=\"$TOKEN\"" -H "$JSON" \
     -d '{"Presets":null,"Expanded":null,"PageSize":100}' >/dev/null || refused "Plugins/$GUID/Configuration"
 check "a configuration stored with empty lists through jellyfin's own endpoint still answers everywhere" \

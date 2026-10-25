@@ -21,6 +21,10 @@ public static class Columns
         new("season", "General", ColumnFormat.Plain, r => r.SeasonNumber),
         new("episode", "General", ColumnFormat.Plain, r => r.EpisodeNumber),
         new("year", "General", ColumnFormat.Plain, r => r.Year),
+        new("genres", "General", ColumnFormat.Text, r => r.Genres, List: true),
+        new("artists", "General", ColumnFormat.Text, r => r.Artists, List: true),
+        new("authors", "General", ColumnFormat.Text, r => r.Authors, List: true),
+        new("narrators", "General", ColumnFormat.Text, r => r.Narrators, List: true),
         new("library", "General", ColumnFormat.Text, r => r.Library),
         new("children", "General", ColumnFormat.Number, r => r.Children),
         new("container", "General", ColumnFormat.Text, r => r.Container),
@@ -52,10 +56,10 @@ public static class Columns
         new("audioSampleRate", "Audio", ColumnFormat.Number, r => r.AudioSampleRate),
         new("spatialAudio", "Audio", ColumnFormat.Text, r => r.SpatialAudio),
         new("audioTracks", "Audio", ColumnFormat.Number, r => r.AudioTracks),
-        new("audioLanguages", "Audio", ColumnFormat.Text, r => r.AudioLanguages),
+        new("audioLanguages", "Audio", ColumnFormat.Text, r => r.AudioLanguages, List: true),
 
         new("subtitleTracks", "Subtitles", ColumnFormat.Number, r => r.SubtitleTracks),
-        new("subtitleLanguages", "Subtitles", ColumnFormat.Text, r => r.SubtitleLanguages),
+        new("subtitleLanguages", "Subtitles", ColumnFormat.Text, r => r.SubtitleLanguages, List: true),
 
         new("lastPlayed", Playback, ColumnFormat.Date, r => r.LastPlayed, Source: ColumnSource.User),
         new("everyoneLastPlayed", Playback, ColumnFormat.Date, r => r.EveryoneLastPlayed, Source: ColumnSource.Everyone),

@@ -2,8 +2,9 @@
 // and InventoryService.Query answer them on a server.
 
 const MAX_PAGE_SIZE = 10000;
-const SEARCHED = ['name', 'series', 'path'];
+const SEARCHED = ['name', 'series', 'path', 'artists', 'authors', 'narrators'];
 const FORMATS = { csv: 'text/csv; charset=utf-8', ods: 'application/vnd.oasis.opendocument.spreadsheet' };
+const FILE_NAMES = { Folder: 'audiobook', AudioBook: 'audiobook-files' };
 const GUID = /^[0-9a-f]{32}$|^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i;
 
 class BadRequest extends Error {}
@@ -131,6 +132,12 @@ export function createBackend(data) {
         }
     }
 
+    function equal(filter, cell) {
+        return filter.definition.List
+            ? String(cell).split(', ').some((part) => compare(filter, part) === 0)
+            : compare(filter, cell) === 0;
+    }
+
     function meets(row, filter) {
         const key = filter.definition.Key;
         if (row.Mixed.includes(key)) { return false; }
@@ -143,8 +150,8 @@ export function createBackend(data) {
         switch (filter.op) {
             case 'contains': return fold(cell).includes(filter.value);
             case 'notContains': return !fold(cell).includes(filter.value);
-            case 'eq': return compare(filter, cell) === 0;
-            case 'ne': return compare(filter, cell) !== 0;
+            case 'eq': return equal(filter, cell);
+            case 'ne': return !equal(filter, cell);
             case 'ge': return compare(filter, cell) >= 0;
             default: return compare(filter, cell) <= 0;
         }
@@ -193,10 +200,10 @@ export function createBackend(data) {
         const known = data.Schemas[resolve(params.culture)];
         const type = Object.keys(tabs).find((name) => same(name, params.mediaType));
         const tab = tabs[type];
-        const kind = tab && (params.level ? tab.levels.find((name) => same(name, params.level)) : tab.levels[0]);
+        const kind = tab && (params.level ? tab.levels.find((name) => same(name, params.level)) : tab.levels.find((name) => same(name, type)));
         if (!kind) { throw new BadRequest(`Unknown media type '${params.mediaType}' or level '${params.level}'.`); }
 
-        const selection = level(params.columnLevel || params.level || type);
+        const selection = level(params.columnLevel || kind);
         if (!selection) { throw new BadRequest(`'${params.columnLevel}' is not a level.`); }
 
         const sortBy = params.sortBy ? column(known, params.sortBy)?.Key : null;
@@ -269,7 +276,7 @@ export function createBackend(data) {
         const { known, kind, keys, sorted } = list({ ...params, parentIds: undefined }, true);
         return {
             Format: format,
-            FileName: `inventory-${kind.toLowerCase()}.${format}`,
+            FileName: `inventory-${FILE_NAMES[kind] ?? kind.toLowerCase()}.${format}`,
             ContentType: FORMATS[format],
             Culture: params.culture,
             SheetName: known.Strings[`level.${kind}`],

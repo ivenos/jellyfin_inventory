@@ -28,16 +28,6 @@ sh test/run.sh --keep         # leave the server up to click through
 - CI runs it once per major and minor Jellyfin release from `targetAbi` in `build.yaml` on, as listed by `test/versions.py`. The same sweep locally: `for v in $(python3 test/versions.py); do JELLYFIN_IMAGE=jellyfin/jellyfin:$v sh test/run.sh; done`
 - There are no unit tests on the server side. `test/page.mjs` renders the page in jsdom against the answers the same run recorded.
 
-## Demo
-
-Everything under `demo/` belongs to one sample library, which the README screenshots and the web demo are both taken from.
-
-- `demo/serve.sh` starts a Jellyfin with the plugin and that library, on the newest release the test matrix covers. The media files are empty: `library.py` writes what ffprobe would say about each, and `probe.sh` answers with it.
-- `.github/scripts/screenshots.sh` rebuilds the README screenshots from it. Run it when a change alters what the table looks like.
-- `demo/record.sh` records it into `demo/web/data.json` and checks the web demo against the server. `python3 -m http.server` in the repository then shows the demo under `/demo/web/`.
-- The web demo answers the page from that recording. A change to how the API filters, sorts or exports goes into `backend.js` or `export.js` there too, or the check fails.
-- The Demo workflow runs that check on every push. On a release, once a month and when started by hand it also keeps `demo/web/` as the artifact `demo`, which is what a site showing the demo fetches.
-
 ## Code style
 
 - C# on .NET 10 with the rules in `.editorconfig`, no line length limit.
@@ -48,8 +38,8 @@ Everything under `demo/` belongs to one sample library, which the README screens
 
 ## Adding a column
 
-- The field on `InventoryRow`, the line that fills it in `InventoryService`, and the entry in `Columns`.
-- A line in `Fold` if it rolls up to a series or an album, or in `FoldPlayback` or `FoldEveryone` if it is read per user.
+- The field on `InventoryRow`, the line that fills it in `InventoryService`, and the entry in `Columns`, with `List: true` if it lists several values.
+- A line in `Fold` if it rolls up to a series, an album or a book, or in `FoldPlayback` or `FoldEveryone` if it is read per user.
 - `column.<key>` in every file under `Strings/` and its English name in the README table, in the row of its group.
 - A column that is not in the README does not exist.
 - Keys are fixed once released.
@@ -69,6 +59,16 @@ Everything under `demo/` belongs to one sample library, which the README screens
 - The page is a flex column in the height the web client gives it, and the table takes what is left. Nothing is sized in `vh`.
 - The table header sticks as a `thead`, not cell by cell.
 - Nothing waits for the web client's upgrade module. Anything it would insert, such as the arrow on a select, the page draws itself.
+
+## Demo
+
+Everything under `demo/` belongs to one sample library, which the README screenshots and the web demo are both taken from.
+
+- `demo/serve.sh` starts a Jellyfin with the plugin and that library, on the newest release the test matrix covers. The media files are empty: `library.py` writes what ffprobe would say about each, and `probe.sh` answers with it. What Jellyfin reads only from the files themselves, such as genres and people, `setup.py` sets through the API.
+- `.github/scripts/screenshots.sh` rebuilds the README screenshots from it. Run it when a change alters what the table looks like.
+- `demo/record.sh` records it into `demo/web/data.json` and checks the web demo against the server. `python3 -m http.server` in the repository then shows the demo under `/demo/web/`.
+- The web demo answers the page from that recording. A change to how the API filters, sorts or exports goes into `backend.js` or `export.js` there too, or the check fails.
+- The Demo workflow runs that check on every push. On a release, once a month and when started by hand it also keeps `demo/web/` as the artifact `demo`, which is what a site showing the demo fetches.
 
 ## Jellyfin versions
 
@@ -113,7 +113,7 @@ Fixed
 ## Dependencies
 
 - GitHub Actions and Docker images stay on version tags, never commit SHAs or digests.
-- Renovate opens the bumps, including Node, jsdom and Playwright in `test/run.sh` and `.github/scripts/screenshots.sh`, and adds each one to the changelog. The release adds the numbers of their pull requests. Other PRs leave dependencies alone.
+- Renovate opens the bumps and adds those that reach users to the changelog, not GitHub Actions or the tools in `test/run.sh` and `.github/scripts/screenshots.sh`. The release adds the numbers of their pull requests. Other PRs leave dependencies alone.
 - `Jellyfin.Controller`, `Jellyfin.Model`, and the Jellyfin and SDK images in `test/run.sh` move by hand, with the Jellyfin version.
 
 ## Pull requests

@@ -6,8 +6,8 @@ using Jellyfin.Data.Enums;
 namespace Jellyfin.Plugin.Inventory;
 
 /// <summary>
-/// Which levels a tab can be broken down into. A tab is its outermost level, so the seasons and
-/// episodes of a series are reached through the series rather than listed on their own.
+/// Which levels a tab can be broken down into. The seasons and episodes of a series are reached through
+/// the series rather than listed on their own, and the files of an audiobook through the folder that holds them.
 /// </summary>
 public static class Hierarchy
 {
@@ -19,7 +19,7 @@ public static class Hierarchy
         [BaseItemKind.MusicVideo],
         [BaseItemKind.Video],
         [BaseItemKind.Book],
-        [BaseItemKind.AudioBook],
+        [BaseItemKind.Folder, BaseItemKind.AudioBook],
         [BaseItemKind.Photo]
     ];
 
@@ -29,12 +29,23 @@ public static class Hierarchy
     public static IReadOnlyList<IReadOnlyList<BaseItemKind>> All => _all;
 
     /// <summary>
+    /// Gets the media type a tab is named by: its outermost level, or what a folder at the top holds.
+    /// </summary>
+    /// <param name="levels">The levels of the tab.</param>
+    /// <returns>The media type.</returns>
+    public static BaseItemKind Tab(IReadOnlyList<BaseItemKind> levels)
+    {
+        ArgumentNullException.ThrowIfNull(levels);
+        return levels[0] == BaseItemKind.Folder ? levels[^1] : levels[0];
+    }
+
+    /// <summary>
     /// Gets the levels of the tab a media type names.
     /// </summary>
     /// <param name="mediaType">The media type key.</param>
     /// <returns>The levels, or null if no tab is named that.</returns>
     public static IReadOnlyList<BaseItemKind>? Levels(string mediaType)
-        => _all.FirstOrDefault(h => string.Equals(h[0].ToString(), mediaType, StringComparison.OrdinalIgnoreCase));
+        => _all.FirstOrDefault(h => string.Equals(Tab(h).ToString(), mediaType, StringComparison.OrdinalIgnoreCase));
 
     /// <summary>
     /// Gets the levels of the tab an item kind belongs to.
@@ -69,7 +80,7 @@ public static class Hierarchy
     /// Resolves a level within a tab.
     /// </summary>
     /// <param name="mediaType">The media type key.</param>
-    /// <param name="level">The level key, or null for the outermost.</param>
+    /// <param name="level">The level key, or null for the one the tab is named after.</param>
     /// <returns>The item kind, or null if the level does not belong to the tab.</returns>
     public static BaseItemKind? Resolve(string mediaType, string? level)
     {
@@ -81,7 +92,7 @@ public static class Hierarchy
 
         if (string.IsNullOrEmpty(level))
         {
-            return levels[0];
+            return Tab(levels);
         }
 
         foreach (var kind in levels)

@@ -22,10 +22,13 @@ public static class ColumnDefaults
         ["series", "season", "episode", "name", "size", "duration", "sizePerHour", "totalBitrate", "videoCodec", "resolution", "videoRange", "audioCodec"];
 
     private static readonly string[] _album =
-        ["name", "year", "children", "size", "duration", "totalBitrate", "audioCodec", "audioChannels"];
+        ["name", "artists", "year", "children", "size", "duration", "totalBitrate", "audioCodec", "audioChannels"];
 
     private static readonly string[] _track =
-        ["name", "year", "size", "duration", "totalBitrate", "audioCodec", "audioChannels", "audioSampleRate"];
+        ["name", "artists", "year", "size", "duration", "totalBitrate", "audioCodec", "audioChannels", "audioSampleRate"];
+
+    private static readonly string[] _book =
+        ["name", "authors", "narrators", "year", "children", "size", "duration", "sizePerHour", "container"];
 
     private static readonly string[] _generic =
         ["name", "year", "library", "size", "duration", "sizePerHour", "container"];
@@ -47,6 +50,7 @@ public static class ColumnDefaults
         var t when string.Equals(t, "Episode", StringComparison.OrdinalIgnoreCase) => _episode,
         var t when string.Equals(t, "Audio", StringComparison.OrdinalIgnoreCase) => _track,
         var t when string.Equals(t, "MusicAlbum", StringComparison.OrdinalIgnoreCase) => _album,
+        var t when string.Equals(t, "Folder", StringComparison.OrdinalIgnoreCase) => _book,
         var t when string.Equals(t, "Book", StringComparison.OrdinalIgnoreCase) => _static,
         var t when string.Equals(t, "Photo", StringComparison.OrdinalIgnoreCase) => _static,
         _ => _generic

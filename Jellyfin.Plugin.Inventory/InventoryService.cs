@@ -5,6 +5,7 @@ using System.Diagnostics;
 using System.Globalization;
 using System.IO;
 using System.Linq;
+using System.Text.RegularExpressions;
 using System.Threading;
 using Jellyfin.Data.Enums;
 using Jellyfin.Database.Implementations.Entities;
@@ -15,6 +16,7 @@ using MediaBrowser.Controller.Entities.Audio;
 using MediaBrowser.Controller.Entities.TV;
 using MediaBrowser.Controller.Library;
 using MediaBrowser.Model.Entities;
+using MediaBrowser.Model.Querying;
 using Microsoft.Extensions.Logging;
 
 namespace Jellyfin.Plugin.Inventory;
@@ -22,8 +24,10 @@ namespace Jellyfin.Plugin.Inventory;
 /// <summary>
 /// Builds and caches the inventory rows, and answers queries against them.
 /// </summary>
-public sealed class InventoryService : IDisposable
+public sealed partial class InventoryService : IDisposable
 {
+    private static readonly StringComparer _natural = StringComparer.Create(CultureInfo.InvariantCulture, CompareOptions.NumericOrdering);
+
     private readonly ILibraryManager _libraryManager;
     private readonly IMediaSourceManager _mediaSourceManager;
     private readonly IUserDataManager _userDataManager;
@@ -43,6 +47,8 @@ public sealed class InventoryService : IDisposable
     private int _generation;
 
     private int _userStamp;
+
+    private Counted? _books;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="InventoryService"/> class.
@@ -95,9 +101,10 @@ public sealed class InventoryService : IDisposable
                 .Select(l => new LevelInfo(l.ToString(), Translations.Get(culture, "level." + l)))
                 .ToArray();
 
+            var tab = Hierarchy.Tab(levels);
             types.Add(new MediaTypeInfo(
-                levels[0].ToString(),
-                Translations.Get(culture, "mediaType." + levels[0]),
+                tab.ToString(),
+                Translations.Get(culture, "mediaType." + tab),
                 levels[0] == BaseItemKind.MusicAlbum ? counts[^1] : counts[first],
                 available));
         }
@@ -106,7 +113,23 @@ public sealed class InventoryService : IDisposable
     }
 
     // Jellyfin keeps an extra in the general query, so it is counted and taken off again.
-    private int Count(BaseItemKind kind) => Total(kind, []) - Total(kind, Enum.GetValues<ExtraType>());
+    private int Count(BaseItemKind kind)
+        => kind == BaseItemKind.Folder ? BookCount() : Total(kind, []) - Total(kind, Enum.GetValues<ExtraType>());
+
+    private int BookCount()
+    {
+        var generation = Volatile.Read(ref _generation);
+        if (_books is { } known && known.Generation == generation)
+        {
+            return known.Count;
+        }
+
+        var files = Items(BaseItemKind.AudioBook);
+        var books = files.Count == 0 ? [] : BookFolders(files);
+        var count = files.Count - books.Count + books.Values.Distinct().Count();
+        _books = new Counted(generation, count);
+        return count;
+    }
 
     private int Total(BaseItemKind kind, ExtraType[] extras) => _libraryManager.GetCount(new InternalItemsQuery
     {
@@ -116,19 +139,19 @@ public sealed class InventoryService : IDisposable
         ExtraTypes = extras
     });
 
-    // The default options join images, provider ids and every user's playback into each item.
-    private static DtoOptions Lean() => new(false) { EnableImages = false, EnableUserData = false };
+    // The default options join images, provider ids and every user's playback, and locked fields come only with Settings.
+    private static DtoOptions Lean(params ItemFields[] fields) => new(false) { EnableImages = false, EnableUserData = false, Fields = fields };
 
     /// <summary>
     /// Runs a query against one level of one media type.
     /// </summary>
     /// <param name="mediaType">The media type to list.</param>
-    /// <param name="level">The level within it, or null for the outermost.</param>
+    /// <param name="level">The level within it, or null for the one the tab is named after.</param>
     /// <param name="parentIds">When given, only the children of those items are returned.</param>
     /// <param name="user">The user whose playback data the rows carry, or null for none.</param>
     /// <param name="everyone">Whether the rows carry the playback totals over every user.</param>
     /// <param name="columns">The columns to return.</param>
-    /// <param name="search">An optional substring the name, series or path must contain.</param>
+    /// <param name="search">An optional substring the name, series, path or a person must contain.</param>
     /// <param name="filters">The conditions a row has to meet, all of them.</param>
     /// <param name="sortBy">The column key to sort on.</param>
     /// <param name="descending">Whether to sort descending.</param>
@@ -271,7 +294,8 @@ public sealed class InventoryService : IDisposable
             || (row.AncestorId.HasValue && present.Contains(row.AncestorId.Value));
 
     private static bool Matches(InventoryRow row, string search)
-        => Holds(row.Name, search) || Holds(row.SeriesName, search) || Holds(row.Path, search);
+        => Holds(row.Name, search) || Holds(row.SeriesName, search) || Holds(row.Path, search)
+            || Holds(row.Artists, search) || Holds(row.Authors, search) || Holds(row.Narrators, search);
 
     private static bool Holds(string? text, string search)
         => text is not null && RowFilter.Composed(text).Contains(search, StringComparison.OrdinalIgnoreCase);
@@ -612,12 +636,46 @@ public sealed class InventoryService : IDisposable
             // Jellyfin keeps the scale of the reading progress in a book's runtime.
             var timed = kind is not BaseItemKind.Book;
 
+            // Only a book has an author or a narrator, and asking is one query per item.
+            var credited = kind is BaseItemKind.Book or BaseItemKind.AudioBook;
+            var books = kind == BaseItemKind.AudioBook ? BookFolders(items) : null;
+            if (books is not null)
+            {
+                items = items
+                    .OrderBy(f => f.ParentIndexNumber ?? DiscNumber(Path.GetDirectoryName(f.Path)) ?? 0)
+                    .ThenBy(f => f.IndexNumber ?? 0)
+                    .ThenBy(f => f.Path, _natural)
+                    .ToArray();
+            }
+
             foreach (var item in items)
             {
                 var row = NewRow(item, roots, libraries, listed);
                 if (!timed)
                 {
                     row.Duration = null;
+                }
+
+                if (credited)
+                {
+                    var people = _libraryManager.GetPeople(item);
+                    row.Authors = Joined(people.Where(p => p.Type == PersonKind.Author).Select(p => p.Name));
+                    row.Narrators = Joined(people.Where(p => p.Type == PersonKind.Narrator).Select(p => p.Name));
+                }
+
+                if (books is not null)
+                {
+                    if (books.TryGetValue(item.Id, out var book))
+                    {
+                        row.ParentId = book;
+                        row.AncestorId = book;
+                    }
+                    else
+                    {
+                        row.Name = BookTitle(item, (item as Audio)?.Album);
+                    }
+
+                    row.Album = (item as Audio)?.Album;
                 }
 
                 if (streamed)
@@ -649,9 +707,35 @@ public sealed class InventoryService : IDisposable
             foreach (var item in items)
             {
                 var row = NewRow(item, roots, libraries, listed);
-                Fold(row, byParent[item.Id].ToArray());
+                var children = byParent[item.Id].ToArray();
+                Fold(row, children);
                 row.Expandable = below[item.Id].Any();
+
+                if (kind == BaseItemKind.Folder && children.Length > 0)
+                {
+                    // Jellyfin dates a folder by the scan that found it.
+                    row.DateAdded = children.Min(c => c.DateAdded) ?? row.DateAdded;
+                    row.Name = BookTitle(item, children[0].Album);
+                    row.Year ??= children[0].Year;
+
+                    // Genres locked while empty were emptied on purpose.
+                    row.Genres ??= item.LockedFields.Contains(MetadataField.Genres) ? null : children[0].Genres;
+                }
+
                 rows.Add(row);
+            }
+        }
+
+        // Jellyfin keeps the genres of a show on the series, not on its seasons and episodes.
+        if (kind is BaseItemKind.Season or BaseItemKind.Episode)
+        {
+            var shows = Items(BaseItemKind.Series).ToDictionary(s => s.Id, s => Joined(s.Genres));
+            foreach (var row in rows)
+            {
+                if (row.Genres is null && row.AncestorId is { } show && shows.TryGetValue(show, out var genres))
+                {
+                    row.Genres = genres;
+                }
             }
         }
 
@@ -659,7 +743,7 @@ public sealed class InventoryService : IDisposable
         return rows;
     }
 
-    private IReadOnlyList<BaseItem> Items(BaseItemKind kind) => _libraryManager.GetItemList(new InternalItemsQuery
+    private IReadOnlyList<BaseItem> Items(BaseItemKind kind) => kind == BaseItemKind.Folder ? Books() : _libraryManager.GetItemList(new InternalItemsQuery
     {
         IncludeItemTypes = [kind],
         Recursive = true,
@@ -671,9 +755,80 @@ public sealed class InventoryService : IDisposable
             (ItemSortBy.IndexNumber, SortOrder.Ascending),
             (ItemSortBy.SortName, SortOrder.Ascending)
         ],
-        DtoOptions = Lean()
+        DtoOptions = kind == BaseItemKind.AudioBook ? Lean(ItemFields.Settings) : Lean()
     // A trailer or a making of belongs to the film it sits with, not to a row of its own.
     }).Where(item => item.ExtraType is null).ToArray();
+
+    private IReadOnlyList<BaseItem> Books()
+    {
+        var ids = Shared(BaseItemKind.AudioBook).Select(r => r.AncestorId).OfType<Guid>().Distinct().ToArray();
+        return ids.Length == 0 ? [] : _libraryManager.GetItemList(new InternalItemsQuery
+        {
+            ItemIds = ids,
+            OrderBy = [(ItemSortBy.SortName, SortOrder.Ascending)],
+            DtoOptions = Lean(ItemFields.Settings)
+        });
+    }
+
+    // Jellyfin keeps no item for a folder that holds a single file, which then hangs off the folder above it.
+    private Dictionary<Guid, Guid> BookFolders(IReadOnlyList<BaseItem> files)
+    {
+        var shelves = _libraryManager.GetVirtualFolders().SelectMany(f => f.Locations).ToHashSet(StringComparer.Ordinal);
+        var parents = Folders(files.Select(f => f.ParentId));
+
+        // A disc, a folder named CD1 or Disc 2, belongs to the book in the folder above it.
+        var holders = Folders(parents.Values.Where(f => DiscNumber(f.Path) is not null).Select(f => f.ParentId));
+
+        var books = new Dictionary<Guid, Guid>();
+        foreach (var file in files)
+        {
+            if (!parents.TryGetValue(file.ParentId, out var book))
+            {
+                continue;
+            }
+
+            if (DiscNumber(book.Path) is not null && holders.TryGetValue(book.ParentId, out var holder))
+            {
+                book = holder;
+            }
+
+            var folder = Path.GetDirectoryName(file.Path);
+            if (!shelves.Contains(book.Path)
+                && (string.Equals(book.Path, folder, StringComparison.Ordinal)
+                    || (DiscNumber(folder) is not null && string.Equals(book.Path, Path.GetDirectoryName(folder), StringComparison.Ordinal))))
+            {
+                books[file.Id] = book.Id;
+            }
+        }
+
+        return books;
+    }
+
+    private Dictionary<Guid, BaseItem> Folders(IEnumerable<Guid> ids)
+    {
+        var wanted = ids.Where(id => !id.Equals(default)).Distinct().ToArray();
+        return wanted.Length == 0
+            ? []
+            : _libraryManager.GetItemList(new InternalItemsQuery { ItemIds = wanted, DtoOptions = Lean() })
+                .Where(f => f is Folder and not ICollectionFolder)
+                .ToDictionary(f => f.Id);
+    }
+
+    private static int? DiscNumber(string? path)
+        => path is not null && DiscName().Match(Path.GetFileName(path)) is { Success: true } match
+            ? int.Parse(match.Groups[1].Value, CultureInfo.InvariantCulture)
+            : null;
+
+    // Jellyfin locks an edited field only when told to, but keeps a folder it has not renamed under its name on disk.
+    private static string BookTitle(BaseItem book, string? album)
+        => string.IsNullOrEmpty(album)
+            || book.LockedFields.Contains(MetadataField.Name)
+            || (book is Folder && !string.Equals(book.Name, Path.GetFileName(book.Path), StringComparison.Ordinal))
+            ? book.Name ?? string.Empty
+            : album;
+
+    [GeneratedRegex(@"^(?:cd|dis[ck])\s*(\d{1,3})$", RegexOptions.IgnoreCase)]
+    private static partial Regex DiscName();
 
     private static void Fold(InventoryRow row, IReadOnlyList<InventoryRow> children)
     {
@@ -709,6 +864,8 @@ public sealed class InventoryService : IDisposable
         row.SpatialAudio = Common(children, c => c.SpatialAudio, mixed, "spatialAudio");
         row.AudioLanguages = Common(children, c => c.AudioLanguages, mixed, "audioLanguages");
         row.SubtitleLanguages = Common(children, c => c.SubtitleLanguages, mixed, "subtitleLanguages");
+        row.Authors = Common(children, c => c.Authors, mixed, "authors");
+        row.Narrators = Common(children, c => c.Narrators, mixed, "narrators");
 
         row.Width = CommonValue(children, c => c.Width, mixed, null);
         row.Height = CommonValue(children, c => c.Height, mixed, "height");
@@ -735,6 +892,8 @@ public sealed class InventoryService : IDisposable
             Id = item.Id,
             Name = item.Name ?? string.Empty,
             Year = item.ProductionYear,
+            Genres = Joined(item.Genres),
+            Artists = ArtistsOf(item),
             Path = item.Path,
             Container = ContainerOf(item),
             Size = item.Size,
@@ -833,9 +992,26 @@ public sealed class InventoryService : IDisposable
             return item.Container;
         }
 
-        var suffix = Path.GetExtension(item.Path)?.TrimStart('.');
-        return names.FirstOrDefault(n => string.Equals(n, suffix, StringComparison.OrdinalIgnoreCase)) ?? names[0];
+        var suffix = Path.GetExtension(item.Path)?.TrimStart('.').ToLowerInvariant();
+
+        // An audiobook or an iTunes video is an MP4 under a name ffprobe does not list.
+        return names.FirstOrDefault(n => string.Equals(n, suffix, StringComparison.OrdinalIgnoreCase))
+            ?? (suffix is "m4b" or "m4v" && names.Contains("mp4", StringComparer.OrdinalIgnoreCase) ? suffix : names[0]);
     }
+
+    private static string? Joined(IEnumerable<string> values)
+        => values.Where(v => !string.IsNullOrWhiteSpace(v)).Distinct(StringComparer.OrdinalIgnoreCase).ToArray() is { Length: > 0 } all
+            ? string.Join(", ", all)
+            : null;
+
+    // An audiobook names its authors as artists, and those have a column of their own.
+    private static string? ArtistsOf(BaseItem item) => item switch
+    {
+        AudioBook => null,
+        MusicAlbum album => Joined(album.AlbumArtists.Count > 0 ? album.AlbumArtists : album.Artists),
+        IHasArtist music => Joined(music.Artists),
+        _ => null
+    };
 
     private static Guid? Identifier(Guid value) => value.Equals(default) ? null : value;
 
@@ -981,6 +1157,8 @@ public sealed class InventoryService : IDisposable
     }
 
     private sealed record Cached(int Generation, Lazy<IReadOnlyList<InventoryRow>> Rows);
+
+    private sealed record Counted(int Generation, int Count);
 
     // Empty cells belong at the end whichever way the column is sorted, so the direction is applied
     // here rather than by OrderByDescending, which would reverse the nulls along with the values.

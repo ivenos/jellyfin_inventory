@@ -138,8 +138,8 @@ public sealed class RowFilter
         {
             FilterOperator.Contains => Holds(cell!),
             FilterOperator.NotContains => !Holds(cell!),
-            FilterOperator.Equal => Compare(cell!) == 0,
-            FilterOperator.NotEqual => Compare(cell!) != 0,
+            FilterOperator.Equal => Same(cell!),
+            FilterOperator.NotEqual => !Same(cell!),
             FilterOperator.AtLeast => Compare(cell!) >= 0,
             _ => Compare(cell!) <= 0
         };
@@ -198,6 +198,10 @@ public sealed class RowFilter
 
     private bool Holds(object cell)
         => Composed(cell.ToString() ?? string.Empty).Contains((string)_value!, StringComparison.OrdinalIgnoreCase);
+
+    private bool Same(object cell) => Column.List && cell is string list
+        ? list.Split(", ").Any(part => Compare(part) == 0)
+        : Compare(cell) == 0;
 
     private int Compare(object cell) => _value switch
     {

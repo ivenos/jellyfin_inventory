@@ -4,7 +4,7 @@
 set -eu
 
 PORT="${PORT:-8095}"
-CONTAINER="jellyfin_inventory-demo-$PORT"
+CONTAINER="${CONTAINER:-jellyfin_inventory-demo-$PORT}"
 WORK="${INVENTORY_DEMO_DIR:-$HOME/.cache/jellyfin_inventory-demo-$PORT}"
 ROOT="${ROOT:-$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)}"
 IMAGE="${JELLYFIN_IMAGE:-jellyfin/jellyfin:$(python3 "$ROOT/test/versions.py" --root "$ROOT" | tail -n 1)}"

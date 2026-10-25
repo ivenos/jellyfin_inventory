@@ -94,7 +94,7 @@ ROLLS = {
 
 FILM = (16 / 9, 1.85, 1.85, 2.39, 2.39, 2.39)
 TELEVISION = (16 / 9,) * 7 + (2.0, 2.0, 2.39)
-FORMATS = {"mkv": "matroska,webm", "mp4": "mov,mp4,m4a,3gp,3g2,mj2", "m4a": "mov,mp4,m4a,3gp,3g2,mj2", "opus": "ogg"}
+FORMATS = {"mkv": "matroska,webm", "mp4": "mov,mp4,m4a,3gp,3g2,mj2", "m4a": "mov,mp4,m4a,3gp,3g2,mj2", "m4b": "mov,mp4,m4a,3gp,3g2,mj2", "opus": "ogg"}
 DUBS = ("deu", "deu", "deu", "fra", "spa", "ita")
 SUBTITLES = ("eng", "deu", "fra", "spa", "ita", "nld", "por", "swe", "dan", "nor", "fin", "pol")
 USERS = ("admin", "mara", "jonas", "lena")
@@ -243,9 +243,10 @@ class Library:
             "filename": "/media/" + relative, "nb_streams": len(streams), "format_name": FORMATS.get(extension, extension),
             "duration": f"{seconds:.3f}", "size": str(size), "bit_rate": str(round(size * 8 / seconds)), "tags": tags or {}}}))
 
-    def note(self, folder, kind, day, **fields):
-        """What a folder cannot say for itself: when it was added, and a title in characters a path may not hold."""
+    def note(self, folder, kind, day, genres="", **fields):
+        """What a folder cannot say for itself: when it was added, its genres, and a title in characters a path may not hold."""
         inner = "".join(f"<{key}>{escape(str(value))}</{key}>" for key, value in (fields | {"dateadded": day}).items())
+        inner += "".join(f"<genre>{escape(genre)}</genre>" for genre in genres.split(", ") if genre)
         (self.media / folder).mkdir(parents=True, exist_ok=True)
         (self.media / folder / f"{kind}.nfo").write_text(f"<{kind}>{inner}</{kind}>\n", encoding="utf-8")
 
@@ -258,26 +259,26 @@ class Library:
 
 
 def movies(library):
-    for title, year, minutes, language in listed("movies.tsv"):
+    for title, year, minutes, language, genres in listed("movies.tsv"):
         rng = random.Random(f"{title} {year}")
         release = release_for(int(year), rng)
         name = f"{safe(title)} ({year})"
         day = added(int(year), rng)
         relative = f"movies/{name}/{name}.{RELEASES[release][1]}"
         library.probed(relative, int(minutes) * 60 + rng.randrange(60), tracks(release, int(year), language, rng), day)
-        library.note(f"movies/{name}", "movie", day, title=title, year=year)
+        library.note(f"movies/{name}", "movie", day, genres, title=title, year=year)
         library.played(relative, day, rng, {"admin": 0.42, "mara": 0.3, "jonas": 0.18, "lena": 0.08})
 
 
 def series(library):
     episodic = {name: RELEASES[name] for name in ("uhd web", "bluray", "web", "x265", "720p", "dvdrip")}
-    for title, year, seasons, episodes, minutes, language in listed("series.tsv"):
+    for title, year, seasons, episodes, minutes, language, genres in listed("series.tsv"):
         rng = random.Random(f"{title} {year}")
         year, seasons, episodes, minutes = int(year), int(seasons), int(episodes), int(minutes)
         minutes = minutes if 20 <= minutes <= 65 else rng.choice((24, 44, 48, 52, 58))
         show = f"shows/{safe(title)} ({year})"
         day = added(year, rng)
-        library.note(show, "tvshow", day, title=title, year=year)
+        library.note(show, "tvshow", day, genres, title=title, year=year)
         follows = {user: rng.random() < share for user, share in zip(USERS, (0.5, 0.35, 0.25, 0.1))}
         seen = {user: rng.randrange(1, episodes + 1) for user in USERS}
         shape = (4 / 3 if year < 2004 else rng.choice(TELEVISION),)
@@ -307,9 +308,9 @@ def series(library):
 
 def music(library):
     albums = {}
-    for artist, album, year, disc, number, title, seconds in listed("albums.tsv"):
-        albums.setdefault((artist, album, int(year)), []).append((int(disc), int(number), title, int(seconds)))
-    for (artist, album, year), songs in albums.items():
+    for artist, album, year, disc, number, title, seconds, genres in listed("albums.tsv"):
+        albums.setdefault((artist, album, int(year), genres), []).append((int(disc), int(number), title, int(seconds)))
+    for (artist, album, year, genres), songs in albums.items():
         rng = random.Random(f"{artist} {album}")
         _, extension, codec, rate, depth, low, high = MUSIC[rng.choices(list(MUSIC), weights=[m[0] for m in MUSIC.values()])[0]]
         folder = f"music/{safe(artist)}/{safe(album)} ({year})"
@@ -322,8 +323,42 @@ def music(library):
             prefix = f"{disc}-{number:02}" if songs[-1][0] > 1 else f"{number:02}"
             relative = f"{folder}/{prefix} {safe(title)}.{extension}"
             library.probed(relative, max(seconds, 5), [stream], day + datetime.timedelta(seconds=number), {
-                "title": title, "artist": artist, "album_artist": artist, "album": album, "date": str(year), "track": str(number), "disc": str(disc)})
+                "title": title, "artist": artist, "album_artist": artist, "album": album, "date": str(year), "track": str(number), "disc": str(disc),
+                "genre": genres.replace(", ", ";")})
             library.played(relative, day, rng, liked, (1, 2, 3, 4, 6, 9, 14, 23, 41))
+
+
+def audiobooks(library):
+    books = {}
+    for authors, title, year, number, chapter, seconds, narrators, genres in listed("audiobooks.tsv"):
+        books.setdefault((authors, title, int(year), narrators, genres), []).append((int(number), chapter, int(seconds)))
+    for (authors, title, year, narrators, genres), chapters in books.items():
+        rng = random.Random(f"{authors} {title}")
+        day = added(year, rng)
+        tags = {"album": title, "artist": authors, "album_artist": authors, "composer": narrators, "genre": genres.replace(", ", ";"), "date": str(year)}
+        folder = f"audiobooks/{safe(authors.split('; ')[0])}/{safe(title)}"
+        shape = rng.random()
+        if shape < 0.5:
+            relative = f"audiobooks/{safe(title)}.m4b" if shape < 0.06 else f"{folder}/{safe(title)}.m4b"
+            stream = {"codec_name": "aac", "profile": "LC", "codec_type": "audio", "sample_rate": "44100", "channels": 2,
+                      "channel_layout": "stereo", "bit_rate": str(rng.choice((62, 62, 125)) * 1000)}
+            library.probed(relative, sum(c[2] for c in chapters), [stream], day, tags | {"title": title})
+            files = [relative]
+        else:
+            stereo = rng.random() < 0.4
+            files = []
+            for number, chapter, seconds in chapters:
+                relative = f"{folder}/{number:03} {safe(chapter)}.mp3"
+                stream = {"codec_name": "mp3", "codec_type": "audio", "sample_rate": "44100", "channels": 1 + stereo,
+                          "channel_layout": "stereo" if stereo else "mono", "bit_rate": str((128 if stereo else 64) * 1000)}
+                library.probed(relative, seconds, [stream], day + datetime.timedelta(seconds=number), tags | {"title": chapter, "track": str(number)})
+                files.append(relative)
+        # A listener is through every file up to the one they stopped in.
+        for user, share in zip(USERS, (0.55, 0.3, 0.2, 0.1)):
+            if rng.random() < share:
+                heard = files if rng.random() < 0.5 else files[:rng.randrange(len(files))]
+                for relative in heard:
+                    library.played(relative, day, rng, {u: float(u == user) for u in USERS}, (1,))
 
 
 def books(library):
@@ -353,6 +388,6 @@ def photos(library):
 
 if __name__ == "__main__":
     library = Library(sys.argv[1])
-    for section in (movies, series, music, books, photos):
+    for section in (movies, series, music, audiobooks, books, photos):
         section(library)
     pathlib.Path(sys.argv[1], "plays.json").write_text(json.dumps(library.plays))
