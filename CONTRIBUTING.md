@@ -64,7 +64,7 @@ sh test/run.sh --keep         # leave the server up to click through
 
 Everything under `demo/` belongs to one sample library, which the README screenshots and the web demo are both taken from.
 
-- `demo/serve.sh` starts a Jellyfin with the plugin and that library, on the newest release the test matrix covers. The media files are empty: `library.py` writes what ffprobe would say about each, and `probe.sh` answers with it. What Jellyfin reads only from the files themselves, such as genres and people, `setup.py` sets through the API.
+- `demo/serve.sh` starts a Jellyfin with the plugin and that library, on the newest release the test matrix covers. The media files are empty: `library.py` writes what ffprobe would say about each, and `probe.sh` answers with it. What Jellyfin reads only from the files themselves, such as genres and people, `setup.py` sets through the API, along with a few collections and playlists.
 - `.github/scripts/screenshots.sh` rebuilds the README screenshots from it. Run it when a change alters what the table looks like.
 - `demo/record.sh` records it into `demo/web/data.json` and checks the web demo against the server. `python3 -m http.server` in the repository then shows the demo under `/demo/web/`.
 - The web demo answers the page from that recording. A change to how the API filters, sorts or exports goes into `backend.js` or `export.js` there too, or the check fails.

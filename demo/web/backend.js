@@ -6,8 +6,15 @@ const SEARCHED = ['name', 'series', 'path', 'artists', 'authors', 'narrators'];
 const FORMATS = { csv: 'text/csv; charset=utf-8', ods: 'application/vnd.oasis.opendocument.spreadsheet' };
 const FILE_NAMES = { Folder: 'audiobook', AudioBook: 'audiobook-files' };
 const GUID = /^[0-9a-f]{32}$|^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i;
+const KINDS = ['Collection', 'Playlist'];
+const TARGETS = { Photo: [], Audio: ['Playlist'], Book: ['Collection'] };
+const COLUMNS = { Collection: 'collections', Playlist: 'playlists' };
+const INVALID_PATH_CHARACTERS = /["<>|:*?\\/\x00-\x1f]/g;
+const natural = new Intl.Collator('en', { numeric: true }).compare;
+const caseless = new Intl.Collator('en', { numeric: true, sensitivity: 'accent' }).compare;
 
-class BadRequest extends Error {}
+class BadRequest extends Error { status = 400; }
+class NotFound extends Error { status = 404; }
 
 // Ordinal and case-insensitive, as the server compares: one code unit at a time.
 function fold(text) {
@@ -25,29 +32,74 @@ function same(a, b) {
     return String(a).toLowerCase() === String(b).toLowerCase();
 }
 
+function validFilename(name) {
+    return String(name).replace(INVALID_PATH_CHARACTERS, ' ');
+}
+
+function holds(row, kind) {
+    return (TARGETS[row.Level] ?? KINDS).includes(kind);
+}
+
+function listed(names) {
+    const seen = new Set();
+    const kept = names.filter((name) => name.trim() !== '').sort(natural)
+        .filter((name) => !seen.has(name.toLowerCase()) && seen.add(name.toLowerCase()));
+    return kept.length > 0 ? kept.join(', ') : undefined;
+}
+
+function brief(target) {
+    return { Id: target.Id, Name: target.Name };
+}
+
 export function createBackend(data) {
     const cultures = Object.keys(data.Schemas);
     const chosen = { columns: {}, pageSize: null, expanded: {} };
     const levels = Object.values(data.Tabs).flatMap((tab) => tab.Levels);
 
     const tabs = Object.fromEntries(Object.entries(data.Tabs).map(([type, tab]) => {
-        const rows = tab.Rows.map((row, index) => ({ ...row, index }));
+        const rows = tab.Rows.map((row, index) => ({ ...row, Values: { ...row.Values }, index }));
         const byId = new Map(rows.map((row) => [row.Id, row]));
+        const leaf = tab.Levels[tab.Levels.length - 1];
         const position = (list) => {
             const at = new Array(rows.length).fill(rows.length);
             list.forEach((index, place) => { at[index] = place; });
             return at;
         };
 
+        const below = new Map();
+        for (const row of rows.filter((known) => known.Level === leaf)) {
+            for (let parent = byId.get(row.ParentId); parent; parent = byId.get(parent.ParentId)) {
+                (below.get(parent.Id) ?? below.set(parent.Id, []).get(parent.Id)).push(row);
+            }
+        }
+
+        // Sorted by a column no row has a value in, the rows stay in the order the server holds them in.
+        const blank = Object.keys(tab.Order).find((key) => rows.every((row) => !(key in row.Values) && !row.Mixed.includes(key)));
+
         return [type, {
             levels: tab.Levels,
+            leaf,
             rows,
             byId,
+            below,
+            position,
+            raw: position(blank ? tab.Order[blank][0] : rows.map((row) => row.index)),
             top: tab.Top.map((index) => rows[index]),
             natural: Object.fromEntries(Object.entries(tab.Natural).map(([level, list]) => [level, position(list)])),
             rank: Object.fromEntries(Object.entries(tab.Order).map(([key, both]) => [key, both.map(position)])),
         }];
     }));
+
+    const found = new Map(Object.values(tabs).flatMap((tab) => tab.rows.map((row) => [row.Id, { tab, row }])));
+    const targets = Object.fromEntries(KINDS.map((kind) => [kind,
+        data.Targets[`${kind}s`].map((target) => ({ ...brief(target), held: new Set() }))]));
+    let made = 0;
+
+    for (const { tab, row } of found.values()) {
+        const holding = (kind) => targets[kind].filter((target) => String(row.Values[COLUMNS[kind]] ?? '').split(', ').includes(target.Name));
+        holding('Collection').forEach((target) => target.held.add(row.Id));
+        if (row.Level === tab.leaf) { holding('Playlist').forEach((target) => target.held.add(row.Id)); }
+    }
 
     function resolve(culture) {
         const wanted = String(culture ?? '');
@@ -196,7 +248,7 @@ export function createBackend(data) {
         };
     }
 
-    function list(params, topmost) {
+    function list(params, topmost, except) {
         const known = data.Schemas[resolve(params.culture)];
         const type = Object.keys(tabs).find((name) => same(name, params.mediaType));
         const tab = tabs[type];
@@ -236,6 +288,8 @@ export function createBackend(data) {
             if (searching) { rows = rows.filter((row) => matches(row, needle)); }
             rows = rows.filter((row) => filters.every((filter) => meets(row, filter)));
         }
+
+        if (except) { rows = rows.filter((row) => !except.has(row.Id)); }
 
         let counted = rows;
         if (spanning && rows.length > 1) {
@@ -319,17 +373,127 @@ export function createBackend(data) {
         return { MediaType: type, Level: kind };
     }
 
+    function refresh(kind) {
+        const key = COLUMNS[kind];
+        const names = (row) => targets[kind].filter((target) => target.held.has(row.Id)).map((target) => target.Name);
+
+        for (const tab of Object.values(tabs)) {
+            for (const row of tab.rows) {
+                row.Values[key] = listed(kind === 'Playlist' && row.Level !== tab.leaf
+                    ? (tab.below.get(row.Id) ?? []).flatMap(names)
+                    : names(row));
+            }
+
+            tab.rank[key] = [1, -1].map((sign) => tab.position([...tab.rows].sort((a, b) => {
+                const [x, y] = [a.Values[key], b.Values[key]];
+                return (x === undefined) - (y === undefined)
+                    || (x === undefined ? 0 : sign * caseless(x, y))
+                    || tab.raw[a.index] - tab.raw[b.index];
+            }).map((row) => row.index)));
+        }
+    }
+
+    function identify(list, what) {
+        if (list === undefined || list === null) { return []; }
+        if (!Array.isArray(list) || list.some((id) => !GUID.test(id))) { throw new BadRequest(`${what} has to be a list of item ids.`); }
+        return list.map((id) => id.replaceAll('-', '').toLowerCase());
+    }
+
+    function pick(body) {
+        const ids = identify(body.Ids, 'Ids');
+        const except = new Set(identify(body.All?.Except, 'Except'));
+        if (body.All) {
+            const { rows } = list({ mediaType: body.All.MediaType ?? '', level: body.All.Level, search: body.All.Search, filters: body.All.Filters }, true, except);
+            ids.push(...rows.map((row) => row.Id));
+        }
+
+        const wanted = [...new Set(ids)];
+        if (wanted.length === 0) { throw new BadRequest('No item was given.'); }
+        return { asked: wanted.length, picked: wanted.map((id) => found.get(id)).filter(Boolean), except };
+    }
+
+    function playable({ tab, row }, except) {
+        return (row.Level === tab.leaf ? [row] : tab.below.get(row.Id) ?? [])
+            .filter((entry) => holds(entry, 'Playlist') && !except.has(entry.Id)).map((entry) => entry.Id);
+    }
+
+    function create(kind, name) {
+        const target = { Id: String(++made).padStart(32, '0'), Name: name, held: new Set() };
+        targets[kind].push(target);
+        targets[kind].sort((a, b) => natural(a.Name, b.Name));
+        return target;
+    }
+
+    function move(kind, remove, target, ids, skipped) {
+        const moved = ids.filter((id) => target.held.has(id) === remove);
+        moved.forEach((id) => (remove ? target.held.delete(id) : target.held.add(id)));
+        if (moved.length > 0) { refresh(kind); }
+        return { ...brief(target), Count: moved.length, Skipped: skipped };
+    }
+
+    function collect(remove, target, name, picked, asked) {
+        const holdable = picked.filter(({ row }) => holds(row, 'Collection')).map(({ row }) => row.Id);
+        target ??= targets.Collection.find((known) => same(validFilename(known.Name), validFilename(name))) ?? create('Collection', name);
+        return move('Collection', remove, target, holdable, asked - holdable.length);
+    }
+
+    function play(remove, target, name, picked, asked, except) {
+        let skipped = asked - picked.length;
+        const entries = [];
+        for (const item of picked) {
+            const plays = playable(item, except);
+            skipped += plays.length === 0 ? 1 : 0;
+            entries.push(...plays);
+        }
+
+        return move('Playlist', remove, target ?? create('Playlist', name), [...new Set(entries)], skipped);
+    }
+
+    function setTargets(params, body) {
+        const kind = KINDS.find((known) => same(known, body?.Kind));
+        if (!kind) { throw new BadRequest(`Unknown kind '${body?.Kind}'.`); }
+
+        const name = typeof body.Name === 'string' ? body.Name.trim() : null;
+        const id = body.Id === undefined || body.Id === null ? null : identify([body.Id], 'Id')[0];
+        if ((id === null) === (name === null) || (body.Remove && name !== null)) {
+            throw new BadRequest('Give either the id of a target or, when adding, the name of a new one.');
+        }
+
+        if (name === '') { throw new BadRequest('A new target needs a name.'); }
+
+        const target = id === null ? null : targets[kind].find((known) => known.Id === id);
+        if (id !== null && !target) { throw new NotFound(`No ${kind} has the id ${id}.`); }
+
+        const { asked, picked, except } = pick(body);
+        return (kind === 'Playlist' ? play : collect)(Boolean(body.Remove), target, name, picked, asked, except);
+    }
+
+    function offered() {
+        return { Collections: targets.Collection.map(brief), Playlists: targets.Playlist.map(brief) };
+    }
+
+    function holders(params, body) {
+        const { picked, except } = pick(body ?? {});
+        const ids = new Set(picked.map(({ row }) => row.Id));
+        const played = new Set(picked.flatMap((item) => playable(item, except)));
+        const holding = (kind, wanted) => targets[kind].filter((target) => [...target.held].some((id) => wanted.has(id))).map(brief);
+        return { Collections: holding('Collection', ids), Playlists: holding('Playlist', played) };
+    }
+
     const routes = {
         'GET Schema': schema,
         'GET Items': items,
         'GET Export': exported,
+        'GET Targets': offered,
         'POST Columns': setColumns,
         'POST PageSize': setPageSize,
         'POST Expand': setExpand,
+        'POST Targets': setTargets,
+        'POST Targets/Held': holders,
     };
 
     return {
-        // Rejects where the server would answer 400, so the page takes the same path.
+        // Rejects where the server would refuse, with its status, so the page takes the same path.
         request(method, path, params, body) {
             const route = routes[`${method} ${path}`];
             try {

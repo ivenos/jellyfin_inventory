@@ -64,6 +64,17 @@ public class InventoryRow
     public string? Genres { get; set; }
 
     /// <summary>
+    /// Gets or sets the names of the collections the item itself is in, comma separated.
+    /// </summary>
+    public string? Collections { get; set; }
+
+    /// <summary>
+    /// Gets or sets the names of the playlists of the user asking that hold the item, or for a folder
+    /// the items below it, comma separated.
+    /// </summary>
+    public string? Playlists { get; set; }
+
+    /// <summary>
     /// Gets or sets the artists of a track or a music video, or the album artists of an album, comma separated.
     /// </summary>
     public string? Artists { get; set; }

@@ -22,6 +22,8 @@ public static class Columns
         new("episode", "General", ColumnFormat.Plain, r => r.EpisodeNumber),
         new("year", "General", ColumnFormat.Plain, r => r.Year),
         new("genres", "General", ColumnFormat.Text, r => r.Genres, List: true),
+        new("collections", "General", ColumnFormat.Text, r => r.Collections, List: true),
+        new("playlists", "General", ColumnFormat.Text, r => r.Playlists, Source: ColumnSource.User, List: true),
         new("artists", "General", ColumnFormat.Text, r => r.Artists, List: true),
         new("authors", "General", ColumnFormat.Text, r => r.Authors, List: true),
         new("narrators", "General", ColumnFormat.Text, r => r.Narrators, List: true),

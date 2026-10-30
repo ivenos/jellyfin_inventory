@@ -11,6 +11,16 @@ namespace Jellyfin.Plugin.Inventory;
 /// </summary>
 public static class Hierarchy
 {
+    /// <summary>
+    /// The kind of target that is a collection.
+    /// </summary>
+    public const string Collection = "Collection";
+
+    /// <summary>
+    /// The kind of target that is a playlist.
+    /// </summary>
+    public const string Playlist = "Playlist";
+
     private static readonly BaseItemKind[][] _all =
     [
         [BaseItemKind.Movie],
@@ -54,6 +64,20 @@ public static class Hierarchy
     /// <returns>The levels, or null if no tab contains it.</returns>
     public static IReadOnlyList<BaseItemKind>? Of(BaseItemKind kind)
         => _all.FirstOrDefault(h => Array.IndexOf(h, kind) >= 0);
+
+    /// <summary>
+    /// Gets what an item of a level can be added to, by the rules jellyfin-web offers it by: no track
+    /// or photo goes into a collection, and nothing that plays nothing into a playlist.
+    /// </summary>
+    /// <param name="kind">The level.</param>
+    /// <returns>The kinds of target, out of <see cref="Collection"/> and <see cref="Playlist"/>.</returns>
+    public static IReadOnlyList<string> Targets(BaseItemKind kind) => kind switch
+    {
+        BaseItemKind.Photo => [],
+        BaseItemKind.Audio => [Playlist],
+        BaseItemKind.Book => [Collection],
+        _ => [Collection, Playlist]
+    };
 
     /// <summary>
     /// Resolves a level key, whichever tab it belongs to.

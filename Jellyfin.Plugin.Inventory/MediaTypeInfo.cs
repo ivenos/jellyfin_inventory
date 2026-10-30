@@ -9,8 +9,10 @@ namespace Jellyfin.Plugin.Inventory;
 /// <param name="Label">The translated tab caption.</param>
 /// <param name="Count">The number of items at the top level, or for music the number of tracks.</param>
 /// <param name="Levels">The levels available, outermost first.</param>
+/// <param name="Targets">What the items of those levels can be added to.</param>
 public sealed record MediaTypeInfo(
     string MediaType,
     string Label,
     int Count,
-    IReadOnlyList<LevelInfo> Levels);
+    IReadOnlyList<LevelInfo> Levels,
+    IReadOnlyList<string> Targets);

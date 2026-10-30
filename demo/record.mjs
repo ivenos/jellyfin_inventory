@@ -1,6 +1,7 @@
 // Records what the demo needs from a freshly set up server into web/data.json: the schema per
-// culture, every row of every level with all columns, and the order the server sorts them in.
-// Then asks the server and the demo the same questions and fails where the answers differ.
+// culture, every row of every level with all columns, the order the server sorts them in, and the
+// collections and playlists. Then asks the server and the demo the same questions, makes the same
+// changes on both, and fails where the answers differ.
 import { readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { inflateRawSync } from 'node:zlib';
 import { createBackend } from './web/backend.js';
@@ -107,7 +108,8 @@ for (const tab of english.MediaTypes) {
 }
 
 await call(settings, {}, fresh);
-const data = { Server: server, Schemas: schemas, Defaults: defaults, Tabs: tabs };
+const targets = await call('Targets');
+const data = { Server: server, Schemas: schemas, Defaults: defaults, Tabs: tabs, Targets: targets };
 writeFileSync(new URL('demo/web/data.json', root), JSON.stringify(data) + '\n');
 
 const backend = createBackend(data);
@@ -141,7 +143,7 @@ function unzip(bytes) {
 
 async function real(path, params) {
     const response = await ask(path, params);
-    if (!response.ok) { return 'refused'; }
+    if (!response.ok) { return `refused ${response.status}`; }
     if (path !== 'Export') { return tidy(await response.json()); }
     const bytes = Buffer.from(await response.arrayBuffer());
     return params.format === 'ods' ? unzip(bytes) : bytes.toString();
@@ -153,8 +155,8 @@ async function mine(path, params) {
         if (path !== 'Export') { return tidy(JSON.parse(JSON.stringify(answer))); }
         const bytes = Buffer.from(await exportFile(answer).arrayBuffer());
         return params.format === 'ods' ? unzip(bytes) : bytes.toString();
-    } catch {
-        return 'refused';
+    } catch (error) {
+        return `refused ${error.status}`;
     }
 }
 
@@ -165,6 +167,7 @@ const add = (path, params) => (path === 'Export' ? exports : questions)
 const filtered = (...conditions) => JSON.stringify(conditions.map(([column, op, value]) => ({ column, op, value })));
 
 for (const culture of ['en', 'de', 'de-DE', 'fr-CA', 'xx', '']) { add('Schema', { culture }); }
+add('Targets', {});
 
 for (const [mediaType, tab] of Object.entries(tabs)) {
     tab.Levels.forEach((name, depth) => {
@@ -238,15 +241,20 @@ for (const [mediaType, tab] of Object.entries(tabs)) {
 
 add('Items', { mediaType: 'Nope' });
 
+let compared = 0;
 let differing = 0;
+function differ(asked, theirs, ours) {
+    compared++;
+    if (theirs !== ours && differing++ < 10) {
+        const at = [...theirs].findIndex((char, position) => char !== ours[position]);
+        console.log(`the demo answers ${asked} differently`);
+        console.log(`  server: ${theirs.slice(Math.max(0, at - 60), at + 120)}\n  demo:   ${ours.slice(Math.max(0, at - 60), at + 120)}`);
+    }
+}
+
 async function compare(asked) {
     for (const [path, params] of asked) {
-        const [theirs, ours] = [await real(path, params), await mine(path, params)];
-        if (theirs !== ours && differing++ < 10) {
-            const at = [...theirs].findIndex((char, position) => char !== ours[position]);
-            console.log(`the demo answers ${path} ${JSON.stringify(params)} differently`);
-            console.log(`  server: ${theirs.slice(Math.max(0, at - 60), at + 120)}\n  demo:   ${ours.slice(Math.max(0, at - 60), at + 120)}`);
-        }
+        differ(`${path} ${JSON.stringify(params)}`, await real(path, params), await mine(path, params));
     }
 }
 
@@ -259,6 +267,97 @@ for (const level of Object.keys(defaults)) {
 }
 
 await compare(exports);
+
+// A target the server makes gets another id in the demo, and the answers are compared under the demo's.
+const ours = new Map([...targets.Collections, ...targets.Playlists].map(({ Id }) => [Id, Id]));
+const recorded = Object.fromEntries([...targets.Collections, ...targets.Playlists].map(({ Id, Name }) => [Name, Id]));
+const mapped = (answer) => JSON.stringify(answer, (key, value) => (key === 'Id' && ours.has(value) ? ours.get(value) : value));
+const views = Object.entries(tabs).flatMap(([mediaType, tab]) => tab.Levels.flatMap((level) => ['collections', 'playlists']
+    .map((key) => ['Items', { mediaType, level, filters: filtered([key, 'notEmpty']) }])));
+
+async function both(path, body) {
+    const response = await ask(`Inventory/${path}`, {}, body);
+    const theirs = response.ok ? await response.json() : `refused ${response.status}`;
+    const mine = await backend.request('POST', path, {}, { ...body, Id: ours.get(body.Id) ?? body.Id })
+        .then((answer) => JSON.parse(JSON.stringify(answer)), (error) => `refused ${error.status}`);
+    if (theirs.Id && !ours.has(theirs.Id)) { ours.set(theirs.Id, mine.Id); }
+    differ(`${path} ${JSON.stringify(body)}`, mapped(theirs), JSON.stringify(mine));
+    return theirs;
+}
+
+async function change(body) {
+    const answer = await both('Targets', body);
+    await compare(views);
+    return answer.Id;
+}
+
+const missing = '0123456789abcdef0123456789abcdef';
+const named = (mediaType, name) => tabs[mediaType].Rows.find((row) => row.Level === mediaType && row.Values.name === name).Id;
+const [hope, empire] = ['IV - A New Hope', 'V - The Empire Strikes Back'].map((title) => named('Movie', `Star Wars: Episode ${title}`));
+const [future, alien, aliens, godfather] = ['Back to the Future', 'Alien', 'Aliens', 'The Godfather'].map((title) => named('Movie', title));
+const [trek, breaking, loki, mandalorian] = ['Star Trek: The Original Series', 'Breaking Bad', 'Loki', 'The Mandalorian']
+    .map((title) => named('Series', title));
+const sherlock = tabs.Series.Rows.find((row) => row.Level === 'Season' && row.Values.series === 'Sherlock').Id;
+const album = named('MusicAlbum', 'The Dark Side of the Moon');
+const track = tabs.MusicAlbum.Rows.find((row) => row.Level === 'Audio').Id;
+const book = tabs.Book.Rows[0].Id;
+const photo = tabs.Photo.Rows[0].Id;
+const folder = tabs.AudioBook.Rows.find((row) => row.Level === 'Folder').Id;
+const single = tabs.AudioBook.Rows.find((row) => row.Level === 'AudioBook' && !row.ParentId).Id;
+const lokiEpisode = tabs.Series.Rows.find((row) => row.Level === 'Episode' && row.Values.series === 'Loki').Id;
+
+async function holders() {
+    for (const body of [
+        { Ids: [godfather] }, { Ids: [breaking, mandalorian, hope] }, { Ids: [sherlock, album, folder, single] },
+        { All: { MediaType: 'Series', Search: 's01e01' } }, { All: { MediaType: 'Movie', Search: 'star wars', Except: [hope] } },
+        { All: { MediaType: 'Series', Search: 'loki', Except: [loki] } }, { All: { MediaType: 'Series', Search: 'loki', Except: [lokiEpisode] } },
+        { Ids: [photo, book, missing] }, { Ids: [] }, {},
+    ]) {
+        await both('Targets/Held', body);
+    }
+}
+
+await holders();
+const operas = await change({ Kind: 'Collection', Name: ' Space Operas ', Ids: [hope, alien, trek, track, photo] });
+await change({ Kind: 'Collection', Id: operas, Ids: [hope, aliens, book, missing] });
+await change({ Kind: 'Collection', Name: 'harry potter collection', Ids: [named('Movie', 'Fantastic Beasts and Where to Find Them')] });
+await change({ Kind: 'Collection', Remove: true, Id: recorded['Star Wars Collection'], Ids: [hope, empire, future, photo] });
+await change({ Kind: 'Collection', Name: 'Batman', All: {
+    MediaType: 'Movie', Search: 'batman', Filters: filtered(['year', 'ge', 1990]), Except: [named('Movie', 'Batman Forever')] } });
+await change({ Kind: 'Playlist', Id: recorded['Pilot Episodes'], Ids: [breaking] });
+const later = await change({ Kind: 'Playlist', Name: 'Later', Ids: [folder, single, book, photo, album, sherlock, missing] });
+await change({ Kind: 'Playlist', Id: later, All: { MediaType: 'Series', Search: 'loki' } });
+await change({ Kind: 'Playlist', Remove: true, Id: recorded['Movie Night'], Ids: [future, loki] });
+await change({ Kind: 'Playlist', Remove: true, Id: recorded['Pilot Episodes'], Ids: [breaking] });
+await change({ Kind: 'Playlist', Name: 'Later', Ids: [aliens] });
+await change({ Kind: 'Playlist', Name: 'Nothing to Play', Ids: [book, photo] });
+await change({ Kind: 'Collection', Name: 'Soundtracks', Ids: [track] });
+await change({ Kind: 'Collection', Name: 'Space/Operas', Ids: [empire] });
+await change({ Kind: 'Collection', Name: 'space\tOperas', Ids: [future] });
+await change({ Kind: 'Collection', Name: 'Seasons of Loki', All: { MediaType: 'Series', Search: 'loki', Except: [loki] } });
+await change({ Kind: 'Playlist', Name: 'Loki Again', All: { MediaType: 'Series', Search: 'loki', Except: [lokiEpisode] } });
+
+for (const wrong of [
+    { Kind: 'Shelf', Name: 'Odd', Ids: [hope] }, { Kind: 'Collection', Id: operas, Name: 'Both', Ids: [hope] },
+    { Kind: 'Collection', Ids: [hope] }, { Kind: 'Collection', Remove: true, Name: 'Gone', Ids: [hope] },
+    { Kind: 'Collection', Name: '   ', Ids: [hope] }, { Kind: 'Collection', Name: 'Empty', Ids: [] },
+    { Kind: 'Collection', Name: 'Empty', All: { MediaType: 'Movie', Search: 'matches nothing' } },
+    { Kind: 'Collection', Name: 'Lost', All: { MediaType: 'Nonsense' } }, { Kind: 'Collection', Name: 'Lost', All: { MediaType: 'Movie', Filters: '{' } },
+    { Kind: 'Collection', Name: 'Lost', Ids: ['not-an-id'] }, { Kind: 'Collection', Id: missing, Ids: [hope] },
+    { Kind: 'Collection', Id: later, Ids: [hope] }, { Kind: 'Playlist', Id: operas, Ids: [hope] },
+]) {
+    await both('Targets', wrong);
+}
+
+await holders();
+differ('Targets', mapped(await call('Targets')), JSON.stringify(await backend.request('GET', 'Targets', {})));
+await compare(views);
+await compare(Object.keys(tabs).flatMap((mediaType) => ['collections', 'playlists']
+    .flatMap((sortBy) => [false, true].map((descending) => ['Items', { mediaType, sortBy, descending }]))));
+await compare([false, true].flatMap((descending) => [
+    ['Items', { mediaType: 'Series', level: 'Episode', sortBy: 'playlists', descending, limit: 300 }],
+    ['Items', { mediaType: 'Series', search: 'loki', sortBy: 'playlists', descending }],
+]));
 await call(settings, {}, fresh);
-console.log(`${questions.length + exports.length} answers compared, ${differing} differ`);
+console.log(`${compared} answers compared, ${differing} differ`);
 process.exit(differing ? 1 : 0);

@@ -13,8 +13,10 @@ using Jellyfin.Database.Implementations.Enums;
 using MediaBrowser.Controller.Dto;
 using MediaBrowser.Controller.Entities;
 using MediaBrowser.Controller.Entities.Audio;
+using MediaBrowser.Controller.Entities.Movies;
 using MediaBrowser.Controller.Entities.TV;
 using MediaBrowser.Controller.Library;
+using MediaBrowser.Controller.Playlists;
 using MediaBrowser.Model.Entities;
 using MediaBrowser.Model.Querying;
 using Microsoft.Extensions.Logging;
@@ -32,6 +34,7 @@ public sealed partial class InventoryService : IDisposable
     private readonly IMediaSourceManager _mediaSourceManager;
     private readonly IUserDataManager _userDataManager;
     private readonly IUserManager _userManager;
+    private readonly IPlaylistManager _playlistManager;
     private readonly ILogger<InventoryService> _logger;
     private readonly ConcurrentDictionary<BaseItemKind, Cached> _cache = new();
 
@@ -57,18 +60,21 @@ public sealed partial class InventoryService : IDisposable
     /// <param name="mediaSourceManager">Instance of the <see cref="IMediaSourceManager"/> interface.</param>
     /// <param name="userDataManager">Instance of the <see cref="IUserDataManager"/> interface.</param>
     /// <param name="userManager">Instance of the <see cref="IUserManager"/> interface.</param>
+    /// <param name="playlistManager">Instance of the <see cref="IPlaylistManager"/> interface.</param>
     /// <param name="logger">Instance of the <see cref="ILogger{InventoryService}"/> interface.</param>
     public InventoryService(
         ILibraryManager libraryManager,
         IMediaSourceManager mediaSourceManager,
         IUserDataManager userDataManager,
         IUserManager userManager,
+        IPlaylistManager playlistManager,
         ILogger<InventoryService> logger)
     {
         _libraryManager = libraryManager;
         _mediaSourceManager = mediaSourceManager;
         _userDataManager = userDataManager;
         _userManager = userManager;
+        _playlistManager = playlistManager;
         _logger = logger;
 
         _libraryManager.ItemAdded += OnLibraryChanged;
@@ -96,20 +102,45 @@ public sealed partial class InventoryService : IDisposable
 
             // Music filed loose in a library has tracks and no album, and a tab listing the empty
             // album level would carry no row to reach them from.
-            var available = levels
-                .Where((l, i) => i >= first && counts[i] > 0)
-                .Select(l => new LevelInfo(l.ToString(), Translations.Get(culture, "level." + l)))
-                .ToArray();
+            var available = levels.Where((l, i) => i >= first && counts[i] > 0).ToArray();
 
             var tab = Hierarchy.Tab(levels);
             types.Add(new MediaTypeInfo(
                 tab.ToString(),
                 Translations.Get(culture, "mediaType." + tab),
                 levels[0] == BaseItemKind.MusicAlbum ? counts[^1] : counts[first],
-                available));
+                available.Select(l => new LevelInfo(l.ToString(), Translations.Get(culture, "level." + l))).ToArray(),
+                available.SelectMany(Hierarchy.Targets).Distinct().ToArray()));
         }
 
         return types;
+    }
+
+    /// <summary>
+    /// Gets every collection, sorted by name.
+    /// </summary>
+    /// <returns>The collections.</returns>
+    public IReadOnlyList<BoxSet> Collections() => _libraryManager.GetItemList(new InternalItemsQuery
+    {
+        IncludeItemTypes = [BaseItemKind.BoxSet],
+        Recursive = true,
+        DtoOptions = Lean()
+    }).OfType<BoxSet>().OrderBy(c => c.Name, _natural).ToArray();
+
+    /// <summary>
+    /// Gets the playlists a user owns or may edit, sorted by name.
+    /// </summary>
+    /// <param name="user">The user.</param>
+    /// <returns>The playlists.</returns>
+    public IReadOnlyList<Playlist> Playlists(User user)
+    {
+        ArgumentNullException.ThrowIfNull(user);
+
+        // Jellyfin also returns the playlists shared read-only with the user and those open to everyone.
+        return _playlistManager.GetPlaylists(user.Id)
+            .Where(p => p.OwnerUserId.Equals(user.Id) || p.Shares.Any(s => s.UserId.Equals(user.Id) && s.CanEdit))
+            .OrderBy(p => p.Name, _natural)
+            .ToArray();
     }
 
     // Jellyfin keeps an extra in the general query, so it is counted and taken off again.
@@ -159,6 +190,7 @@ public sealed partial class InventoryService : IDisposable
     /// <param name="limit">How many rows to return.</param>
     /// <param name="culture">The culture aggregated values are worded in.</param>
     /// <param name="topmost">Whether a row a matching row above it already accounts for is left out.</param>
+    /// <param name="except">The rows left out before any is taken to account for those below it.</param>
     /// <returns>The matching page and the totals behind it.</returns>
     public InventoryPage Query(
         string mediaType,
@@ -174,7 +206,8 @@ public sealed partial class InventoryService : IDisposable
         int startIndex,
         int limit,
         string? culture = null,
-        bool topmost = false)
+        bool topmost = false,
+        IReadOnlySet<Guid>? except = null)
     {
         var kind = Hierarchy.Resolve(mediaType, level)
             ?? throw new ArgumentException($"Unknown media type '{mediaType}' or level '{level}'.", nameof(mediaType));
@@ -230,6 +263,11 @@ public sealed partial class InventoryService : IDisposable
             {
                 rows = rows.Where(r => Meets(r, filters)).ToArray();
             }
+        }
+
+        if (except is { Count: > 0 })
+        {
+            rows = rows.Where(r => !except.Contains(r.Id)).ToArray();
         }
 
         // A series and its episodes can both match, and the bytes are then counted twice.
@@ -320,11 +358,18 @@ public sealed partial class InventoryService : IDisposable
             return;
         }
 
-        // A person, a studio or a playlist is on no row, and a metadata refresh writes a great many
-        // of them. A library stays, because its name shows up in a column.
+        // A playlist is only on the copies made per user, and the shared rows they are made from stay.
+        if (e?.Item is Playlist)
+        {
+            _perUser.Clear();
+            return;
+        }
+
+        // A person or a studio is on no row, and a metadata refresh writes a great many of them.
+        // A library and a collection stay, because their names show up in a column.
         if (e?.Item is { } item
             && Hierarchy.Of(item.GetBaseItemKind()) is null
-            && item is not CollectionFolder)
+            && item is not (CollectionFolder or BoxSet))
         {
             return;
         }
@@ -378,6 +423,7 @@ public sealed partial class InventoryService : IDisposable
             var basis = everyone ? Everyone(kind) : Shared(kind);
             var levels = Hierarchy.Of(kind);
             var leaf = levels is null ? kind : levels[^1];
+            var playlists = Holders(Playlists(user));
 
             if (leaf != kind)
             {
@@ -389,7 +435,7 @@ public sealed partial class InventoryService : IDisposable
                 return basis.Select(row =>
                 {
                     var copy = row.Copy();
-                    FoldPlayback(copy, byParent[row.Id].ToArray());
+                    FoldPlayback(copy, byParent[row.Id].ToArray(), playlists);
                     return copy;
                 }).ToArray();
             }
@@ -399,6 +445,7 @@ public sealed partial class InventoryService : IDisposable
             return basis.Select(row =>
             {
                 var copy = row.Copy();
+                copy.Playlists = Listed(playlists[row.Id]);
                 copy.PlayCount = 0;
                 copy.Played = false;
                 foreach (var data in Records(playback, row))
@@ -528,13 +575,14 @@ public sealed partial class InventoryService : IDisposable
     private static DateTime? Later(DateTime? current, DateTime? candidate)
         => candidate is { } value && (current is null || value > current) ? value : current;
 
-    private static void FoldPlayback(InventoryRow row, IReadOnlyList<InventoryRow> children)
+    private static void FoldPlayback(InventoryRow row, IReadOnlyList<InventoryRow> children, ILookup<Guid, string> playlists)
     {
         if (children.Count == 0)
         {
             return;
         }
 
+        row.Playlists = Listed(children.SelectMany(c => playlists[c.Id]));
         row.PlayCount = children.Sum(c => c.PlayCount ?? 0);
         row.LastPlayed = children.Max(c => c.LastPlayed);
         row.Played = children.All(c => c.Played == true);
@@ -737,6 +785,12 @@ public sealed partial class InventoryService : IDisposable
                     row.Genres = genres;
                 }
             }
+        }
+
+        var collections = Holders(Collections());
+        foreach (var row in rows)
+        {
+            row.Collections = Listed(collections[row.Id]);
         }
 
         _logger.LogDebug("Built {Count} inventory rows for {Kind} in {Elapsed} ms", rows.Count, kind, watch.ElapsedMilliseconds);
@@ -998,6 +1052,14 @@ public sealed partial class InventoryService : IDisposable
         return names.FirstOrDefault(n => string.Equals(n, suffix, StringComparison.OrdinalIgnoreCase))
             ?? (suffix is "m4b" or "m4v" && names.Contains("mp4", StringComparer.OrdinalIgnoreCase) ? suffix : names[0]);
     }
+
+    private static ILookup<Guid, string> Holders(IEnumerable<Folder> targets)
+        => targets
+            .SelectMany(t => t.LinkedChildren.Select(c => (c.ItemId, t.Name)))
+            .Where(link => link.ItemId.HasValue)
+            .ToLookup(link => link.ItemId!.Value, link => link.Name);
+
+    private static string? Listed(IEnumerable<string> names) => Joined(names.Order(_natural));
 
     private static string? Joined(IEnumerable<string> values)
         => values.Where(v => !string.IsNullOrWhiteSpace(v)).Distinct(StringComparer.OrdinalIgnoreCase).ToArray() is { Length: > 0 } all

@@ -31,14 +31,60 @@
                 .invBrand span { position: relative; top: -.036em; }
                 body:has(.nowPlayingBar:not(.nowPlayingBar-hidden)) #InventoryPage { padding-bottom: 5em !important; }
                 .invBar { display: flex; flex-wrap: wrap; gap: .5em; align-items: center; margin-bottom: 1em; }
-                .invTypes { display: flex; flex-wrap: wrap; gap: .4em; flex: 1 1 auto; }
+                /* The selection bar stands in the cell of the tabs, so the table stays put when it swaps in. */
+                .invSwap { display: grid; flex: 1 1 auto; }
+                .invSwap > * { grid-area: 1 / 1; align-self: center; }
+                .invTypes { display: flex; flex-wrap: wrap; gap: .4em; }
                 .invTools { display: flex; flex-wrap: wrap; gap: .5em; align-items: center; }
-                .invType {
+                .invType, .invChip {
                     padding: .45em 1em; border-radius: 2em; cursor: pointer; border: none;
                     font-size: inherit; font-family: inherit; white-space: nowrap;
                     background: var(--jf-palette-action-hover, rgba(255,255,255,.08));
                     color: var(--jf-palette-text-primary, inherit);
                 }
+                .invChip { display: inline-flex; align-items: center; gap: .45em; }
+                .invChip svg { width: 1.2em; height: 1.2em; fill: currentColor; margin-inline-start: -.2em; }
+                .invChip:hover { background: var(--jf-palette-action-selected, rgba(255,255,255,.14)); }
+                .invPickBar { display: flex; flex-wrap: wrap; gap: .5em; align-items: center; }
+                .invPickBar .invIcon { width: 2.2em; height: 2.2em; margin-inline-start: -.4em; }
+                .invPickBar .invIcon svg { width: 1.3em; height: 1.3em; }
+                .invPickCount { font-weight: 600; margin-inline-end: .25em; }
+                .invLink {
+                    border: none; background: none; cursor: pointer; padding: .45em .3em; font: inherit;
+                    color: var(--jf-palette-primary-main, #00a4dc);
+                }
+                .invLink:hover { text-decoration: underline; }
+                .invIcon {
+                    position: relative; display: inline-flex; align-items: center; justify-content: center; flex: none;
+                    width: 2.5em; height: 2.5em; padding: 0; border: none; border-radius: 50%; background: none;
+                    cursor: pointer; font: inherit; color: var(--jf-palette-text-secondary, inherit);
+                }
+                .invIcon svg { width: 1.5em; height: 1.5em; fill: currentColor; }
+                .invIcon:hover { background: var(--jf-palette-action-hover, rgba(255,255,255,.08)); color: var(--jf-palette-text-primary, inherit); }
+                .invIcon[aria-expanded="true"], .invIcon[aria-pressed="true"] {
+                    color: var(--jf-palette-primary-main, #00a4dc);
+                    background: var(--jf-palette-action-selected, rgba(255,255,255,.12));
+                }
+                .invIcon[data-count]::after {
+                    content: attr(data-count); position: absolute; top: .2em; inset-inline-end: .15em;
+                    min-width: 1.4em; height: 1.4em; padding: 0 .3em; box-sizing: border-box; border-radius: .7em;
+                    font-size: .68em; line-height: 1.4em; text-align: center;
+                    background: var(--jf-palette-primary-main, #00a4dc); color: var(--jf-palette-primary-contrastText, #000);
+                }
+                [dir="rtl"] #invPrev svg, [dir="rtl"] #invNext svg { transform: scaleX(-1); }
+                .invHide { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+                .invMenuHost { position: relative; }
+                .invMenu {
+                    position: absolute; top: 100%; inset-inline-end: 0; z-index: 3; margin-top: .3em; padding: .4em 0; min-width: 8em;
+                    background: var(--jf-palette-background-paper, #202020); border-radius: var(--jf-shape-borderRadius, 4px);
+                    box-shadow: var(--jf-shadows-8, 0 4px 16px rgba(0,0,0,.5));
+                }
+                .invMenu[hidden] { display: none; }
+                .invMenu button {
+                    display: block; width: 100%; text-align: start; padding: .6em 1.2em; border: none; background: none;
+                    color: var(--jf-palette-text-primary, inherit); font: inherit; cursor: pointer;
+                }
+                .invMenu button:hover, .invMenu button:focus-visible { background: var(--jf-palette-action-hover, rgba(255,255,255,.08)); }
                 .invType.selected {
                     background: var(--jf-palette-primary-main, #00a4dc);
                     color: var(--jf-palette-primary-contrastText, #000);
@@ -121,8 +167,16 @@
                     width: 2em; min-width: 24px; min-height: 24px;
                 }
                 .invTwisty:hover { color: var(--jf-palette-primary-main, #00a4dc); }
-                .invTwisty:focus-visible, .invType:focus-visible, .invDrop:focus-visible, .invTable th:focus-visible, .invBrand a:focus-visible {
+                .invTwisty:focus-visible, .invType:focus-visible, .invDrop:focus-visible, .invTable th:focus-visible, .invBrand a:focus-visible,
+                .invIcon:focus-visible, .invChip:focus-visible, .invLink:focus-visible, .invMenu button:focus-visible {
                     outline: 2px solid var(--jf-palette-primary-main, #00a4dc); outline-offset: -2px;
+                }
+                .invTable th.invPick, .invTable td.invPick { width: 1px; padding-inline-end: 0; cursor: default; }
+                .invPick input { margin: 0; vertical-align: middle; cursor: pointer; width: 1.05em; height: 1.05em;
+                    accent-color: var(--jf-palette-primary-main, #00a4dc); }
+                .invTable tbody tr.invPicked, .invTable tbody tr.invPicked:hover {
+                    background: var(--jf-palette-action-selected, rgba(127,127,127,.15));
+                    background: color-mix(in srgb, var(--jf-palette-primary-main, #00a4dc) 16%, transparent);
                 }
                 .invIndent { display: inline-block; }
                 .invLead { display: flex; align-items: baseline; }
@@ -143,7 +197,7 @@
                 }
                 @keyframes invSpin { to { transform: rotate(360deg); } }
                 .invBusy { position: relative; }
-                .invBusy > span { visibility: hidden; }
+                .invBusy > span, .invBusy > svg { visibility: hidden; }
                 /* Auto margins rather than half its own size, which the border would offset. */
                 .invBusy::after { content: ""; position: absolute; inset: 0; margin: auto;
                     width: 1.1em; height: 1.1em; border-radius: 50%;
@@ -154,6 +208,21 @@
                 /* jellyfin-web carries no disabled state for these buttons. */
                 #InventoryPage button[disabled] { opacity: .5; pointer-events: none; }
                 .invTwisty[data-busy] { animation: invSpin .8s linear infinite; }
+                dialog.invDialog {
+                    width: 26em; box-sizing: border-box; padding: 1.5em; border: none;
+                    border-radius: var(--jf-shape-borderRadius, 4px);
+                    background: var(--jf-palette-background-paper, #202020);
+                    color: var(--jf-palette-text-primary, inherit);
+                    box-shadow: var(--jf-shadows-24, 0 0 20px rgba(0,0,0,.5));
+                }
+                dialog.invDialog::backdrop { background: var(--jf-palette-Backdrop-bg, rgba(0,0,0,.5)); }
+                .invDialog h3 { margin: 0 0 1em; font-weight: 400; font-size: 1.4em; }
+                .invField { display: flex; flex-direction: column; gap: .35em; margin-bottom: 1.2em; }
+                .invField label { color: var(--jf-palette-text-secondary, inherit); }
+                .invField .invSelect { display: flex; margin: 0; }
+                .invField select, .invField input { width: 100%; }
+                .invDialogButtons { display: flex; flex-direction: column; gap: .5em; margin-top: 1.5em; }
+                .invDialogButtons button { width: 100%; margin: 0; }
                 @media (prefers-reduced-motion: reduce) {
                     .invBusy::after, .invType.invLoad .invCount::after,
                     .invTwisty[data-busy] { animation-duration: 2.4s; }
@@ -171,19 +240,49 @@
             </h2>
 
             <div class="invBar">
-                <div class="invTypes" id="invTypes"></div>
+                <div class="invSwap">
+                    <div class="invTypes" id="invTypes"></div>
+                    <div class="invPickBar" id="invPickBar" style="display:none">
+                        <button type="button" id="invPickEnd" class="invIcon">
+                            <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+                            <span class="invHide" id="invPickEndLabel"></span>
+                        </button>
+                        <span class="invPickCount" id="invPickCount" role="status" aria-live="polite" dir="auto"></span>
+                        <button type="button" id="invPickAll" class="invLink" dir="auto"></button>
+                        <button type="button" id="invAddTo" class="invChip">
+                            <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M14 10H3v2h11v-2zm0-4H3v2h11V6zm4 8v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zM3 16h7v-2H3v2z"/></svg>
+                            <span id="invAddToLabel" dir="auto"></span>
+                        </button>
+                        <button type="button" id="invRemoveFrom" class="invChip">
+                            <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M14 10H3v2h11v-2zm0-4H3v2h11V6zM3 16h7v-2H3v2zm11.41 6L17 19.41 19.59 22 21 20.59 18.41 18 21 15.41 19.59 14 17 16.59 14.41 14 13 15.41 15.59 18 13 20.59 14.41 22z"/></svg>
+                            <span id="invRemoveFromLabel" dir="auto"></span>
+                        </button>
+                    </div>
+                </div>
                 <div class="invTools">
                     <input type="search" id="invSearch" class="invSearch emby-input" />
-                    <button is="emby-button" type="button" id="invColumnsBtn" class="raised emby-button"
-                            aria-expanded="false" aria-controls="invColumnsPanel">
-                        <span id="invColumnsLabel"></span>
+                    <button type="button" id="invColumnsBtn" class="invIcon" aria-expanded="false" aria-controls="invColumnsPanel">
+                        <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M14.67 5v14H9.33V5h5.34zm1 14H21V5h-5.33v14zm-7.34 0V5H3v14h5.33z"/></svg>
+                        <span class="invHide" id="invColumnsLabel"></span>
                     </button>
-                    <button is="emby-button" type="button" id="invFilterBtn" class="raised emby-button"
-                            aria-expanded="false" aria-controls="invFilterPanel">
-                        <span id="invFilterLabel"></span>
+                    <button type="button" id="invFilterBtn" class="invIcon" aria-expanded="false" aria-controls="invFilterPanel">
+                        <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M10 18h4v-2h-4v2zM3 6v2h18V6H3zm3 7h12v-2H6v2z"/></svg>
+                        <span class="invHide" id="invFilterLabel"></span>
                     </button>
-                    <button is="emby-button" type="button" id="invCsv" class="raised emby-button"><span>CSV</span></button>
-                    <button is="emby-button" type="button" id="invOds" class="raised emby-button"><span>ODS</span></button>
+                    <button type="button" id="invPickBtn" class="invIcon" aria-pressed="false">
+                        <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M22 7h-9v2h9V7zm0 8h-9v2h9v-2zM5.54 11 2 7.46l1.41-1.41 2.12 2.12 4.24-4.24 1.41 1.41L5.54 11zm0 8L2 15.46l1.41-1.41 2.12 2.12 4.24-4.24 1.41 1.41L5.54 19z"/></svg>
+                        <span class="invHide" id="invPickLabel"></span>
+                    </button>
+                    <div class="invMenuHost" id="invExportHost">
+                        <button type="button" id="invExportBtn" class="invIcon" aria-haspopup="menu" aria-expanded="false" aria-controls="invExportMenu">
+                            <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/></svg>
+                            <span class="invHide" id="invExportLabel"></span>
+                        </button>
+                        <div class="invMenu" id="invExportMenu" role="menu" hidden>
+                            <button type="button" id="invCsv" role="menuitem">CSV</button>
+                            <button type="button" id="invOds" role="menuitem">ODS</button>
+                        </div>
+                    </div>
                 </div>
             </div>
 
@@ -218,11 +317,37 @@
                     <div class="invSelect selectContainer selectContainer-inline">
                         <select is="emby-select" id="invSize" class="emby-select-withcolor emby-select"></select>
                     </div>
-                    <button is="emby-button" type="button" id="invPrev" class="raised emby-button"><span id="invPrevLabel"></span></button>
+                    <button type="button" id="invPrev" class="invIcon">
+                        <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M15.41 7.41 14 6l-6 6 6 6 1.41-1.41L10.83 12z"/></svg>
+                        <span class="invHide" id="invPrevLabel"></span>
+                    </button>
                     <span id="invPage" aria-live="polite"></span>
-                    <button is="emby-button" type="button" id="invNext" class="raised emby-button"><span id="invNextLabel"></span></button>
+                    <button type="button" id="invNext" class="invIcon">
+                        <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M10 6 8.59 7.41 13.17 12l-4.58 4.59L10 18l6-6z"/></svg>
+                        <span class="invHide" id="invNextLabel"></span>
+                    </button>
                 </div>
             </div>
+
+            <dialog class="invDialog" id="invDialog" aria-labelledby="invDialogTitle">
+                <form method="dialog" id="invDialogForm">
+                    <h3 id="invDialogTitle"></h3>
+                    <div class="invField">
+                        <label class="selectLabel" for="invTarget" id="invTargetLabel"></label>
+                        <div class="invSelect selectContainer">
+                            <select is="emby-select" id="invTarget" class="emby-select-withcolor emby-select"></select>
+                        </div>
+                    </div>
+                    <div class="invField" id="invNameField">
+                        <label class="inputLabel" for="invName" id="invNameLabel"></label>
+                        <input type="text" id="invName" class="emby-input" />
+                    </div>
+                    <div class="invDialogButtons">
+                        <button is="emby-button" type="submit" id="invDialogOk" class="raised button-submit block emby-button"><span id="invDialogOkLabel"></span></button>
+                        <button is="emby-button" type="button" id="invDialogCancel" class="raised button-cancel block emby-button"><span id="invDialogCancelLabel"></span></button>
+                    </div>
+                </form>
+            </dialog>
         </div>
     </div>
 
@@ -390,14 +515,28 @@
                 page.querySelector('#invTitle').textContent = t('Title', 'Inventory');
                 page.querySelector('#invSearch').setAttribute('placeholder', t('Search', 'Search'));
                 page.querySelector('#invSearch').setAttribute('aria-label', t('Search', 'Search'));
-                page.querySelector('#invColumnsLabel').textContent = t('Columns', 'Columns');
                 page.querySelector('#invFilterAddLabel').textContent = t('AddFilter', 'Add filter');
                 labelFilters();
                 page.querySelector('#invSizeLabel').textContent = t('RowsPerPage', 'Rows per page');
-                page.querySelector('#invPrevLabel').textContent = t('Previous', 'Previous');
-                page.querySelector('#invNextLabel').textContent = t('Next', 'Next');
                 page.querySelector('#invEmpty').textContent = t('Empty', 'Nothing here.');
                 page.querySelector('.invTable').setAttribute('aria-label', t('Title', 'Inventory'));
+                [
+                    ['#invColumnsBtn', '#invColumnsLabel', t('Columns', 'Columns')],
+                    ['#invPickBtn', '#invPickLabel', t('Select', 'Select')],
+                    ['#invExportBtn', '#invExportLabel', t('Export', 'Export')],
+                    ['#invPrev', '#invPrevLabel', t('Previous', 'Previous')],
+                    ['#invNext', '#invNextLabel', t('Next', 'Next')],
+                    ['#invPickEnd', '#invPickEndLabel', t('ClearSelection', 'Clear selection')]
+                ].forEach(function (named) {
+                    page.querySelector(named[0]).title = named[2];
+                    page.querySelector(named[1]).textContent = named[2];
+                });
+                page.querySelector('#invAddToLabel').textContent = t('AddTo', 'Add to…');
+                page.querySelector('#invRemoveFromLabel').textContent = t('RemoveFrom', 'Remove from…');
+                page.querySelector('#invTargetLabel').textContent = t('Target', 'Collection or playlist');
+                page.querySelector('#invNameLabel').textContent = t('column.name', 'Name');
+                page.querySelector('#invDialogCancelLabel').textContent = t('Cancel', 'Cancel');
+                showPicks();
             }
 
             var typeKeys = null;
@@ -516,8 +655,17 @@
 
             function labelFilters() {
                 var count = conditions().length;
-                page.querySelector('#invFilterLabel').textContent = t('Filters', 'Filters')
-                    + (count ? ' (' + count.toLocaleString(culture) + ')' : '');
+                var label = t('Filters', 'Filters') + (count ? ' (' + count.toLocaleString(culture) + ')' : '');
+                var button = page.querySelector('#invFilterBtn');
+                page.querySelector('#invFilterLabel').textContent = label;
+                button.title = label;
+                // Generated content counts toward the name, and the badge would read the number twice.
+                button.setAttribute('aria-label', label);
+                if (count) {
+                    button.setAttribute('data-count', count.toLocaleString(culture));
+                } else {
+                    button.removeAttribute('data-count');
+                }
                 page.querySelector('#invFilterAdd').disabled = state.filters.length >= schema.maxFilters;
             }
 
@@ -786,9 +934,11 @@
                     if (candidate.MediaType === mediaType) { type = candidate; }
                 });
                 if (!type) { return; }
+                if (mediaType !== state.type) { endPicking(); }
 
                 state.type = mediaType;
                 state.levels = type.Levels;
+                page.querySelector('#invPickBtn').disabled = !kinds().length;
                 pending = null;
                 state.total = 0;
                 state.level = type.Levels[0].Level;
@@ -999,6 +1149,340 @@
                 return td;
             }
 
+            // Rows ticked by hand, each marked whether it was a top-level row, and, once all are selected,
+            // the listing, which then covers every top-level row of it but the exceptions.
+            var picked = { on: false, ids: {}, all: null, except: {}, last: null };
+            var shown = {};
+            var proposed = null;
+
+            function kinds() {
+                var type = schema.mediaTypes.filter(function (candidate) { return candidate.MediaType === state.type; })[0];
+                return (type && type.Targets) || [];
+            }
+
+            function scope() {
+                var asked = listing();
+                return [state.type, asked.level, state.search, asked.filters].join('\n');
+            }
+
+            function isPicked(tr) {
+                var id = tr.getAttribute('data-id');
+                return picked.all !== null && tr.getAttribute('data-depth') === '0'
+                    ? !picked.except[id]
+                    : picked.ids.hasOwnProperty(id);
+            }
+
+            function pickedCount() {
+                var count = picked.all === null ? 0 : Math.max(0, state.total - Object.keys(picked.except).length);
+                return count + Object.keys(picked.ids).length;
+            }
+
+            function setPicked(tr, on) {
+                var id = tr.getAttribute('data-id');
+                var top = tr.getAttribute('data-depth') === '0';
+                if (picked.all !== null && top) {
+                    if (on) {
+                        delete picked.except[id];
+                    } else {
+                        picked.except[id] = true;
+                    }
+                } else if (on) {
+                    picked.ids[id] = top;
+                } else {
+                    delete picked.ids[id];
+                }
+            }
+
+            function dropPicks() {
+                picked.ids = {};
+                picked.all = null;
+                picked.except = {};
+                picked.last = null;
+            }
+
+            function endPicking() {
+                var held = document.activeElement;
+                var inside = held && (page.querySelector('#invPickBar').contains(held) || !!held.closest('.invPick'));
+                dropPicks();
+                picked.on = false;
+                showPicks();
+                // The bar and the boxes are hidden, and the caret with them.
+                if (inside) { page.querySelector('#invPickBtn').focus(); }
+            }
+
+            function topRows() {
+                return Array.prototype.slice.call(page.querySelectorAll('#invBody tr[data-depth="0"]'));
+            }
+
+            function pickHead() {
+                var th = document.createElement('th');
+                th.className = 'invPick';
+                var box = document.createElement('input');
+                box.type = 'checkbox';
+                box.id = 'invPickPage';
+                box.setAttribute('aria-label', t('SelectPage', 'Select all on this page'));
+                box.addEventListener('change', function () {
+                    var rows = topRows();
+                    var every = rows.length && rows.every(isPicked);
+                    rows.forEach(function (tr) { setPicked(tr, !every); });
+                    if (picked.all !== null && !pickedCount()) { dropPicks(); }
+                    showPicks();
+                });
+                th.appendChild(box);
+                return th;
+            }
+
+            function pickCell(tr) {
+                var td = document.createElement('td');
+                td.className = 'invPick';
+                var box = document.createElement('input');
+                box.type = 'checkbox';
+                var row = shown[tr.getAttribute('data-id')];
+                var name = row && firstColumn ? format(row.Values[firstColumn.Key], firstColumn.Format) : '';
+                box.setAttribute('aria-label', t('SelectRow', 'Select {0}').replace('{0}', function () { return name; }).trim());
+                box.addEventListener('click', function (e) {
+                    var rows = Array.prototype.slice.call(page.querySelectorAll('#invBody tr'));
+                    var from = rows.indexOf(picked.last);
+                    var to = rows.indexOf(tr);
+                    var range = e.shiftKey && from !== -1 ? rows.slice(Math.min(from, to), Math.max(from, to) + 1) : [tr];
+                    range.forEach(function (one) { setPicked(one, box.checked); });
+                    picked.last = tr;
+                    if (picked.all !== null && !pickedCount()) { dropPicks(); }
+                    showPicks();
+                });
+                td.appendChild(box);
+                return td;
+            }
+
+            // The column of boxes is only there while picking, so a table drawn meanwhile gets it here.
+            function pickColumn(rows) {
+                var head = page.querySelector('#invHead');
+                if (!picked.on) {
+                    Array.prototype.slice.call(page.querySelectorAll('.invTable .invPick')).forEach(function (cell) { cell.remove(); });
+                    return;
+                }
+
+                if (head.firstElementChild && !head.querySelector('.invPick')) { head.insertBefore(pickHead(), head.firstElementChild); }
+                rows.forEach(function (tr) {
+                    if (!tr.firstElementChild || !tr.firstElementChild.classList.contains('invPick')) {
+                        tr.insertBefore(pickCell(tr), tr.firstElementChild);
+                    }
+                });
+            }
+
+            function markRow(tr) {
+                var on = picked.on && isPicked(tr);
+                tr.classList.toggle('invPicked', on);
+                var box = tr.querySelector('.invPick input');
+                if (box) { box.checked = on; }
+            }
+
+            function showPicks() {
+                var rows = Array.prototype.slice.call(page.querySelectorAll('#invBody tr'));
+                pickColumn(rows);
+                page.querySelector('#invTypes').style.visibility = picked.on ? 'hidden' : '';
+                // A bar hidden by its visibility still widens the cell of the tabs.
+                page.querySelector('#invPickBar').style.display = picked.on ? '' : 'none';
+                page.querySelector('#invPickBtn').setAttribute('aria-pressed', picked.on ? 'true' : 'false');
+                rows.forEach(markRow);
+
+                var top = topRows();
+                var some = top.filter(isPicked).length;
+                var head = page.querySelector('#invPickPage');
+                if (head) {
+                    head.checked = top.length > 0 && some === top.length;
+                    head.indeterminate = some > 0 && some < top.length;
+                }
+
+                var count = pickedCount();
+                var number = count.toLocaleString(culture);
+                var whole = picked.all !== null && !Object.keys(picked.except).length && !Object.keys(picked.ids).length;
+                page.querySelector('#invPickCount').textContent = whole
+                    ? t('AllSelected', 'All {0} selected').replace('{0}', number)
+                    : (plural.select(count) === 'one' ? t('SelectedOne', '{0} selected') : t('SelectedMany', '{0} selected')).replace('{0}', number);
+                var widen = page.querySelector('#invPickAll');
+                // The rows on screen stand for the listing only once it is drawn.
+                widen.style.display = picked.all === null && answers(drawn) && top.length && some === top.length
+                    && state.total > top.length ? '' : 'none';
+                widen.textContent = t('SelectAll', 'Select all {0}').replace('{0}', state.total.toLocaleString(culture));
+                page.querySelector('#invAddTo').disabled = !count;
+                page.querySelector('#invRemoveFrom').disabled = !count;
+            }
+
+            function chosenItems() {
+                var asked = listing();
+                return {
+                    Ids: Object.keys(picked.ids),
+                    All: picked.all === null ? null : {
+                        MediaType: state.type,
+                        Level: asked.level,
+                        Search: state.search,
+                        Filters: asked.filters,
+                        Except: Object.keys(picked.except)
+                    }
+                };
+            }
+
+            function openDialog(remove) {
+                // Typing is answered late, and the selection would go to the listing it is about to leave.
+                applySearch(page.querySelector('#invSearch').value);
+                applyFilters();
+                if (!pickedCount()) { return; }
+
+                var mine = visit;
+                var items = chosenItems();
+                var asked = JSON.stringify(items);
+                var chips = [page.querySelector('#invAddTo'), page.querySelector('#invRemoveFrom')];
+                var pressed = chips[remove ? 1 : 0];
+                var held = document.activeElement === pressed;
+                chips.forEach(function (chip) { chip.disabled = true; });
+                hold(pressed);
+                var settle = function () {
+                    idle(pressed);
+                    showPicks();
+                    if (held && document.activeElement === document.body) { pressed.focus(); }
+                };
+
+                var request = remove
+                    ? ApiClient.ajax({
+                        type: 'POST',
+                        url: url('Targets/Held'),
+                        data: JSON.stringify(items),
+                        contentType: 'application/json',
+                        dataType: 'json'
+                    })
+                    : ApiClient.getJSON(url('Targets'));
+                request.then(function (known) {
+                    if (mine !== visit) { return; }
+                    settle();
+                    // The rows stay tickable and the search editable while the answer is on its way.
+                    if (!picked.on || JSON.stringify(chosenItems()) !== asked) { return; }
+                    var groups = kinds().map(function (kind) {
+                        return { kind: kind, targets: kind === 'Collection' ? known.Collections : known.Playlists };
+                    }).filter(function (group) { return group.targets && (!remove || group.targets.length); });
+                    if (!groups.length) {
+                        Dashboard.alert(t('NothingToRemove', 'None of the selected items is in a collection or playlist.'));
+                        return;
+                    }
+
+                    showDialog(remove, groups, items);
+                }).catch(function () {
+                    if (mine !== visit) { return; }
+                    settle();
+                    Dashboard.alert(t('TargetsFailed', 'Could not load the collections and playlists.'));
+                });
+            }
+
+            function showDialog(remove, groups, items) {
+                var dialog = page.querySelector('#invDialog');
+                var select = page.querySelector('#invTarget');
+                var name = page.querySelector('#invName');
+                page.querySelector('#invDialogTitle').textContent = remove ? t('RemoveFromTitle', 'Remove from') : t('AddToTitle', 'Add to');
+                page.querySelector('#invDialogOkLabel').textContent = remove ? t('Remove', 'Remove') : t('Add', 'Add');
+                select.innerHTML = '';
+                groups.forEach(function (group) {
+                    var collection = group.kind === 'Collection';
+                    var holder = document.createElement('optgroup');
+                    holder.label = collection ? t('column.collections', 'Collections') : t('column.playlists', 'Playlists');
+                    if (!remove) {
+                        choice(holder, group.kind + ':', collection ? t('NewCollection', 'New collection') : t('NewPlaylist', 'New playlist'));
+                    }
+                    group.targets.forEach(function (target) { choice(holder, group.kind + ':' + target.Id, target.Name); });
+                    select.appendChild(holder);
+                });
+                select.selectedIndex = 0;
+                name.value = '';
+                naming();
+                proposed = { remove: remove, items: items };
+                idle(page.querySelector('#invDialogOk'));
+                dialog.showModal();
+            }
+
+            function hold(button) {
+                button.disabled = true;
+                button.classList.add('invBusy');
+                // The caption is what names the button, and the spinner hides it.
+                button.setAttribute('aria-label', button.textContent.trim());
+                button.setAttribute('aria-busy', 'true');
+            }
+
+            function idle(button) {
+                button.classList.remove('invBusy');
+                button.removeAttribute('aria-busy');
+                button.removeAttribute('aria-label');
+                button.disabled = false;
+            }
+
+            function naming() {
+                var fresh = /:$/.test(page.querySelector('#invTarget').value);
+                page.querySelector('#invNameField').style.display = fresh ? '' : 'none';
+                page.querySelector('#invName').required = fresh;
+            }
+
+            function submitDialog() {
+                var dialog = page.querySelector('#invDialog');
+                var value = page.querySelector('#invTarget').value;
+                var name = page.querySelector('#invName');
+                var fresh = /:$/.test(value);
+                if (fresh && !name.value.trim()) {
+                    name.value = '';
+                    name.reportValidity();
+                    return;
+                }
+
+                var body = {
+                    Kind: value.slice(0, value.indexOf(':')),
+                    Remove: proposed.remove,
+                    Id: fresh ? null : value.slice(value.indexOf(':') + 1),
+                    Name: fresh ? name.value.trim() : null,
+                    Ids: proposed.items.Ids,
+                    All: proposed.items.All
+                };
+                var mine = visit;
+                var ok = page.querySelector('#invDialogOk');
+                var cancel = page.querySelector('#invDialogCancel');
+                hold(ok);
+                cancel.disabled = true;
+                var finish = function () {
+                    idle(ok);
+                    cancel.disabled = false;
+                    if (dialog.open) { dialog.close(); }
+                };
+
+                ApiClient.ajax({
+                    type: 'POST',
+                    url: url('Targets'),
+                    data: JSON.stringify(body),
+                    contentType: 'application/json',
+                    dataType: 'json'
+                }).then(function (result) {
+                    if (mine !== visit) { return; }
+                    finish();
+                    var count = (plural.select(result.Count) === 'one' ? t('ItemsOne') : t('ItemsMany'))
+                        .replace('{0}', result.Count.toLocaleString(culture));
+                    // A replacement string would read a name such as "Rock $& Roll" as a pattern.
+                    var named = function () { return result.Name; };
+                    var message = body.Remove || result.Count || result.Skipped
+                        ? (body.Remove ? t('Removed', 'Removed {0} from "{1}".') : t('Added', 'Added {0} to "{1}".'))
+                            .replace('{0}', count).replace('{1}', named)
+                        : t('AlreadyIn', 'Everything is already in "{0}".').replace('{0}', named);
+                    if (result.Skipped) {
+                        message += ' ' + (plural.select(result.Skipped) === 'one'
+                            ? t('SkippedOne', '{0} item cannot be in it.')
+                            : t('SkippedMany', '{0} items cannot be in it.'))
+                            .replace('{0}', result.Skipped.toLocaleString(culture));
+                    }
+
+                    Dashboard.alert(message);
+                    endPicking();
+                    load();
+                }).catch(function () {
+                    if (mine !== visit) { return; }
+                    finish();
+                    Dashboard.alert(t('ChangeFailed', 'Could not change the collection or playlist.'));
+                });
+            }
+
             var firstColumn = null;
             var nestedView = true;
             var anyExpandable = false;
@@ -1009,9 +1493,14 @@
                 var tr = document.createElement('tr');
                 tr.setAttribute('data-depth', depth);
                 tr.setAttribute('data-id', row.Id);
+                shown[row.Id] = row;
                 activeColumns.forEach(function (column) {
                     tr.appendChild(cell(row, column, depth, column === firstColumn && row.Expandable && nestedView));
                 });
+                if (picked.on) {
+                    tr.insertBefore(pickCell(tr), tr.firstElementChild);
+                    markRow(tr);
+                }
                 return tr;
             }
 
@@ -1082,8 +1571,10 @@
                 var held = inside
                     ? refocus || document.activeElement.getAttribute('data-key')
                     : (idle ? refocus : null);
+                var ticking = inside && document.activeElement.id === 'invPickPage';
                 head.innerHTML = '';
                 body.innerHTML = '';
+                shown = {};
 
                 activeColumns = result.Columns;
                 // Kept only while the table it describes is on screen and nothing is on its way:
@@ -1092,6 +1583,7 @@
                 columnLevel = state.level;
                 firstColumn = result.Columns[0];
                 page.querySelector('#invColumnsBtn').disabled = false;
+                page.querySelector('#invPickBtn').disabled = !kinds().length;
                 nestedView = !state.search && !listing().filters;
                 anyExpandable = nestedView && result.Rows.some(function (row) { return row.Expandable; });
 
@@ -1146,8 +1638,10 @@
                 result.Rows.forEach(function (row) { body.appendChild(buildRow(row, 0)); });
                 page.querySelector('#invEmpty').textContent = t('Empty', 'Nothing here.');
                 page.querySelector('#invEmpty').style.display = result.Rows.length ? 'none' : '';
+                showPicks();
 
                 refocus = null;
+                if (ticking && page.querySelector('#invPickPage')) { page.querySelector('#invPickPage').focus(); }
                 if (held) {
                     var back = Array.prototype.filter.call(head.children, function (th) {
                         return th.getAttribute('data-key') === held;
@@ -1261,6 +1755,9 @@
                 page.querySelector('#invNext').disabled = true;
                 page.querySelector('#invColumnsBtn').disabled = true;
                 page.querySelector('#invColumnsBtn').setAttribute('aria-expanded', 'false');
+                page.querySelector('#invPickBtn').disabled = true;
+                endPicking();
+                shown = {};
                 activeColumns = [];
                 firstColumn = null;
                 anyExpandable = false;
@@ -1289,6 +1786,8 @@
                     renderExpandBar();
                 }
                 applied = asked.filters;
+                if (picked.all !== null && picked.all !== scope()) { dropPicks(); }
+                showPicks();
                 busy(true);
                 ApiClient.getJSON(url('Items', {
                     mediaType: state.type,
@@ -1410,14 +1909,10 @@
                 });
 
                 var mine = visit;
-                var buttons = [page.querySelector('#invCsv'), page.querySelector('#invOds')];
-                var held = buttons.indexOf(document.activeElement);
-                buttons.forEach(function (button) { button.disabled = true; });
-                var pressed = page.querySelector(extension === 'csv' ? '#invCsv' : '#invOds');
-                pressed.classList.add('invBusy');
-                // The caption is what names the button, and the spinner hides it.
-                pressed.setAttribute('aria-label', pressed.textContent.trim());
-                pressed.setAttribute('aria-busy', 'true');
+                var trigger = page.querySelector('#invExportBtn');
+                var held = document.activeElement === trigger;
+                [page.querySelector('#invCsv'), page.querySelector('#invOds')].forEach(function (button) { button.disabled = true; });
+                hold(trigger);
                 fetch(target, { headers: { Authorization: 'MediaBrowser Token="' + ApiClient.accessToken() + '"' } })
                     .then(function (response) {
                         if (!response.ok) { throw new Error(response.status); }
@@ -1435,22 +1930,34 @@
                         link.remove();
                         // Revoking in the same turn can cut the download short in some browsers.
                         setTimeout(function () { URL.revokeObjectURL(link.href); }, 60000);
-                        done(buttons, held, pressed, mine);
+                        done(held, mine);
                     })
                     .catch(function () {
-                        done(buttons, held, pressed, mine);
+                        done(held, mine);
                         if (showing) { Dashboard.alert(t('ExportFailed', 'Could not export the inventory.')); }
                     });
             }
 
-            function done(buttons, held, pressed, mine) {
+            function done(held, mine) {
                 // One that lands after the view was left was handed its buttons back on the way out.
                 if (mine !== visit) { return; }
-                pressed.classList.remove('invBusy');
-                pressed.removeAttribute('aria-label');
-                pressed.removeAttribute('aria-busy');
-                buttons.forEach(function (button) { button.disabled = false; });
-                if (held >= 0 && document.activeElement === document.body) { buttons[held].focus(); }
+                exportIdle();
+                if (held && document.activeElement === document.body) { page.querySelector('#invExportBtn').focus(); }
+            }
+
+            function exportIdle() {
+                idle(page.querySelector('#invExportBtn'));
+                exportable(true);
+            }
+
+            function exportable(on) {
+                ['#invExportBtn', '#invCsv', '#invOds'].forEach(function (id) { page.querySelector(id).disabled = !on; });
+            }
+
+            function exportMenu(open) {
+                page.querySelector('#invExportMenu').hidden = !open;
+                page.querySelector('#invExportBtn').setAttribute('aria-expanded', open ? 'true' : 'false');
+                if (open) { page.querySelector('#invCsv').focus(); }
             }
 
             // A button keeps the focus ring after a click, which reads as "still active" on an
@@ -1462,8 +1969,95 @@
                 };
             }
 
-            page.querySelector('#invCsv').addEventListener('click', released(function () { download('csv'); }));
-            page.querySelector('#invOds').addEventListener('click', released(function () { download('ods'); }));
+            [['#invCsv', 'csv'], ['#invOds', 'ods']].forEach(function (item) {
+                page.querySelector(item[0]).addEventListener('click', released(function (e) {
+                    exportMenu(false);
+                    if (!e.detail) { page.querySelector('#invExportBtn').focus(); }
+                    download(item[1]);
+                }));
+            });
+
+            page.querySelector('#invExportBtn').addEventListener('click', released(function () {
+                exportMenu(page.querySelector('#invExportMenu').hidden);
+            }));
+
+            page.querySelector('#invExportMenu').addEventListener('keydown', function (e) {
+                if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') { return; }
+                e.preventDefault();
+                var items = [page.querySelector('#invCsv'), page.querySelector('#invOds')];
+                var at = items.indexOf(document.activeElement);
+                items[(at + (e.key === 'ArrowDown' ? 1 : items.length - 1) + items.length) % items.length].focus();
+            });
+
+            // A blur to nowhere is the mouse, and the click that follows decides.
+            page.querySelector('#invExportHost').addEventListener('focusout', function (e) {
+                if (e.relatedTarget && !this.contains(e.relatedTarget)) { exportMenu(false); }
+            });
+
+            document.addEventListener('click', function (e) {
+                if (!page.querySelector('#invExportMenu').hidden && !page.querySelector('#invExportHost').contains(e.target)) {
+                    exportMenu(false);
+                }
+            });
+
+            document.addEventListener('keydown', function (e) {
+                if (e.key !== 'Escape' || !showing) { return; }
+                if (!page.querySelector('#invExportMenu').hidden) {
+                    exportMenu(false);
+                    page.querySelector('#invExportBtn').focus();
+                    return;
+                }
+
+                // The dialog closes on its own, and a second Esc closes it even when its cancel event is prevented.
+                if (page.querySelector('#invDialog').open) {
+                    if (page.querySelector('#invDialogOk').getAttribute('aria-busy')) { e.preventDefault(); }
+                    return;
+                }
+
+                // A field takes the key for itself.
+                if (picked.on && !(e.target.closest && e.target.closest('select, textarea, input:not([type="checkbox"])'))) {
+                    endPicking();
+                }
+            });
+
+            page.querySelector('#invPickBtn').addEventListener('click', released(function () {
+                if (picked.on) {
+                    endPicking();
+                    return;
+                }
+
+                picked.on = true;
+                showPicks();
+            }));
+
+            page.querySelector('#invPickEnd').addEventListener('click', endPicking);
+
+            page.querySelector('#invPickAll').addEventListener('click', function () {
+                var held = document.activeElement === this;
+                // A top-level row ticked by hand is either in the listing or not part of it.
+                Object.keys(picked.ids).forEach(function (id) {
+                    if (picked.ids[id]) { delete picked.ids[id]; }
+                });
+                picked.all = scope();
+                picked.except = {};
+                showPicks();
+                if (held) { page.querySelector('#invAddTo').focus(); }
+            });
+
+            page.querySelector('#invAddTo').addEventListener('click', released(function () { openDialog(false); }));
+            page.querySelector('#invRemoveFrom').addEventListener('click', released(function () { openDialog(true); }));
+            page.querySelector('#invTarget').addEventListener('change', naming);
+            page.querySelector('#invDialogForm').addEventListener('submit', function (e) {
+                e.preventDefault();
+                submitDialog();
+            });
+            page.querySelector('#invDialogCancel').addEventListener('click', function () {
+                page.querySelector('#invDialog').close();
+            });
+            // A request still running closes whichever dialog is open when it answers.
+            page.querySelector('#invDialog').addEventListener('cancel', function (e) {
+                if (page.querySelector('#invDialogOk').getAttribute('aria-busy')) { e.preventDefault(); }
+            });
 
             page.querySelector('#invExpand').addEventListener('change', function (e) {
                 setExpansion(Number(e.target.value));
@@ -1524,6 +2118,7 @@
                 // English until the strings arrive, rather than a row of blank buttons.
                 applyStaticLabels();
                 page.querySelector('#invFilterBtn').disabled = true;
+                page.querySelector('#invPickBtn').disabled = true;
                 // The view stays in the DOM, so a message from last time would be read out again
                 // before anything has been asked for.
                 page.querySelector('#invEmpty').style.display = 'none';
@@ -1563,9 +2158,7 @@
                         page.querySelector('#invEmpty').style.display = '';
                     }
 
-                    var empty = !result.MediaTypes.length;
-                    page.querySelector('#invCsv').disabled = empty;
-                    page.querySelector('#invOds').disabled = empty;
+                    exportable(result.MediaTypes.length > 0);
                 }).catch(function () {
                     if (mine !== visit) { return; }
                     Dashboard.hideLoadingMsg();
@@ -1573,8 +2166,7 @@
                     page.querySelector('#invFilterBtn').disabled = !schema.columns.length;
                     if (!schema.columns.length) {
                         clear();
-                        page.querySelector('#invCsv').disabled = true;
-                        page.querySelector('#invOds').disabled = true;
+                        exportable(false);
                         var blank = page.querySelector('#invEmpty');
                         blank.textContent = t('LoadFailed', 'Could not load the inventory.');
                         blank.style.display = '';
@@ -1594,12 +2186,11 @@
                 generation++;
                 visit++;
                 busy(false);
-                [page.querySelector('#invCsv'), page.querySelector('#invOds')].forEach(function (button) {
-                    button.classList.remove('invBusy');
-                    button.removeAttribute('aria-label');
-                    button.removeAttribute('aria-busy');
-                    button.disabled = false;
-                });
+                exportIdle();
+                exportMenu(false);
+                if (page.querySelector('#invDialog').open) { page.querySelector('#invDialog').close(); }
+                ['#invDialogOk', '#invDialogCancel', '#invAddTo', '#invRemoveFrom'].forEach(function (id) { idle(page.querySelector(id)); });
+                endPicking();
                 Dashboard.hideLoadingMsg();
             });
         })();

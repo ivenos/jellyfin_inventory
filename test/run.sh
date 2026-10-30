@@ -435,22 +435,34 @@ print(json.dumps({'LibraryOptions': {'TypeOptions': [
     {'Type': k, 'MetadataFetchers': [], 'MetadataFetcherOrder': [],
      'ImageFetchers': [], 'ImageFetcherOrder': []} for k in kinds]}}))")
 
-curl -sf --max-time 600 -X POST "$BASE/Library/VirtualFolders?name=Movies&collectionType=movies&paths=/media/movies&refreshLibrary=true" \
+# A scan running while Jellyfin adds a library reads the new one before its options are saved, and
+# looks its items up online. So libraries are added while none runs, and scanned afterwards.
+settled() {
+    i=0
+    until api 'ScheduledTasks' | field "[t['State'] for t in json.load(sys.stdin) if t['Key'] == 'RefreshLibrary'][0]" | grep -qx Idle \
+        || [ "$i" -gt 60 ]; do
+        i=$((i + 1))
+        sleep 1
+    done
+}
+settled
+curl -sf --max-time 600 -X POST "$BASE/Library/VirtualFolders?name=Movies&collectionType=movies&paths=/media/movies&refreshLibrary=false" \
     -H "Authorization: MediaBrowser Token=\"$TOKEN\"" -H "$JSON" -d "$OFFLINE" >/dev/null || refused "Library/VirtualFolders?name=Movies"
-curl -sf --max-time 600 -X POST "$BASE/Library/VirtualFolders?name=Shows&collectionType=tvshows&paths=/media/shows&refreshLibrary=true" \
+curl -sf --max-time 600 -X POST "$BASE/Library/VirtualFolders?name=Shows&collectionType=tvshows&paths=/media/shows&refreshLibrary=false" \
     -H "Authorization: MediaBrowser Token=\"$TOKEN\"" -H "$JSON" -d "$OFFLINE" >/dev/null || refused "Library/VirtualFolders?name=Shows"
-curl -sf --max-time 600 -X POST "$BASE/Library/VirtualFolders?name=Music&collectionType=music&paths=/media/music&refreshLibrary=true" \
+curl -sf --max-time 600 -X POST "$BASE/Library/VirtualFolders?name=Music&collectionType=music&paths=/media/music&refreshLibrary=false" \
     -H "Authorization: MediaBrowser Token=\"$TOKEN\"" -H "$JSON" -d "$OFFLINE" >/dev/null || refused "Library/VirtualFolders?name=Music"
-curl -sf --max-time 600 -X POST "$BASE/Library/VirtualFolders?name=Books&collectionType=books&paths=/media/books&refreshLibrary=true" \
+curl -sf --max-time 600 -X POST "$BASE/Library/VirtualFolders?name=Books&collectionType=books&paths=/media/books&refreshLibrary=false" \
     -H "Authorization: MediaBrowser Token=\"$TOKEN\"" -H "$JSON" -d "$OFFLINE" >/dev/null || refused "Library/VirtualFolders?name=Books"
-curl -sf --max-time 600 -X POST "$BASE/Library/VirtualFolders?name=Shelf&collectionType=books&paths=/media/shelf&refreshLibrary=true" \
+curl -sf --max-time 600 -X POST "$BASE/Library/VirtualFolders?name=Shelf&collectionType=books&paths=/media/shelf&refreshLibrary=false" \
     -H "Authorization: MediaBrowser Token=\"$TOKEN\"" -H "$JSON" -d "$OFFLINE" >/dev/null || refused "Library/VirtualFolders?name=Shelf"
-curl -sf --max-time 600 -X POST "$BASE/Library/VirtualFolders?name=Audiobooks&collectionType=books&paths=/media/audiobooks&refreshLibrary=true" \
+curl -sf --max-time 600 -X POST "$BASE/Library/VirtualFolders?name=Audiobooks&collectionType=books&paths=/media/audiobooks&refreshLibrary=false" \
     -H "Authorization: MediaBrowser Token=\"$TOKEN\"" -H "$JSON" -d "$OFFLINE" >/dev/null || refused "Library/VirtualFolders?name=Audiobooks"
-curl -sf --max-time 600 -X POST "$BASE/Library/VirtualFolders?name=Photos&collectionType=homevideos&paths=/media/photos&refreshLibrary=true" \
+curl -sf --max-time 600 -X POST "$BASE/Library/VirtualFolders?name=Photos&collectionType=homevideos&paths=/media/photos&refreshLibrary=false" \
     -H "Authorization: MediaBrowser Token=\"$TOKEN\"" -H "$JSON" -d "$OFFLINE" >/dev/null || refused "Library/VirtualFolders?name=Photos"
+curl -sf -X POST "$BASE/Library/Refresh" -H "Authorization: MediaBrowser Token=\"$TOKEN\"" >/dev/null || refused "Library/Refresh"
 
-# refreshLibrary on the create call does not always start a scan, so nudge it while waiting.
+# A refresh does not always start a scan, so nudge it while waiting.
 # Counted per tab rather than summed, or a half finished scan reaches the same total.
 printf 'waiting for the scan'
 i=0
@@ -896,7 +908,7 @@ check "= and ≠ hold a value against each one a list carries" \
     "Blue Harbour (2021)/6/3"
 check "and the schema says which columns are such lists" \
     "$(printf '%s\n' "$SCHEMA" | field "','.join(c['Key'] for c in json.load(sys.stdin)['Columns'] if c['List'])")" \
-    "genres,artists,authors,narrators,audioLanguages,subtitleLanguages"
+    "genres,collections,playlists,artists,authors,narrators,audioLanguages,subtitleLanguages"
 check "and an episode by the genre of its series" \
     "$(api "Inventory/Items?mediaType=Series&level=Episode&filters=$(filtered '[{"column":"genres","op":"eq","value":"documentary"}]')" | names)" \
     "Harbour Lights S01E01,Harbour Lights S01E02"
@@ -1508,6 +1520,205 @@ check "an api key is nobody's, so it reads the totals and no playback of its own
     "$(curl -sf "$BASE/Inventory/Items?mediaType=Movie&sortBy=everyonePlayCount&descending=true&limit=1" \
         -H "Authorization: MediaBrowser Token=\"$KEY\"" \
         | field "(lambda v: '%s/%s' % (v['played'], v['everyonePlayCount']))(json.load(sys.stdin)['Rows'][0]['Values'])")" "None/2"
+
+curl -sf -X POST "$BASE/Inventory/Columns?level=MusicVideo" \
+    -H "Authorization: MediaBrowser Token=\"$TOKEN\"" -H "$JSON" -d '["name","series","collections","playlists"]' >/dev/null \
+    || refused "Inventory/Columns?level=MusicVideo"
+targets() {
+    curl -s -X POST "$BASE/Inventory/Targets" -H "Authorization: MediaBrowser Token=\"${2:-$TOKEN}\"" -H "$JSON" -d "$1"
+}
+outcome() { field "(lambda d: '%s/%s/%s' % (d['Name'], d['Count'], d['Skipped']))(json.load(sys.stdin))"; }
+listed() { api "Inventory/Items?mediaType=$1&columnLevel=MusicVideo" | named "$2" "$3"; }
+BLUE=$(api 'Inventory/Items?mediaType=Movie' | identify 'Blue Harbour (2021)')
+SIGNAL=$(api 'Inventory/Items?mediaType=Movie' | identify 'Night Signal (2023)')
+DOUBLE=$(api 'Inventory/Items?mediaType=Movie' | identify 'Double Cut (2022)')
+TRACK=$(api 'Inventory/Items?mediaType=MusicAlbum&level=Audio' | identify 'Track 1')
+PHOTO=$(api 'Inventory/Items?mediaType=Photo' | identify 'Beach')
+BOOK=$(api 'Inventory/Items?mediaType=Book' | identify 'The Fixture Manual')
+ALL_EPISODES=$(api 'Inventory/Items?mediaType=Series&level=Episode')
+LONG_FIRST=$(printf '%s\n' "$ALL_EPISODES" | identify 'Long Run S01E01')
+PATCHY=$(printf '%s\n' "$ALL_EPISODES" | field "json.dumps([r['Id'] for r in json.load(sys.stdin)['Rows'] if r['Values']['name'].startswith('Patchy')])")
+
+check "each tab says what its rows can be added to, the way jellyfin-web offers it" \
+    "$(api 'Inventory/Schema' | field "' '.join('%s=%s' % (t['MediaType'], ','.join(t['Targets'])) for t in json.load(sys.stdin)['MediaTypes'])")" \
+    "Movie=Collection,Playlist Series=Collection,Playlist MusicAlbum=Collection,Playlist Book=Collection AudioBook=Collection,Playlist Photo="
+check "a server without collections or playlists offers none" \
+    "$(api 'Inventory/Targets' | field "(lambda d: '%s/%s' % (d['Collections'], d['Playlists']))(json.load(sys.stdin))")" "[]/[]"
+check "a film in no collection names none" "$(listed Movie 'Blue Harbour (2021)' collections)" "None"
+
+# Jellyfin adds a library for the first collection and scans for it, and in 12.0 that scan empties a collection
+# made meanwhile. So the checks wait for the scan to end.
+scanned() { api 'ScheduledTasks' | field "[str(t.get('LastExecutionResult')) + t['State'] for t in json.load(sys.stdin) if t['Key'] == 'RefreshLibrary'][0]"; }
+UNSCANNED=$(scanned)
+SHELF=$(targets "{\"Kind\":\"Collection\",\"Name\":\" Inventory Shelf 10 \",\"Ids\":[\"$BLUE\",\"$SERIES_ID\",\"$TRACK\",\"$PHOTO\"]}")
+SHELF_ID=$(printf '%s\n' "$SHELF" | field "json.load(sys.stdin)['Id']")
+i=0
+until { [ "$(scanned)" != "$UNSCANNED" ] && scanned | grep -q 'Idle$'; } || [ "$i" -gt 60 ]; do
+    i=$((i + 1))
+    sleep 1
+done
+check "a new collection takes the film and the series picked, under the name typed, and skips a track and a photo" \
+    "$(printf '%s\n' "$SHELF" | outcome)" "Inventory Shelf 10/2/2"
+check "and the table names it on the next call" "$(listed Movie 'Blue Harbour (2021)' collections)" "Inventory Shelf 10"
+check "a series in a collection names it, and its episodes, which are not in it themselves, do not" \
+    "$(listed Series 'Harbour Lights' collections)/$(api 'Inventory/Items?mediaType=Series&level=Episode&columnLevel=MusicVideo' \
+        | named 'Harbour Lights S01E01' collections)" "Inventory Shelf 10/None"
+check "and jellyfin holds both in it" \
+    "$(api "Items?parentId=$SHELF_ID&userId=$USER_ID" | field "json.load(sys.stdin)['TotalRecordCount']")" "2"
+check "adding to a collection counts only what it did not hold yet" \
+    "$(targets "{\"Kind\":\"Collection\",\"Id\":\"$SHELF_ID\",\"Ids\":[\"$BLUE\",\"$SIGNAL\"]}" | outcome)" "Inventory Shelf 10/1/0"
+check "every row a filtered listing matches goes in, less the rows left out" \
+    "$(targets "$(python3 -c "
+import json, sys
+print(json.dumps({'Kind': 'Collection', 'Name': 'Inventory Shelf 9', 'All': {
+    'MediaType': 'Movie', 'Filters': json.dumps([{'column': 'collections', 'op': 'contains', 'value': 'shelf 10'}]),
+    'Except': [sys.argv[1]]}}))" "$SIGNAL")" | outcome)" "Inventory Shelf 9/1/0"
+check "a film in two collections names both, in the order their numbers go" \
+    "$(listed Movie 'Blue Harbour (2021)' collections)" "Inventory Shelf 9, Inventory Shelf 10"
+check "a new collection named like one there is goes into that one" \
+    "$(targets "{\"Kind\":\"Collection\",\"Name\":\"inventory shelf 10\",\"Ids\":[\"$DOUBLE\"]}" \
+        | field "(lambda d: '%s/%s' % (d['Id'] == '$SHELF_ID', d['Count']))(json.load(sys.stdin))")/$(listed Movie 'Double Cut (2022)' collections)" \
+    "True/1/Inventory Shelf 10"
+check "a collection is found among the others a film is in" \
+    "$(api "Inventory/Items?mediaType=Movie&filters=$(filtered '[{"column":"collections","op":"eq","value":"inventory shelf 9"}]')" | names)" \
+    "Blue Harbour (2021)"
+check "the collections are offered by name, in the order their numbers go" \
+    "$(api 'Inventory/Targets' | field "','.join(c['Name'] for c in json.load(sys.stdin)['Collections'])")" "Inventory Shelf 9,Inventory Shelf 10"
+check "taking items out of a collection counts those it held, and skips a photo" \
+    "$(targets "{\"Kind\":\"Collection\",\"Remove\":true,\"Id\":\"$SHELF_ID\",\"Ids\":[\"$BLUE\",\"$DOUBLE\",\"$TWO_CUTS\",\"$PHOTO\"]}" | outcome)" \
+    "Inventory Shelf 10/2/1"
+check "and the table drops its name" "$(listed Movie 'Blue Harbour (2021)' collections)" "Inventory Shelf 9"
+
+MIX=$(targets "{\"Kind\":\"Playlist\",\"Name\":\"Inventory Mix\",\"Ids\":[\"$SERIES_ID\",\"$SIGNAL\",\"$BOOK\",\"$PHOTO\"]}")
+MIX_ID=$(printf '%s\n' "$MIX" | field "json.load(sys.stdin)['Id']")
+check "a new playlist takes the episodes of a series and a film, and skips a book and a photo" \
+    "$(printf '%s\n' "$MIX" | outcome)" "Inventory Mix/4/2"
+check "and the table names it on the film, the series, its season and an episode" \
+    "$(listed Movie 'Night Signal (2023)' playlists)/$(listed Series 'Harbour Lights' playlists)/$(api 'Inventory/Items?mediaType=Series&level=Season&columnLevel=MusicVideo' \
+        | field "[r['Values']['playlists'] for r in json.load(sys.stdin)['Rows'] if r['Values']['series']=='Harbour Lights'][0]")/$(api 'Inventory/Items?mediaType=Series&level=Episode&columnLevel=MusicVideo' \
+        | named 'Harbour Lights S01E02' playlists)" "Inventory Mix/Inventory Mix/Inventory Mix/Inventory Mix"
+check "adding the series again adds only the episode beside it that the playlist did not hold" \
+    "$(targets "{\"Kind\":\"Playlist\",\"Id\":\"$MIX_ID\",\"Ids\":[\"$SERIES_ID\",\"$LONG_FIRST\"]}" | outcome)" "Inventory Mix/1/0"
+check "which leaves every episode in it once" \
+    "$(api "Playlists/$MIX_ID/Items?userId=$USER_ID" | field "(lambda ids: '%s/%s' % (len(ids), len(set(ids))))([i['Id'] for i in json.load(sys.stdin)['Items']])")" "5/5"
+check "a series with one episode in a playlist names it" "$(listed Series 'Long Run' playlists)" "Inventory Mix"
+check "a listing filtered on the caller's playlists picks the episode none of them holds" \
+    "$(targets "$(python3 -c "
+import json, sys
+print(json.dumps({'Kind': 'Playlist', 'Name': 'Another Mix', 'All': {
+    'MediaType': 'Series', 'Level': 'Episode', 'Filters': json.dumps([{'column': 'playlists', 'op': 'empty'}]),
+    'Except': json.loads(sys.argv[1])}}))" "$PATCHY")" | outcome)" "Another Mix/1/0"
+check "and a series lists every playlist its episodes are in" "$(listed Series 'Long Run' playlists)" "Another Mix, Inventory Mix"
+check "a playlist is found among the others a series is in" \
+    "$(api "Inventory/Items?mediaType=Series&filters=$(filtered '[{"column":"playlists","op":"eq","value":"inventory mix"}]')" | names)" \
+    "Harbour Lights,Long Run"
+check "the caller's playlists are offered by name" \
+    "$(api 'Inventory/Targets' | field "','.join(p['Name'] for p in json.load(sys.stdin)['Playlists'])")" "Another Mix,Inventory Mix"
+held() {
+    curl -s -X POST "$BASE/Inventory/Targets/Held" -H "Authorization: MediaBrowser Token=\"${2:-$TOKEN}\"" -H "$JSON" -d "$1" \
+        | field "(lambda d: '%s/%s' % (','.join(c['Name'] for c in d['Collections']), None if d.get('Playlists') is None else ','.join(p['Name'] for p in d['Playlists'])))(json.load(sys.stdin))"
+}
+check "what holds a pick is the collections it is in and the playlists that hold what it plays" \
+    "$(held "{\"Ids\":[\"$BLUE\",\"$SERIES_ID\"]}")" "Inventory Shelf 9,Inventory Shelf 10/Inventory Mix"
+check "a search that finds a series and its episodes asks for the series" \
+    "$(held '{"All":{"MediaType":"Series","Search":"Long Run"}}')" "/Another Mix,Inventory Mix"
+check "a photo is held by nothing, and an api key hears of no playlist" \
+    "$(held "{\"Ids\":[\"$PHOTO\"]}")|$(held "{\"Ids\":[\"$BLUE\"]}" "$KEY")" "/|Inventory Shelf 9/None"
+check "asking what holds nothing is refused" \
+    "$(curl -s -o /dev/null -w '%{http_code}' -X POST "$BASE/Inventory/Targets/Held" \
+        -H "Authorization: MediaBrowser Token=\"$TOKEN\"" -H "$JSON" -d '{"Ids":[]}')" "400"
+check "taking a series out of a playlist takes out each of its episodes" \
+    "$(targets "{\"Kind\":\"Playlist\",\"Remove\":true,\"Id\":\"$MIX_ID\",\"Ids\":[\"$SERIES_ID\"]}" | outcome)" "Inventory Mix/3/0"
+check "and the series names it no longer" "$(listed Series 'Harbour Lights' playlists)" "None"
+
+for bad in "{\"Kind\":\"Shelf\",\"Name\":\"Odd\",\"Ids\":[\"$BLUE\"]}" \
+    "{\"Kind\":\"Collection\",\"Id\":\"$SHELF_ID\",\"Name\":\"Both\",\"Ids\":[\"$BLUE\"]}" \
+    "{\"Kind\":\"Collection\",\"Ids\":[\"$BLUE\"]}" \
+    "{\"Kind\":\"Collection\",\"Remove\":true,\"Name\":\"Gone\",\"Ids\":[\"$BLUE\"]}" \
+    "{\"Kind\":\"Collection\",\"Name\":\"   \",\"Ids\":[\"$BLUE\"]}" \
+    "{\"Kind\":\"Collection\",\"Name\":\"Empty\",\"Ids\":[]}" \
+    "{\"Kind\":\"Collection\",\"Name\":\"Empty\",\"All\":{\"MediaType\":\"Movie\",\"Search\":\"matches nothing\"}}" \
+    "{\"Kind\":\"Collection\",\"Name\":\"Lost\",\"All\":{\"MediaType\":\"Nonsense\"}}" \
+    "{\"Kind\":\"Collection\",\"Name\":\"Lost\",\"All\":{\"MediaType\":\"Movie\",\"Filters\":\"not json\"}}" \
+    "{\"Kind\":\"Playlist\",\"Id\":\"$MIX_ID\",\"Ids\":[\"not-an-id\"]}"; do
+    check "a request that cannot be carried out is refused: $bad" \
+        "$(curl -s -o /dev/null -w '%{http_code}' -X POST "$BASE/Inventory/Targets" \
+            -H "Authorization: MediaBrowser Token=\"$TOKEN\"" -H "$JSON" -d "$bad")" "400"
+done
+check "and so is a playlist for an api key, which is nobody's, or one another user owns" \
+    "$(curl -s -o /dev/null -w '%{http_code}' -X POST "$BASE/Inventory/Targets" -H "Authorization: MediaBrowser Token=\"$KEY\"" -H "$JSON" \
+        -d "{\"Kind\":\"Playlist\",\"Name\":\"Keyed\",\"Ids\":[\"$BLUE\"]}")/$(curl -s -o /dev/null -w '%{http_code}' -X POST "$BASE/Inventory/Targets" \
+        -H "Authorization: MediaBrowser Token=\"$SECOND_TOKEN\"" -H "$JSON" -d "{\"Kind\":\"Playlist\",\"Id\":\"$MIX_ID\",\"Ids\":[\"$BLUE\"]}")" "400/400"
+check "a target that does not exist is not found, nor is a playlist named as a collection" \
+    "$(curl -s -o /dev/null -w '%{http_code}' -X POST "$BASE/Inventory/Targets" -H "Authorization: MediaBrowser Token=\"$TOKEN\"" -H "$JSON" \
+        -d "{\"Kind\":\"Collection\",\"Id\":\"0123456789abcdef0123456789abcdef\",\"Ids\":[\"$BLUE\"]}")/$(curl -s -o /dev/null -w '%{http_code}' -X POST "$BASE/Inventory/Targets" \
+        -H "Authorization: MediaBrowser Token=\"$TOKEN\"" -H "$JSON" -d "{\"Kind\":\"Collection\",\"Id\":\"$MIX_ID\",\"Ids\":[\"$BLUE\"]}")" "404/404"
+check "an api key is offered every collection and no playlist, refused requests having created nothing" \
+    "$(curl -sf "$BASE/Inventory/Targets" -H "Authorization: MediaBrowser Token=\"$KEY\"" \
+        | field "(lambda d: '%s/%s' % (len(d['Collections']), d.get('Playlists')))(json.load(sys.stdin))")" "2/None"
+check "nor reads a playlist on a row" \
+    "$(curl -sf "$BASE/Inventory/Items?mediaType=Movie&columnLevel=MusicVideo" -H "Authorization: MediaBrowser Token=\"$KEY\"" \
+        | named 'Night Signal (2023)' playlists)" "None"
+check "another administrator is not offered a playlist that is not his, nor sees it on a row" \
+    "$(curl -sf "$BASE/Inventory/Targets" -H "Authorization: MediaBrowser Token=\"$SECOND_TOKEN\"" | field "json.load(sys.stdin)['Playlists']")/$(curl -sf \
+        "$BASE/Inventory/Items?mediaType=Movie&columnLevel=MusicVideo" -H "Authorization: MediaBrowser Token=\"$SECOND_TOKEN\"" \
+        | named 'Night Signal (2023)' playlists)" "[]/None"
+shared() {
+    curl -sf -X POST "$BASE/Playlists" -H "Authorization: MediaBrowser Token=\"$SECOND_TOKEN\"" -H "$JSON" \
+        -d "{\"Name\":\"$1\",\"Ids\":[\"$BLUE\"],\"UserId\":\"$SECOND_ID\",\"IsPublic\":$2,\"Users\":$3}" | field "json.load(sys.stdin)['Id']"
+}
+READ_ONLY=$(shared 'Shared Read' false "[{\"UserId\":\"$USER_ID\",\"CanEdit\":false}]")
+EDITABLE=$(shared 'Shared Edit' false "[{\"UserId\":\"$USER_ID\",\"CanEdit\":true}]")
+OPEN=$(shared 'Open Mix' true '[]')
+check "of another user's playlists only the one shared for editing is offered and named on a row, not one shared to read or open to all" \
+    "$(api 'Inventory/Targets' | field "','.join(p['Name'] for p in json.load(sys.stdin)['Playlists'])")|$(listed Movie 'Blue Harbour (2021)' playlists)" \
+    "Another Mix,Inventory Mix,Shared Edit|Shared Edit"
+check "and only that one takes items" \
+    "$(for shared in "$READ_ONLY" "$OPEN" "$EDITABLE"; do curl -s -o /dev/null -w '%{http_code} ' -X POST "$BASE/Inventory/Targets" \
+        -H "Authorization: MediaBrowser Token=\"$TOKEN\"" -H "$JSON" -d "{\"Kind\":\"Playlist\",\"Id\":\"$shared\",\"Ids\":[\"$SIGNAL\"]}"; done)" "400 400 200 "
+check "an item that does not exist counts as skipped for a playlist too" \
+    "$(targets "{\"Kind\":\"Playlist\",\"Id\":\"$MIX_ID\",\"Ids\":[\"0123456789abcdef0123456789abcdef\",\"$BLUE\"]}" | outcome)" "Inventory Mix/1/1"
+HARBOUR_FIRST=$(printf '%s\n' "$ALL_EPISODES" | identify 'Harbour Lights S01E01')
+check "a series picked with one of its episodes adds that episode once" \
+    "$(targets "{\"Kind\":\"Playlist\",\"Name\":\"Inventory Twice\",\"Ids\":[\"$SERIES_ID\",\"$HARBOUR_FIRST\"]}" | outcome)" "Inventory Twice/3/0"
+check "items picked by hand go in beside a whole listing" \
+    "$(targets "{\"Kind\":\"Collection\",\"Name\":\"Inventory Pile\",\"Ids\":[\"$BLUE\"],\"All\":{\"MediaType\":\"Series\",\"Search\":\"Patchy\"}}" | outcome)" \
+    "Inventory Pile/2/0"
+
+LONG_RUN=$(api 'Inventory/Items?mediaType=Series' | identify 'Long Run')
+check "a series left out of a search that also finds its seasons leaves the seasons in" \
+    "$(targets "{\"Kind\":\"Collection\",\"Name\":\"Inventory Seasons\",\"All\":{\"MediaType\":\"Series\",\"Search\":\"Long Run\",\"Except\":[\"$LONG_RUN\"]}}" | outcome)|$(api 'Inventory/Items?mediaType=Series&level=Season&columnLevel=MusicVideo' \
+        | field "','.join(str(r['Values'].get('collections')) for r in json.load(sys.stdin)['Rows'] if r['Values']['series']=='Long Run')")" \
+    "Inventory Seasons/2/0|Inventory Seasons,Inventory Seasons"
+check "and what holds that selection is what holds the seasons" \
+    "$(held "{\"All\":{\"MediaType\":\"Series\",\"Search\":\"Long Run\",\"Except\":[\"$LONG_RUN\"]}}")" "Inventory Seasons/Another Mix,Inventory Mix"
+check "an episode left out does not come back in through its series, nor count toward what holds it" \
+    "$(targets "{\"Kind\":\"Playlist\",\"Name\":\"Inventory Run\",\"All\":{\"MediaType\":\"Series\",\"Search\":\"Long Run\",\"Except\":[\"$LONG_FIRST\"]}}" | outcome)|$(held \
+        "{\"All\":{\"MediaType\":\"Series\",\"Search\":\"Long Run\",\"Except\":[\"$LONG_FIRST\"]}}")" "Inventory Run/1/0|/Another Mix,Inventory Run"
+
+AC=$(targets "{\"Kind\":\"Collection\",\"Name\":\"AC/DC\",\"Ids\":[\"$BLUE\"]}" | field "json.load(sys.stdin)['Id']")
+check "a new collection whose name makes the folder of one there is goes into that one" \
+    "$(targets "{\"Kind\":\"Collection\",\"Name\":\"AC:DC\",\"Ids\":[\"$DOUBLE\"]}" | outcome)|$(api "Items?parentId=$AC&userId=$USER_ID" | field "json.load(sys.stdin)['TotalRecordCount']")" \
+    "AC/DC/1/0|2"
+edit "$AC" '{"Name": "Highway"}'
+check "and so does one named like a collection was before it was renamed" \
+    "$(targets "{\"Kind\":\"Collection\",\"Name\":\"AC DC\",\"Ids\":[\"$SIGNAL\"]}" | outcome)|$(api "Items?parentId=$AC&userId=$USER_ID" | field "json.load(sys.stdin)['TotalRecordCount']")" \
+    "Highway/1/0|3"
+LONG_NAME=$(python3 -c "print('ä' * 130)")
+check "a name too long for a folder is refused, for a collection and for a playlist" \
+    "$(for kind in Collection Playlist; do curl -s -o /dev/null -w '%{http_code} ' -X POST "$BASE/Inventory/Targets" \
+        -H "Authorization: MediaBrowser Token=\"$TOKEN\"" -H "$JSON" -d "{\"Kind\":\"$kind\",\"Name\":\"$LONG_NAME\",\"Ids\":[\"$BLUE\"]}"; done)" "400 400 "
+
+RACE=$(targets "{\"Kind\":\"Playlist\",\"Name\":\"Inventory Race\",\"Ids\":[\"$BLUE\"]}" | field "json.load(sys.stdin)['Id']")
+RACK=$(targets "{\"Kind\":\"Collection\",\"Name\":\"Inventory Rack\",\"Ids\":[\"$BLUE\"]}" | field "json.load(sys.stdin)['Id']")
+for item in "$SERIES_ID" "$LONG_RUN" "$SIGNAL" "$DOUBLE" "$TWO_CUTS"; do
+    targets "{\"Kind\":\"Playlist\",\"Id\":\"$RACE\",\"Ids\":[\"$SERIES_ID\",\"$LONG_RUN\"]}" >/dev/null &
+    targets "{\"Kind\":\"Collection\",\"Id\":\"$RACK\",\"Ids\":[\"$item\"]}" >/dev/null &
+done
+wait
+check "requests that arrive together add each entry once and lose none" \
+    "$(api "Playlists/$RACE/Items?userId=$USER_ID" | field "(lambda ids: '%s/%s' % (len(ids), len(set(ids))))([i['Id'] for i in json.load(sys.stdin)['Items']])")|$(api \
+        "Items?parentId=$RACK&userId=$USER_ID" | field "json.load(sys.stdin)['TotalRecordCount']")" "6/6|6"
 curl -sf -X POST "$BASE/Inventory/Columns?level=Series" \
     -H "Authorization: MediaBrowser Token=\"$TOKEN\"" -H "$JSON" \
     -d '["name","playCount","everyonePlayCount","everyonePlayed"]' >/dev/null || refused "Inventory/Columns?level=Series"
@@ -1703,15 +1914,15 @@ curl -sf -X POST "$BASE/Users/New" -H "Authorization: MediaBrowser Token=\"$TOKE
     -d '{"Name":"viewer","Password":"viewertest"}' >/dev/null || refused "Users/New"
 VIEWER=$(curl -sf -X POST "$BASE/Users/AuthenticateByName" -H "$JSON" -H "$CLIENT" \
     -d '{"Username":"viewer","Pw":"viewertest"}' | field "json.load(sys.stdin)['AccessToken']")
-# One [Authorize] on the class covers all six routes, so a lost attribute shows on one of them.
-for guarded in "Schema" "Items?mediaType=Movie" "Export?mediaType=Movie&format=csv"; do
+# One [Authorize] on the class covers all nine routes, so a lost attribute shows on one of them.
+for guarded in "Schema" "Items?mediaType=Movie" "Export?mediaType=Movie&format=csv" "Targets"; do
     check "reading ${guarded%%\?*} needs a token" \
         "$(curl -s -o /dev/null -w '%{http_code}' "$BASE/Inventory/$guarded")" "401"
     check "reading ${guarded%%\?*} needs an administrator" \
         "$(curl -s -o /dev/null -w '%{http_code}' "$BASE/Inventory/$guarded" \
             -H "Authorization: MediaBrowser Token=\"$VIEWER\"")" "403"
 done
-for guarded in "Columns?level=Movie" "PageSize?size=50" "Expand?mediaType=Series&level=Season"; do
+for guarded in "Columns?level=Movie" "PageSize?size=50" "Expand?mediaType=Series&level=Season" "Targets" "Targets/Held"; do
     check "posting ${guarded%%\?*} needs a token" \
         "$(curl -s -o /dev/null -w '%{http_code}' -X POST "$BASE/Inventory/$guarded" \
             -H "$JSON" -d '["name"]')" "401"
@@ -1864,8 +2075,10 @@ check "and one taken away leaves it again" \
 
 mkdir -p "$WORK/media/copies/Night Signal (2023)"
 cp "$WORK/media/movies/Night Signal (2023)/Night Signal (2023).mkv" "$WORK/media/copies/Night Signal (2023)/Night Signal (2023) - 4K.mkv"
-curl -sf --max-time 600 -X POST "$BASE/Library/VirtualFolders?name=Copies&collectionType=movies&paths=/media/copies&refreshLibrary=true" \
+settled
+curl -sf --max-time 600 -X POST "$BASE/Library/VirtualFolders?name=Copies&collectionType=movies&paths=/media/copies&refreshLibrary=false" \
     -H "Authorization: MediaBrowser Token=\"$TOKEN\"" -H "$JSON" -d "$OFFLINE" >/dev/null || refused "Library/VirtualFolders?name=Copies"
+curl -sf -X POST "$BASE/Library/Refresh" -H "Authorization: MediaBrowser Token=\"$TOKEN\"" >/dev/null || refused "Library/Refresh"
 i=0
 until [ "$(api 'Inventory/Items?mediaType=Movie&search=Night%20Signal' | field "json.load(sys.stdin)['TotalCount']")" = "2" ] || [ "$i" -gt 40 ]; do
     i=$((i + 1))

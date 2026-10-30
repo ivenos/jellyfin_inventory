@@ -4,6 +4,15 @@ All notable changes to this project are documented in this file, in the format o
 
 ## [Unreleased]
 
+### Added
+
+- Pick rows and add them to a collection or playlist, or take them out again (#13).
+- Collections and Playlists columns.
+
+### Changed
+
+- The buttons above and below the table are small icons, and CSV and ODS share one export button.
+
 ## [1.2.0] - 2026-10-25
 
 ### Added
