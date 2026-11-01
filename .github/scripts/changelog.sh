@@ -20,6 +20,7 @@ rewrite() {
 
 dependency() {
     [ -n "$1" ] && [ -n "$2" ] && [ -n "$3" ] || die "a dependency needs a name, the old and the new version"
+    [ ! -f "$FILE" ] || grep -q '^## \[[0-9]' "$FILE" || return 0
     export NAME="$1" FROM="$2" TO="$3"
     rewrite '
         { line[NR] = $0 }

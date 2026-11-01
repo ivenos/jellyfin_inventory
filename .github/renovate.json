@@ -4,6 +4,7 @@
   "ignorePaths": [],
   "dependencyDashboard": false,
   "labels": ["dependencies"],
+  "commitMessageAction": "update",
   "minimumReleaseAge": "3 days",
   "minimumReleaseAgeBehaviour": "timestamp-optional",
   "platformAutomerge": false,

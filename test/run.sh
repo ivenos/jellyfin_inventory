@@ -242,7 +242,7 @@ RECIPE=$(cat <<'FIXTURES'
             -f lavfi -i sine=frequency=500:duration=6 \
             -c:v libx264 -preset ultrafast -crf 40 -pix_fmt yuv420p -c:a aac -ac 2 \
             "/media/shows/Patchy (2021)/Season 01/Patchy S01E05.mkv"
-        dd if=/dev/urandom of="/media/shows/Patchy (2021)/Season 01/Patchy S01E06.mkv" \
+        dd if=/dev/zero of="/media/shows/Patchy (2021)/Season 01/Patchy S01E06.mkv" \
             bs=1024 count=2048 status=none
         # A name a spreadsheet has to be protected from, a CSV has to quote and an XML has to escape.
         # Cropped to scope, which leaves a 1080p film shorter than 1080 lines.
@@ -1557,6 +1557,13 @@ until { [ "$(scanned)" != "$UNSCANNED" ] && scanned | grep -q 'Idle$'; } || [ "$
     i=$((i + 1))
     sleep 1
 done
+api 'Library/VirtualFolders' > "$WORK/libraries.json"
+curl -sf -X POST "$BASE/Library/VirtualFolders/LibraryOptions" -H "Authorization: MediaBrowser Token=\"$TOKEN\"" -H "$JSON" \
+    -d "$(OFFLINE="$OFFLINE" python3 -c "
+import json, os, sys
+library = [f for f in json.load(open(sys.argv[1])) if f['CollectionType'] == 'boxsets'][0]
+print(json.dumps({'Id': library['ItemId'], 'LibraryOptions': library['LibraryOptions'] | json.loads(os.environ['OFFLINE'])['LibraryOptions']}))" "$WORK/libraries.json")" \
+    >/dev/null || refused "Library/VirtualFolders/LibraryOptions"
 check "a new collection takes the film and the series picked, under the name typed, and skips a track and a photo" \
     "$(printf '%s\n' "$SHELF" | outcome)" "Inventory Shelf 10/2/2"
 check "and the table names it on the next call" "$(listed Movie 'Blue Harbour (2021)' collections)" "Inventory Shelf 10"
@@ -1700,7 +1707,8 @@ AC=$(targets "{\"Kind\":\"Collection\",\"Name\":\"AC/DC\",\"Ids\":[\"$BLUE\"]}" 
 check "a new collection whose name makes the folder of one there is goes into that one" \
     "$(targets "{\"Kind\":\"Collection\",\"Name\":\"AC:DC\",\"Ids\":[\"$DOUBLE\"]}" | outcome)|$(api "Items?parentId=$AC&userId=$USER_ID" | field "json.load(sys.stdin)['TotalRecordCount']")" \
     "AC/DC/1/0|2"
-edit "$AC" '{"Name": "Highway"}'
+# Locked, or the refresh Jellyfin queued for the add above can write the old name back over it.
+edit "$AC" '{"Name": "Highway", "LockedFields": ["Name"]}'
 check "and so does one named like a collection was before it was renamed" \
     "$(targets "{\"Kind\":\"Collection\",\"Name\":\"AC DC\",\"Ids\":[\"$SIGNAL\"]}" | outcome)|$(api "Items?parentId=$AC&userId=$USER_ID" | field "json.load(sys.stdin)['TotalRecordCount']")" \
     "Highway/1/0|3"
