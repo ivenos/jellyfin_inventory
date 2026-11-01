@@ -9,6 +9,14 @@
     "imageUrl": "https://raw.githubusercontent.com/ivenos/jellyfin_inventory/main/.github/assets/thumb.png",
     "versions": [
       {
+        "version": "1.3.0.0",
+        "changelog": "## ✨ Added\r\n\r\n- Pick rows and add them to a collection or playlist, or take them out again (#13).\r\n- Collections and Playlists columns.\r\n\r\n## 🔄 Changed\r\n\r\n- The buttons above and below the table are small icons, and CSV and ODS share one export button.\r\n\r\n**Full changelog:** [v1.2.0...v1.3.0](https://github.com/ivenos/jellyfin_inventory/compare/v1.2.0...v1.3.0)\r\n",
+        "targetAbi": "12.0.0.0",
+        "sourceUrl": "https://github.com/ivenos/jellyfin_inventory/releases/download/v1.3.0/inventory_1.3.0.0.zip",
+        "checksum": "d0539120a42a99bd39d9af1fc9f992bc",
+        "timestamp": "2026-11-01T13:58:48Z"
+      },
+      {
         "version": "1.2.0.0",
         "changelog": "## ✨ Added\n\n- A Genres column (#12).\n- Artists, Authors and Narrators columns, with the artists shown for albums and tracks by default.\n- An audiobook kept in several files is one row that opens to its files.\n- Search also finds artists, authors and narrators.\n\n## 🔄 Changed\n\n- Filtering genres, people or languages with = or ≠ checks each value on its own.\n\n## 🐛 Fixed\n\n- An mp4, m4v, mov or webm file showed a list of formats as its container.\n- Names and other text sorted 10 ahead of 2.\n- An audio .strm file took its size per hour from the size of the text file.\n- A frame rate typed as 23.976 found nothing in languages with a decimal comma.\n- A filter read a value such as 0,125 as 125.\n- Right-to-left languages showed sizes, runtimes and paths in the wrong order.\n- Clicking a column header while a tab loaded sorted it by a hidden column.\n- After a first load that failed, buttons could be clicked but did nothing.\n- Search and filters missed names with accents the way macOS stores them.\n- The page title sat lower than on Jellyfin's own dashboard pages.\n- In a narrow window the buttons wrapped one by one instead of together.\n\n**Full changelog:** [v1.1.0...v1.2.0](https://github.com/ivenos/jellyfin_inventory/compare/v1.1.0...v1.2.0)\n",
         "targetAbi": "12.0.0.0",
