@@ -59,35 +59,35 @@ public class InventoryRow
     public int? Year { get; set; }
 
     /// <summary>
-    /// Gets or sets the genres, comma separated.
+    /// Gets or sets the genres.
     /// </summary>
-    public string? Genres { get; set; }
+    public IReadOnlyList<string>? Genres { get; set; }
 
     /// <summary>
-    /// Gets or sets the names of the collections the item itself is in, comma separated.
+    /// Gets or sets the names of the collections the item itself is in.
     /// </summary>
-    public string? Collections { get; set; }
+    public IReadOnlyList<string>? Collections { get; set; }
 
     /// <summary>
     /// Gets or sets the names of the playlists of the user asking that hold the item, or for a folder
-    /// the items below it, comma separated.
+    /// the items below it.
     /// </summary>
-    public string? Playlists { get; set; }
+    public IReadOnlyList<string>? Playlists { get; set; }
 
     /// <summary>
-    /// Gets or sets the artists of a track or a music video, or the album artists of an album, comma separated.
+    /// Gets or sets the artists of a track or a music video, or the album artists of an album.
     /// </summary>
-    public string? Artists { get; set; }
+    public IReadOnlyList<string>? Artists { get; set; }
 
     /// <summary>
-    /// Gets or sets the authors of a book, comma separated.
+    /// Gets or sets the authors of a book.
     /// </summary>
-    public string? Authors { get; set; }
+    public IReadOnlyList<string>? Authors { get; set; }
 
     /// <summary>
-    /// Gets or sets the narrators of an audiobook, comma separated.
+    /// Gets or sets the narrators of an audiobook.
     /// </summary>
-    public string? Narrators { get; set; }
+    public IReadOnlyList<string>? Narrators { get; set; }
 
     /// <summary>
     /// Gets or sets the album an audiobook file names, which its book is called after.
@@ -220,9 +220,9 @@ public class InventoryRow
     public int? AudioTracks { get; set; }
 
     /// <summary>
-    /// Gets or sets the audio languages, comma separated.
+    /// Gets or sets the audio languages.
     /// </summary>
-    public string? AudioLanguages { get; set; }
+    public IReadOnlyList<string>? AudioLanguages { get; set; }
 
     /// <summary>
     /// Gets or sets the number of subtitle tracks.
@@ -230,9 +230,9 @@ public class InventoryRow
     public int? SubtitleTracks { get; set; }
 
     /// <summary>
-    /// Gets or sets the subtitle languages, comma separated.
+    /// Gets or sets the subtitle languages.
     /// </summary>
-    public string? SubtitleLanguages { get; set; }
+    public IReadOnlyList<string>? SubtitleLanguages { get; set; }
 
     /// <summary>
     /// Gets or sets the number of items below, which for a series is its episodes and not its seasons.

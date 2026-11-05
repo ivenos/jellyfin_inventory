@@ -2,9 +2,9 @@
 """Sets a fresh Jellyfin up around the sample library: the first user, the libraries, and once
 they are scanned the genres, artists, authors and narrators, which Jellyfin reads from the files
 alone, the year of the audiobooks, which it reads from no tag of a file over 2 GiB, the people
-who watched them, and a few collections and playlists. The collections are filled only once the
-scan Jellyfin starts for the first one is through, which in 12.0 empties a collection filled
-before it ends. Prints the administrator's token."""
+who watched them, and a few collections and playlists. The collections get an offline library of
+their own up front, or Jellyfin makes one that looks them up online and scans for the first.
+Prints the administrator's token."""
 import json
 import pathlib
 import sys
@@ -16,7 +16,7 @@ from concurrent.futures import ThreadPoolExecutor
 base, out = sys.argv[1], pathlib.Path(sys.argv[2])
 PASSWORD = "inventoryshots"
 LIBRARIES = {"Movies": "movies", "Shows": "tvshows", "Music": "music", "Audiobooks": "books", "Books": "books", "Photos": "homevideos"}
-KINDS = ("Movie", "Series", "Season", "Episode", "MusicArtist", "MusicAlbum", "Audio", "AudioBook", "Book", "Photo", "PhotoAlbum")
+KINDS = ("Movie", "Series", "Season", "Episode", "MusicArtist", "MusicAlbum", "Audio", "AudioBook", "Book", "Photo", "PhotoAlbum", "BoxSet")
 COLLECTIONS = {
     "Best Picture Winners": ["Casablanca", "The Godfather", "The Godfather Part II", "Rocky", "Amadeus", "The Silence of the Lambs",
                              "Schindler's List", "Braveheart", "Titanic", "Gladiator", "The Departed", "Slumdog Millionaire",
@@ -83,6 +83,9 @@ options = {"LibraryOptions": {"EnableChapterImageExtraction": False, "TypeOption
     for kind in KINDS]}}
 for name, kind in LIBRARIES.items():
     call("Library/VirtualFolders", options, name=name, collectionType=kind, paths="/media/" + name.lower(), refreshLibrary="false")
+(out / "config/data/collections").mkdir(parents=True, exist_ok=True)
+call("Library/VirtualFolders", {"LibraryOptions": options["LibraryOptions"] | {"EnableRealtimeMonitor": False, "SaveLocalMetadata": True}},
+     name="Collections", collectionType="boxsets", paths="/config/data/collections", refreshLibrary="false")
 call("Library/Refresh", {})
 
 files = sum(1 for path in (out / "media").rglob("*") if path.is_file() and path.suffix != ".nfo")
@@ -131,19 +134,9 @@ for name, watched in json.loads((out / "plays.json").read_text()).items():
         call(f"UserItems/{ids[path]}/UserData", {"Played": True, **seen}, userId=users[name])
 
 
-def scan():
-    return next((task.get("LastExecutionResult"), task["State"]) for task in call("ScheduledTasks") if task["Key"] == "RefreshLibrary")
-
-
 named = {item["Name"]: item["Id"] for item in call("Items", Recursive="true", IncludeItemTypes="Movie,Series,Episode,MusicAlbum")["Items"]}
-before = scan()
-collections = {name: call("Collections", {}, name=name)["Id"] for name in COLLECTIONS}
-for attempt in range(60):
-    if (state := scan()) != before and state[1] == "Idle":
-        break
-    time.sleep(2)
 for name, titles in COLLECTIONS.items():
-    call(f"Collections/{collections[name]}/Items", {}, ids=",".join(named[title] for title in titles))
+    call("Collections", {}, name=name, ids=",".join(named[title] for title in titles))
 for name, titles in PLAYLISTS.items():
     call("Playlists", {"Name": name, "Ids": [named[title] for title in titles], "UserId": users["admin"]})
 

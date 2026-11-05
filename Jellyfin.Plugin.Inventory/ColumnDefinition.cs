@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 
 namespace Jellyfin.Plugin.Inventory;
 
@@ -12,7 +13,7 @@ namespace Jellyfin.Plugin.Inventory;
 /// <param name="Value">Reads the value out of a row.</param>
 /// <param name="Sort">Reads what the column is ordered by, where that is not the value shown.</param>
 /// <param name="Source">Where the value comes from.</param>
-/// <param name="List">Whether the value lists several, comma separated.</param>
+/// <param name="Names">Reads the values one by one, where the value lists several.</param>
 public sealed record ColumnDefinition(
     string Key,
     string Group,
@@ -20,4 +21,10 @@ public sealed record ColumnDefinition(
     Func<InventoryRow, object?> Value,
     Func<InventoryRow, object?>? Sort = null,
     ColumnSource Source = ColumnSource.Item,
-    bool List = false);
+    Func<InventoryRow, IReadOnlyList<string>?>? Names = null)
+{
+    /// <summary>
+    /// Gets a value indicating whether the value lists several, comma separated.
+    /// </summary>
+    public bool List => Names is not null;
+}

@@ -338,6 +338,8 @@ public sealed partial class InventoryService : IDisposable
     private static bool Holds(string? text, string search)
         => text is not null && RowFilter.Composed(text).Contains(search, StringComparison.OrdinalIgnoreCase);
 
+    private static bool Holds(IReadOnlyList<string>? names, string search) => names?.Any(name => Holds(name, search)) == true;
+
     private static bool Meets(InventoryRow row, IReadOnlyList<RowFilter> filters) => filters.All(f => f.Matches(row));
 
     private static IComparable? SortKey(object? value) => value switch
@@ -1059,15 +1061,15 @@ public sealed partial class InventoryService : IDisposable
             .Where(link => link.ItemId.HasValue)
             .ToLookup(link => link.ItemId!.Value, link => link.Name);
 
-    private static string? Listed(IEnumerable<string> names) => Joined(names.Order(_natural));
+    private static string[]? Listed(IEnumerable<string> names) => Joined(names.Order(_natural));
 
-    private static string? Joined(IEnumerable<string> values)
+    private static string[]? Joined(IEnumerable<string> values)
         => values.Where(v => !string.IsNullOrWhiteSpace(v)).Distinct(StringComparer.OrdinalIgnoreCase).ToArray() is { Length: > 0 } all
-            ? string.Join(", ", all)
+            ? all
             : null;
 
     // An audiobook names its authors as artists, and those have a column of their own.
-    private static string? ArtistsOf(BaseItem item) => item switch
+    private static string[]? ArtistsOf(BaseItem item) => item switch
     {
         AudioBook => null,
         MusicAlbum album => Joined(album.AlbumArtists.Count > 0 ? album.AlbumArtists : album.Artists),
@@ -1161,7 +1163,7 @@ public sealed partial class InventoryService : IDisposable
             : streams.Sum(s => (long)(s.BitRate ?? 0)) is var sum && sum > 0 ? sum : null;
     }
 
-    private static string? Join(IEnumerable<string?> values)
+    private static string[]? Join(IEnumerable<string?> values)
     {
         // "und" is the ISO 639-2 code for undetermined, not a German word.
         var distinct = values
@@ -1170,7 +1172,7 @@ public sealed partial class InventoryService : IDisposable
             .Order(StringComparer.OrdinalIgnoreCase)
             .ToArray();
 
-        return distinct.Length > 0 ? string.Join(", ", distinct) : null;
+        return distinct.Length > 0 ? distinct : null;
     }
 
     // A value the children disagree on is left empty and the column noted, so the table can word it
@@ -1202,9 +1204,25 @@ public sealed partial class InventoryService : IDisposable
         Func<InventoryRow, string?> read,
         ISet<string> mixed,
         string column)
+        => Common(children, c => read(c) is { Length: > 0 } value ? value : null, mixed, column, StringComparer.OrdinalIgnoreCase);
+
+    private static IReadOnlyList<string>? Common(
+        IReadOnlyList<InventoryRow> children,
+        Func<InventoryRow, IReadOnlyList<string>?> read,
+        ISet<string> mixed,
+        string column)
+        => Common(children, read, mixed, column, NamesComparer.Instance);
+
+    private static T? Common<T>(
+        IReadOnlyList<InventoryRow> children,
+        Func<InventoryRow, T?> read,
+        ISet<string> mixed,
+        string column,
+        IEqualityComparer<T> comparer)
+        where T : class
     {
-        var values = children.Select(read).Where(v => !string.IsNullOrEmpty(v)).ToArray();
-        var distinct = values.Distinct(StringComparer.OrdinalIgnoreCase).Take(2).ToArray();
+        var values = children.Select(read).OfType<T>().ToArray();
+        var distinct = values.Distinct(comparer).Take(2).ToArray();
         if (distinct.Length == 1 && values.Length == children.Count)
         {
             return distinct[0];
@@ -1221,6 +1239,25 @@ public sealed partial class InventoryService : IDisposable
     private sealed record Cached(int Generation, Lazy<IReadOnlyList<InventoryRow>> Rows);
 
     private sealed record Counted(int Generation, int Count);
+
+    private sealed class NamesComparer : IEqualityComparer<IReadOnlyList<string>>
+    {
+        public static NamesComparer Instance { get; } = new();
+
+        public bool Equals(IReadOnlyList<string>? x, IReadOnlyList<string>? y)
+            => ReferenceEquals(x, y) || (x is not null && y is not null && x.SequenceEqual(y, StringComparer.OrdinalIgnoreCase));
+
+        public int GetHashCode(IReadOnlyList<string> obj)
+        {
+            var hash = default(HashCode);
+            foreach (var name in obj)
+            {
+                hash.Add(name, StringComparer.OrdinalIgnoreCase);
+            }
+
+            return hash.ToHashCode();
+        }
+    }
 
     // Empty cells belong at the end whichever way the column is sorted, so the direction is applied
     // here rather than by OrderByDescending, which would reverse the nulls along with the values.

@@ -21,12 +21,12 @@ public static class Columns
         new("season", "General", ColumnFormat.Plain, r => r.SeasonNumber),
         new("episode", "General", ColumnFormat.Plain, r => r.EpisodeNumber),
         new("year", "General", ColumnFormat.Plain, r => r.Year),
-        new("genres", "General", ColumnFormat.Text, r => r.Genres, List: true),
-        new("collections", "General", ColumnFormat.Text, r => r.Collections, List: true),
-        new("playlists", "General", ColumnFormat.Text, r => r.Playlists, Source: ColumnSource.User, List: true),
-        new("artists", "General", ColumnFormat.Text, r => r.Artists, List: true),
-        new("authors", "General", ColumnFormat.Text, r => r.Authors, List: true),
-        new("narrators", "General", ColumnFormat.Text, r => r.Narrators, List: true),
+        Listing("genres", "General", r => r.Genres),
+        Listing("collections", "General", r => r.Collections),
+        Listing("playlists", "General", r => r.Playlists, ColumnSource.User),
+        Listing("artists", "General", r => r.Artists),
+        Listing("authors", "General", r => r.Authors),
+        Listing("narrators", "General", r => r.Narrators),
         new("library", "General", ColumnFormat.Text, r => r.Library),
         new("children", "General", ColumnFormat.Number, r => r.Children),
         new("container", "General", ColumnFormat.Text, r => r.Container),
@@ -58,10 +58,10 @@ public static class Columns
         new("audioSampleRate", "Audio", ColumnFormat.Number, r => r.AudioSampleRate),
         new("spatialAudio", "Audio", ColumnFormat.Text, r => r.SpatialAudio),
         new("audioTracks", "Audio", ColumnFormat.Number, r => r.AudioTracks),
-        new("audioLanguages", "Audio", ColumnFormat.Text, r => r.AudioLanguages, List: true),
+        Listing("audioLanguages", "Audio", r => r.AudioLanguages),
 
         new("subtitleTracks", "Subtitles", ColumnFormat.Number, r => r.SubtitleTracks),
-        new("subtitleLanguages", "Subtitles", ColumnFormat.Text, r => r.SubtitleLanguages, List: true),
+        Listing("subtitleLanguages", "Subtitles", r => r.SubtitleLanguages),
 
         new("lastPlayed", Playback, ColumnFormat.Date, r => r.LastPlayed, Source: ColumnSource.User),
         new("everyoneLastPlayed", Playback, ColumnFormat.Date, r => r.EveryoneLastPlayed, Source: ColumnSource.Everyone),
@@ -101,4 +101,7 @@ public static class Columns
             ? resolved
             : ColumnDefaults.For(level).Select(Find).OfType<ColumnDefinition>().DistinctBy(c => c.Key).ToArray();
     }
+
+    private static ColumnDefinition Listing(string key, string group, Func<InventoryRow, IReadOnlyList<string>?> names, ColumnSource source = ColumnSource.Item)
+        => new(key, group, ColumnFormat.Text, r => names(r) is { } all ? string.Join(", ", all) : null, Source: source, Names: names);
 }

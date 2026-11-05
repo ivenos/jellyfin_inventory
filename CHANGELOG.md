@@ -4,6 +4,14 @@ All notable changes to this project are documented in this file, in the format o
 
 ## [Unreleased]
 
+### Added
+
+- The page keeps its tab, search, filters and sort order in its address, so a reload or a bookmark brings them back (#15).
+
+### Fixed
+
+- Filtering with = or ≠ missed a genre, artist, collection or other name that has a comma in it.
+
 ## [1.3.0] - 2026-11-01
 
 ### Added

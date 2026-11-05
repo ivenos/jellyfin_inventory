@@ -506,6 +506,77 @@
                 };
             }
 
+            var addressKeys = ['mediaType', 'search', 'filters', 'sortBy', 'descending'];
+            var opened = null;
+            var home = null;
+            var written = null;
+
+            function address() {
+                var hash = location.hash || '#';
+                var at = hash.indexOf('?');
+                return { path: at === -1 ? hash : hash.slice(0, at), query: new URLSearchParams(at === -1 ? '' : hash.slice(at + 1)) };
+            }
+
+            function readAddress() {
+                var query = address().query;
+                // The web client shows a kept view again, and that view holds more than it wrote into the address.
+                if (location.hash === written || !addressKeys.some(function (key) { return query.has(key); })) { return null; }
+                var filters = [];
+                try { filters = JSON.parse(query.get('filters') || '[]'); } catch (e) { }
+                return {
+                    type: query.get('mediaType'),
+                    search: (query.get('search') || '').trim(),
+                    filters: Array.isArray(filters) ? filters : [],
+                    sortBy: query.get('sortBy'),
+                    descending: query.get('descending') === 'true'
+                };
+            }
+
+            function writeAddress(filters) {
+                var parts = address();
+                if (parts.path !== home) { return; }
+                addressKeys.forEach(function (key) { parts.query.delete(key); });
+                [['mediaType', state.type], ['search', state.search], ['filters', filters], ['sortBy', state.sortBy],
+                    ['descending', state.sortBy && state.descending ? 'true' : '']].forEach(function (pair) {
+                    if (pair[1]) { parts.query.set(pair[0], pair[1]); }
+                });
+                var target = parts.path + (String(parts.query) ? '?' + parts.query : '');
+                if (target !== location.hash) {
+                    // Safari throws after a hundred changes to the address in thirty seconds.
+                    try { history.replaceState(history.state, '', target); } catch (e) { }
+                }
+                written = location.hash;
+            }
+
+            function take(restored) {
+                page.querySelector('#invSearch').value = restored.search;
+                state.search = restored.search;
+                state.type = restored.type || state.type;
+                state.filters = restoreFilters(restored.filters);
+                state.sortBy = columnOf(restored.sortBy) ? restored.sortBy : null;
+                state.descending = !!state.sortBy && restored.descending;
+                state.start = 0;
+            }
+
+            function restoreFilters(list) {
+                var comma = (1.5).toLocaleString(culture).indexOf(',') !== -1;
+                return list.map(function (one) {
+                    var column = one && columnOf(one.column);
+                    if (!column || column.Operators.indexOf(one.op) === -1) { return null; }
+                    var value = bare[one.op] || one.value === null || one.value === undefined ? '' : one.value;
+                    if (typeof value === 'object' || (typeof value === 'number' && !isFinite(value))) { return null; }
+                    value = String(value);
+                    if (isNumeric(column.Format) && /^-?\d+(\.\d+)?$/.test(value)) {
+                        var number = Number(value) / scale(column.Format).by;
+                        if (!isFinite(number)) { return null; }
+                        value = String(Number(number.toPrecision(12)));
+                        if (comma) { value = value.replace('.', ','); }
+                    }
+                    var offered = column.Format === 'Boolean' ? ['true', 'false'] : column.Values;
+                    return !bare[one.op] && offered && offered.indexOf(value) === -1 ? null : { column: one.column, op: one.op, value: value };
+                }).filter(Boolean).slice(0, schema.maxFilters);
+            }
+
             // A number column pushes its indentation against the far edge, the same at every depth.
             function tree(column) {
                 return column === firstColumn && anyExpandable;
@@ -1786,6 +1857,7 @@
                     renderExpandBar();
                 }
                 applied = asked.filters;
+                writeAddress(asked.filters);
                 if (picked.all !== null && picked.all !== scope()) { dropPicks(); }
                 showPicks();
                 busy(true);
@@ -1805,6 +1877,13 @@
                     // A library that shrank since the last answer leaves this page behind its end.
                     if (!result.Rows.length && state.start > 0) {
                         state.start = Math.max(0, Math.floor((result.TotalCount - 1) / state.limit) * state.limit);
+                        load();
+                        return;
+                    }
+
+                    if (state.sortBy && !result.Columns.some(function (column) { return column.Key === state.sortBy; })) {
+                        state.sortBy = null;
+                        state.descending = false;
                         load();
                         return;
                     }
@@ -2110,6 +2189,9 @@
                 showing = true;
                 var mine = ++visit;
                 generation++;
+                var restored = readAddress();
+                if (opened === null) { opened = location.hash; }
+                home = address().path;
                 // The box keeps its text while the view sits in the dom.
                 state.search = page.querySelector('#invSearch').value.trim();
                 culture = document.documentElement.getAttribute('lang') || 'en-US';
@@ -2133,6 +2215,7 @@
                     // An unsupported language is served English, so the strings set the plural rule.
                     try { plural = new Intl.PluralRules(result.Culture); }
                     catch (e) { plural = new Intl.PluralRules('en'); }
+                    if (restored) { take(restored); }
                     state.limit = result.PageSize || state.limit;
                     renderPageSizes();
                     page.querySelector('#invGroups').innerHTML = '';
@@ -2148,7 +2231,7 @@
                     if (wanted) {
                         selectType(wanted.MediaType, true);
                     } else if (result.MediaTypes.length) {
-                        selectType(result.MediaTypes[0].MediaType);
+                        selectType(result.MediaTypes[0].MediaType, !!restored);
                     } else {
                         state.type = null;
                         state.levels = [];
@@ -2175,6 +2258,30 @@
                     Dashboard.alert(t('LoadFailed', 'Could not load the inventory.'));
                 });
             });
+
+            // Sent to the address a view was opened at, the web client keeps that view without showing it again.
+            function follow() {
+                if (!showing || location.hash !== opened || location.hash === written || !schema.mediaTypes.length) { return; }
+                var restored = readAddress();
+                if (!restored) {
+                    writeAddress(listing().filters);
+                    return;
+                }
+
+                clearTimeout(searchTimer);
+                clearTimeout(filterTimer);
+                take(restored);
+                renderFilters();
+                var known = schema.mediaTypes.some(function (type) { return type.MediaType === state.type; });
+                selectType(known ? state.type : schema.mediaTypes[0].MediaType, true);
+            }
+
+            // The sidebar moves with pushState, which fires no hashchange; currententrychange does, from inside the call.
+            if (window.navigation) {
+                window.navigation.addEventListener('currententrychange', function () { setTimeout(follow); });
+            } else {
+                window.addEventListener('hashchange', follow);
+            }
 
             // The view stays in the DOM when the user navigates away, so a pending timer or request
             // would otherwise report over whatever page they went to.

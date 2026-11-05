@@ -103,7 +103,7 @@ check "the readme lists exactly the columns there are" \
 import json, pathlib, re
 root = pathlib.Path('$ROOT')
 groups = {}
-for key, group in re.findall(r'new\(\"([^\"]+)\",\s*([A-Za-z]+|\"[A-Za-z]+\")',
+for key, group in re.findall(r'(?:new|Listing)\(\"([^\"]+)\",\s*([A-Za-z]+|\"[A-Za-z]+\")',
                              (root / 'Jellyfin.Plugin.Inventory/Columns.cs').read_text(encoding='utf-8')):
     strings = json.loads((root / 'Jellyfin.Plugin.Inventory/Strings/en.json').read_text(encoding='utf-8'))
     groups.setdefault(strings['group.' + group.strip('\"')], []).append(strings['column.' + key])
@@ -1021,6 +1021,15 @@ check "and one edited without a lock does too, since its folder no longer goes b
 edit "$DISC_BOOK" '{"Genres": [], "LockedFields": ["Genres"]}'
 check "while genres emptied and locked stay empty rather than falling back on its files" \
     "$(api 'Inventory/Items?mediaType=AudioBook&level=Folder' | named 'The Renamed Book' genres)" "None"
+COMMA=$(api 'Inventory/Items?mediaType=Movie' | identify 'Night Signal (2023)')
+edit "$COMMA" '{"Genres": ["Crime, Thriller"], "LockedFields": ["Genres"]}'
+check "a name with a comma in it is one value of a list to = and ≠" \
+    "$(api "Inventory/Items?mediaType=Movie&filters=$(filtered '[{"column":"genres","op":"eq","value":"crime, thriller"}]')" | names)|$(api \
+        "Inventory/Items?mediaType=Movie&filters=$(filtered '[{"column":"genres","op":"eq","value":"crime"}]')" | names)|$(api \
+        "Inventory/Items?mediaType=Movie&filters=$(filtered '[{"column":"genres","op":"ne","value":"Crime, Thriller"}]')" | field "json.load(sys.stdin)['TotalCount']")|$(api \
+        'Inventory/Items?mediaType=Movie&columnLevel=MusicVideo' | named 'Night Signal (2023)' genres)" \
+    "Night Signal (2023)||6|Crime, Thriller"
+edit "$COMMA" '{"Genres": [], "LockedFields": []}'
 check "a rate is held against the digits the table shows, not the ones it is kept as" \
     "$(api "Inventory/Items?mediaType=Movie&filters=$(filtered '[{"column":"frameRate","op":"eq","value":23.976}]')" | names)" "Blue Harbour (2021)"
 check "a truth value that is false is a value, not an empty cell" \

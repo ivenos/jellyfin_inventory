@@ -23,6 +23,8 @@ async function render(items, mode) {
     const schemaGates = [gate(), gate()];
     const held = gate();
     const rows = gate();
+    let hold = false;
+    const late = gate();
     // A tab with a level under it, so its rows carry a control that opens them.
     const openable = JSON.parse(JSON.stringify(items));
     openable.Rows.forEach(function (row) { row.Expandable = true; });
@@ -58,7 +60,7 @@ async function render(items, mode) {
 
     const dom = new JSDOM(source, {
         runScripts: 'dangerously',
-        url: 'http://localhost/web/index.html',
+        url: 'http://localhost/web/index.html' + (mode === 'address' ? '#/configurationpage?name=Inventory' : ''),
         virtualConsole: new VirtualConsole()
             .on('jsdomError', (e) => { if (!e.message.startsWith('Not implemented')) { raised.push(e.message); } }),
         beforeParse(window) {
@@ -99,6 +101,10 @@ async function render(items, mode) {
                         if (shrunk) {
                             const kept = /startIndex=0\b/.test(url) ? items.Rows.slice(0, 2) : [];
                             return Promise.resolve({ ...items, Rows: kept, TotalCount: 2 });
+                        }
+                        if (hold) {
+                            hold = false;
+                            return late.held.then(() => ({ ...items, Rows: items.Rows.slice(0, 1), TotalCount: 1 }));
                         }
 
                         // Held so the busy state can be read while the rows are still on their way.
@@ -174,6 +180,19 @@ async function render(items, mode) {
         node.dispatchEvent(new window.Event(event, { bubbles: true }));
     };
     const typed = () => new Promise((done) => window.setTimeout(done, 400));
+    // The web client keeps the view it left, and a second address for this page adds another.
+    const another = () => {
+        const copy = new window.DOMParser().parseFromString(source, 'text/html').querySelector('#InventoryPage');
+        const code = copy.querySelector('script').textContent;
+        // Taken out before the copy is inserted, since jsdom runs a script that arrives with it.
+        copy.querySelector('script').remove();
+        const second = window.document.importNode(copy, true);
+        window.document.body.appendChild(second);
+        const script = window.document.createElement('script');
+        script.textContent = code;
+        window.document.body.appendChild(script);
+        return second;
+    };
 
     if (mode === 'rtl') { window.document.documentElement.setAttribute('dir', 'rtl'); }
     // An interface language with digits of its own and no strings of the plugin's.
@@ -451,18 +470,9 @@ async function render(items, mode) {
     }
 
     if (mode === 'twice') {
-        // The web client keeps the view it left, and a second address for this page adds another.
         leave();
         await settle();
-        const copy = new window.DOMParser().parseFromString(source, 'text/html').querySelector('#InventoryPage');
-        const code = copy.querySelector('script').textContent;
-        // Taken out before the copy is inserted, since jsdom runs a script that arrives with it.
-        copy.querySelector('script').remove();
-        const second = window.document.importNode(copy, true);
-        window.document.body.appendChild(second);
-        const script = window.document.createElement('script');
-        script.textContent = code;
-        window.document.body.appendChild(script);
+        const second = another();
         const schemas = asked.filter((url) => url.startsWith('Inventory/Schema')).length;
         second.dispatchEvent(new window.Event('pageshow'));
         await settle();
@@ -474,6 +484,92 @@ async function render(items, mode) {
             schemas: asked.filter((url) => url.startsWith('Inventory/Schema')).length - schemas,
             exports: fetched.length - exported,
         };
+        window.close();
+        return report;
+    }
+
+    if (mode === 'address') {
+        const report = { opened: window.location.hash };
+        page.querySelector('#invHead th[data-key="size"]').dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+        await settle();
+        change(page.querySelector('#invSearch'), 'Blue', 'input');
+        await typed();
+        click('#invFilterBtn');
+        await settle();
+        change(page.querySelector('#invFilters select'), 'size', 'change');
+        await settle();
+        change(page.querySelector('#invFilters input'), '1.5', 'input');
+        await typed();
+        click('#invFilterAdd');
+        click('#invNext');
+        await settle();
+        const written = window.location.hash;
+        report.written = decodeURIComponent(written);
+        const kept = () => [page.querySelectorAll('#invFilters .invFilter').length, param(requests().at(-1), 'startIndex'),
+            window.location.hash === written].join('/');
+        leave();
+        await settle();
+        show();
+        await settle();
+        report.again = kept();
+        // The entry in the sidebar leads to the address without anything the page added.
+        window.history.replaceState(null, '', '#/configurationpage?name=Inventory');
+        leave();
+        await settle();
+        show();
+        await settle();
+        report.bare = kept();
+        window.location.hash = '#/configurationpage?name=Inventory';
+        await settle();
+        report.clicked = kept();
+        // Any other address of the page gets a view of its own from the web client.
+        window.location.hash = '#/configurationpage?name=Inventory&mediaType=Series';
+        await settle();
+        report.other = all('.invType.selected').join(',');
+        // A search typed just before the web client moves on is answered after the address has changed.
+        window.history.replaceState(null, '', '#/dashboard');
+        change(page.querySelector('#invSearch'), 'Bluer', 'input');
+        await typed();
+        report.elsewhere = window.location.hash;
+        leave();
+        await settle();
+        const filters = [{ column: 'size', op: 'ge', value: 2147483648 }, { column: 'duration', op: 'le', value: '6.000000000000001' },
+            { column: 'frameRate', op: 'ge', value: '23.976' },
+            { column: 'quality', op: 'ge', value: '720p' }, { column: 'name', op: 'empty', value: 'x' },
+            { column: 'interlaced', op: 'eq', value: 'maybe' }, { column: 'gone', op: 'eq', value: 'a' },
+            { column: 'name', op: 'between', value: 'a' }, { column: 'height', op: 'ge', value: { x: 1 } },
+            { column: 'name', op: 'contains', value: ['a'] }, { column: 'duration', op: 'ge', value: '1' + '0'.repeat(400) },
+            { column: 'size', op: 'le', value: 'huge' }];
+        const link = '#/configurationpage?name=Inventory&mediaType=Series&search=Night+Signal&sortBy=year&descending=true&filters='
+            + encodeURIComponent(JSON.stringify(filters).replace('"huge"', '1' + '0'.repeat(400)));
+        window.history.replaceState(null, '', link);
+        window.document.documentElement.setAttribute('lang', 'de');
+        const before = requests().length;
+        const second = another();
+        second.dispatchEvent(new window.Event('pageshow'));
+        await settle();
+        const sent = requests().slice(before);
+        report.boxes = [...second.querySelectorAll('#invFilters .invFilter')]
+            .map((row) => [...row.querySelectorAll('select, input')].map((node) => node.value).join(' ')).join('|');
+        report.search = second.querySelector('#invSearch').value;
+        report.sent = ['mediaType', 'search', 'filters'].map((key) => param(sent[0], key)).join('|');
+        report.sorts = sent.map((url) => param(url, 'sortBy') || '-').join(',');
+        report.cleaned = decodeURIComponent(window.location.hash);
+        second.querySelector('.invFilter .invDrop').dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+        await settle();
+        const moved = requests().length;
+        change(second.querySelector('#invSearch'), 'Other', 'input');
+        window.location.hash = link;
+        await typed();
+        report.reopened = [second.querySelector('#invSearch').value, second.querySelectorAll('#invFilters .invFilter').length,
+            requests().slice(moved).map((url) => param(url, 'search') + ':' + (param(url, 'sortBy') || '-')).join(',')].join('/');
+        second.dispatchEvent(new window.Event('viewhide'));
+        await settle();
+        window.history.replaceState(null, '', '#/configurationpage?name=Inventory&mediaType=Gone&sortBy=size&descending=true');
+        const third = requests().length;
+        another().dispatchEvent(new window.Event('pageshow'));
+        await settle();
+        report.unknown = ['mediaType', 'sortBy', 'descending'].map((key) => param(requests()[third], key)).join('|');
         window.close();
         return report;
     }
@@ -506,6 +602,26 @@ async function render(items, mode) {
         const report = { asked: 'startIndex=' + param(requests().pop(), 'startIndex') };
         await typed();
         report.pager = page.querySelector('#invPage').textContent.trim();
+        window.close();
+        return report;
+    }
+
+    if (mode === 'searched') {
+        click('#invNext');
+        await settle();
+        click('#invNext');
+        await settle();
+        change(page.querySelector('#invSearch'), 'Blu', 'input');
+        await typed();
+        const report = { from: 'startIndex=' + param(requests().at(-1), 'startIndex') };
+        hold = true;
+        change(page.querySelector('#invSearch'), 'Blue', 'input');
+        await typed();
+        change(page.querySelector('#invSearch'), 'Blu', 'input');
+        await typed();
+        late.open();
+        await settle();
+        report.drawn = page.querySelectorAll('#invBody tr').length + '/' + page.querySelector('#invTotals').textContent.trim().split(' ').slice(0, 2).join(' ');
         window.close();
         return report;
     }
@@ -1117,8 +1233,29 @@ for (const mode of ['hide', 'export', 'stale', 'overlay', 'hung', 'failed', 'dow
 // Checked here, beside the stubs they answer; run.sh sees a mismatch as something raised.
 const ids = read(itemFiles[0]).Rows.map((row) => row.Id);
 const listing = (level, filters, except) => ({ MediaType: 'Movie', Level: level, Search: '', Filters: filters, Except: except });
+const linked = [{ column: 'size', op: 'ge', value: '2147483648' }, { column: 'duration', op: 'le', value: '6' },
+    { column: 'frameRate', op: 'ge', value: '23.976' },
+    { column: 'quality', op: 'ge', value: '720p' }, { column: 'name', op: 'empty' }];
 const wanted = {
     switch: { select: 'true' },
+    searched: { from: 'startIndex=0', drawn: '7/7 items' },
+    address: {
+        opened: '#/configurationpage?name=Inventory&mediaType=Movie',
+        written: '#/configurationpage?name=Inventory&mediaType=Movie&search=Blue&filters='
+            + JSON.stringify([{ column: 'size', op: 'ge', value: '1610612736' }]) + '&sortBy=size&descending=true',
+        again: '2/2/true',
+        bare: '2/2/true',
+        clicked: '2/2/true',
+        other: 'Movies 7',
+        elsewhere: '#/dashboard',
+        boxes: 'size ge 2|duration le 0,1|frameRate ge 23,976|quality ge 720p|name empty',
+        search: 'Night Signal',
+        sent: 'Series|Night Signal|' + JSON.stringify(linked),
+        sorts: 'year,-',
+        reopened: 'Night Signal/5/Night Signal:year,Night Signal:-',
+        unknown: 'Movie|size|true',
+        cleaned: '#/configurationpage?name=Inventory&mediaType=Series&search=Night+Signal&filters=' + JSON.stringify(linked),
+    },
     toolbar: {
         names: 'Columns=Columns,Filters=Filters,Select=Select,Export=Export,Previous=Previous,Next=Next',
         pager: 'true/true/1 / 4/false',
