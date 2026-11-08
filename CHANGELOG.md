@@ -11,6 +11,7 @@ All notable changes to this project are documented in this file, in the format o
 ### Fixed
 
 - Filtering with = or ≠ missed a genre, artist, collection or other name that has a comma in it.
+- The first collection made from the table could end up empty, and making it set off a scan of every library.
 
 ## [1.3.0] - 2026-11-01
 

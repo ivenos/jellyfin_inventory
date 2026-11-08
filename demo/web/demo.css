@@ -57,19 +57,15 @@ body {
 .demoServer {
     display: flex;
     align-items: center;
-    gap: 16px;
     box-sizing: border-box;
     height: 76px;
     padding: 8px 16px;
 }
 
-#demoDrawer .demoServer svg {
-    box-sizing: border-box;
-    width: 40px;
-    height: 40px;
-    padding: 8px;
-    border-radius: 11px;
-    background: linear-gradient(135deg, #aa5cc3, #00a4dc);
+.demoServer img {
+    width: 2.5rem;
+    height: 2.5rem;
+    margin-inline-end: calc(56px - 2.5rem);
 }
 
 .demoServer p {

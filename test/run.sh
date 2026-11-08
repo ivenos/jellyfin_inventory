@@ -1555,17 +1555,11 @@ check "a server without collections or playlists offers none" \
     "$(api 'Inventory/Targets' | field "(lambda d: '%s/%s' % (d['Collections'], d['Playlists']))(json.load(sys.stdin))")" "[]/[]"
 check "a film in no collection names none" "$(listed Movie 'Blue Harbour (2021)' collections)" "None"
 
-# Jellyfin adds a library for the first collection and scans for it, and in 12.0 that scan empties a collection
-# made meanwhile. So the checks wait for the scan to end.
 scanned() { api 'ScheduledTasks' | field "[str(t.get('LastExecutionResult')) + t['State'] for t in json.load(sys.stdin) if t['Key'] == 'RefreshLibrary'][0]"; }
+settled
 UNSCANNED=$(scanned)
 SHELF=$(targets "{\"Kind\":\"Collection\",\"Name\":\" Inventory Shelf 10 \",\"Ids\":[\"$BLUE\",\"$SERIES_ID\",\"$TRACK\",\"$PHOTO\"]}")
 SHELF_ID=$(printf '%s\n' "$SHELF" | field "json.load(sys.stdin)['Id']")
-i=0
-until { [ "$(scanned)" != "$UNSCANNED" ] && scanned | grep -q 'Idle$'; } || [ "$i" -gt 60 ]; do
-    i=$((i + 1))
-    sleep 1
-done
 api 'Library/VirtualFolders' > "$WORK/libraries.json"
 curl -sf -X POST "$BASE/Library/VirtualFolders/LibraryOptions" -H "Authorization: MediaBrowser Token=\"$TOKEN\"" -H "$JSON" \
     -d "$(OFFLINE="$OFFLINE" python3 -c "
@@ -1581,6 +1575,8 @@ check "a series in a collection names it, and its episodes, which are not in it 
         | named 'Harbour Lights S01E01' collections)" "Inventory Shelf 10/None"
 check "and jellyfin holds both in it" \
     "$(api "Items?parentId=$SHELF_ID&userId=$USER_ID" | field "json.load(sys.stdin)['TotalRecordCount']")" "2"
+check "the first collection gets the one library jellyfin keeps them in, and sets off no scan of every library, which can empty it" \
+    "$(field "len([f for f in json.load(open('$WORK/libraries.json')) if f['CollectionType'] == 'boxsets'])" </dev/null)/$(scanned)" "1/$UNSCANNED"
 check "adding to a collection counts only what it did not hold yet" \
     "$(targets "{\"Kind\":\"Collection\",\"Id\":\"$SHELF_ID\",\"Ids\":[\"$BLUE\",\"$SIGNAL\"]}" | outcome)" "Inventory Shelf 10/1/0"
 check "every row a filtered listing matches goes in, less the rows left out" \

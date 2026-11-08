@@ -5,7 +5,6 @@ const ICONS = {
     article: 'M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2m-5 14H7v-2h7zm3-4H7v-2h10zm0-4H7V7h10z',
     backup: 'M19.35 10.04C18.67 6.59 15.64 4 12 4 9.11 4 6.6 5.64 5.35 8.04 2.34 8.36 0 10.91 0 14c0 3.31 2.69 6 6 6h13c2.76 0 5-2.24 5-5 0-2.64-2.05-4.78-4.65-4.96M14 13v4h-4v-4H7l5-5 5 5z',
     dashboard: 'M3 13h8V3H3zm0 8h8v-6H3zm10 0h8V11h-8zm0-18v6h8V3z',
-    dns: 'M20 13H4c-.55 0-1 .45-1 1v6c0 .55.45 1 1 1h16c.55 0 1-.45 1-1v-6c0-.55-.45-1-1-1M7 19c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2M20 3H4c-.55 0-1 .45-1 1v6c0 .55.45 1 1 1h16c.55 0 1-.45 1-1V4c0-.55-.45-1-1-1M7 9c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2',
     devices: 'M4 6h18V4H4c-1.1 0-2 .9-2 2v11H0v3h14v-3H4zm19 2h-6c-.55 0-1 .45-1 1v10c0 .55.45 1 1 1h6c.55 0 1-.45 1-1V9c0-.55-.45-1-1-1m-1 9h-4v-7h4z',
     dvr: 'M21 3H3c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h5v2h8v-2h5c1.1 0 1.99-.9 1.99-2L23 5c0-1.1-.9-2-2-2m0 14H3V5h18zm-2-9H8v2h11zm0 4H8v2h11zM7 8H5v2h2zm0 4H5v2h2z',
     expandMore: 'M16.59 8.59 12 13.17 7.41 8.59 6 10l6 6 6-6z',
@@ -42,7 +41,7 @@ export function drawShell(server) {
     document.querySelectorAll('[data-icon]').forEach((node) => { node.innerHTML = icon(node.dataset.icon); });
 
     const drawer = document.querySelector('#demoDrawer');
-    drawer.innerHTML = `<div class="demoServer">${icon('dns')}<p><strong>Inventory Demo</strong><span>${server.Version}</span></p></div>`
+    drawer.innerHTML = `<div class="demoServer"><img src="jellyfin.svg" alt=""><p><strong>Inventory Demo</strong><span>${server.Version}</span></p></div>`
         + MENU.map(([title, entries]) => `<h3>${title}</h3><ul>` + entries.map(([label, shape, opens]) =>
             `<li${label === 'Inventory' ? ' aria-current="page"' : ''}>${icon(shape)}<span>${label}</span>`
             + `${opens ? icon('expandMore') : ''}</li>`).join('') + '</ul>').join('');

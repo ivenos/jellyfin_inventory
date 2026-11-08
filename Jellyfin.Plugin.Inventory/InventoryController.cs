@@ -16,9 +16,11 @@ using MediaBrowser.Controller.Entities;
 using MediaBrowser.Controller.Entities.Movies;
 using MediaBrowser.Controller.Library;
 using MediaBrowser.Controller.Playlists;
+using MediaBrowser.Model.Configuration;
+using MediaBrowser.Model.Entities;
+using MediaBrowser.Model.Globalization;
 using MediaBrowser.Model.IO;
 using MediaBrowser.Model.Playlists;
-using MediaBrowser.Model.Tasks;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
@@ -51,7 +53,7 @@ public class InventoryController : ControllerBase
     private readonly ICollectionManager _collectionManager;
     private readonly IPlaylistManager _playlistManager;
     private readonly IFileSystem _fileSystem;
-    private readonly ITaskManager _taskManager;
+    private readonly ILocalizationManager _localization;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="InventoryController"/> class.
@@ -63,7 +65,7 @@ public class InventoryController : ControllerBase
     /// <param name="collectionManager">Instance of the <see cref="ICollectionManager"/> interface.</param>
     /// <param name="playlistManager">Instance of the <see cref="IPlaylistManager"/> interface.</param>
     /// <param name="fileSystem">Instance of the <see cref="IFileSystem"/> interface.</param>
-    /// <param name="taskManager">Instance of the <see cref="ITaskManager"/> interface.</param>
+    /// <param name="localization">Instance of the <see cref="ILocalizationManager"/> interface.</param>
     public InventoryController(
         InventoryService inventory,
         IUserManager userManager,
@@ -72,7 +74,7 @@ public class InventoryController : ControllerBase
         ICollectionManager collectionManager,
         IPlaylistManager playlistManager,
         IFileSystem fileSystem,
-        ITaskManager taskManager)
+        ILocalizationManager localization)
     {
         _inventory = inventory;
         _userManager = userManager;
@@ -81,7 +83,7 @@ public class InventoryController : ControllerBase
         _collectionManager = collectionManager;
         _playlistManager = playlistManager;
         _fileSystem = fileSystem;
-        _taskManager = taskManager;
+        _localization = localization;
     }
 
     private static PluginConfiguration Configuration => Plugin.Instance?.Configuration ?? new PluginConfiguration();
@@ -695,9 +697,7 @@ public class InventoryController : ControllerBase
             || string.Equals(Path.GetFileName(c.Path), folder, StringComparison.OrdinalIgnoreCase));
         if (target is null)
         {
-            // In 12.0 the scan that follows adding the Collections library saves over a collection made meanwhile, emptying it.
-            if (typeof(ICollectionManager).Assembly.GetName().Version is { Major: 12, Minor: 0 }
-                && await _collectionManager.GetCollectionsFolder(false).ConfigureAwait(false) is null)
+            if (await _collectionManager.GetCollectionsFolder(false).ConfigureAwait(false) is null)
             {
                 await AddCollectionsLibrary().ConfigureAwait(false);
             }
@@ -722,27 +722,17 @@ public class InventoryController : ControllerBase
         return Ok(Outcome(target.Id, target.Name, moved.Length, asked - holdable.Length));
     }
 
-    private async Task AddCollectionsLibrary()
+    // Jellyfin's CollectionManager makes this library the same way, but also starts a scan of every library,
+    // which can save over a collection made meanwhile and empty it.
+    private Task AddCollectionsLibrary()
     {
-        var scanned = new TaskCompletionSource();
-        void OnCompleted(object? sender, TaskCompletionEventArgs e)
-        {
-            if (e.Task.ScheduledTask.Key == "RefreshLibrary" && e.Result.Status != TaskCompletionStatus.Cancelled)
-            {
-                scanned.TrySetResult();
-            }
-        }
-
-        _taskManager.TaskCompleted += OnCompleted;
-        try
-        {
-            await _collectionManager.GetCollectionsFolder(true).ConfigureAwait(false);
-            await scanned.Task.WaitAsync(TimeSpan.FromMinutes(10)).ConfigureAwait(false);
-        }
-        finally
-        {
-            _taskManager.TaskCompleted -= OnCompleted;
-        }
+        var path = Path.Combine(_paths.DataPath, "collections");
+        Directory.CreateDirectory(path);
+        return _libraryManager.AddVirtualFolder(
+            _localization.GetServerLocalizedString("Collections"),
+            CollectionTypeOptions.boxsets,
+            new LibraryOptions { PathInfos = [new MediaPathInfo(path)], EnableRealtimeMonitor = false, SaveLocalMetadata = true },
+            false);
     }
 
     private async Task<ActionResult<object>> SetPlaylist(bool remove, Playlist? target, string? name, User user, BaseItem[] items, int asked, IReadOnlySet<Guid> except)
