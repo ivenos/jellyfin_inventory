@@ -42,7 +42,7 @@ export function drawShell(server) {
     document.querySelectorAll('[data-icon]').forEach((node) => { node.innerHTML = icon(node.dataset.icon); });
 
     const drawer = document.querySelector('#demoDrawer');
-    drawer.innerHTML = `<div class="demoServer">${icon('dns')}<p><strong>Jellyfin Demo</strong><span>${server.Version}</span></p></div>`
+    drawer.innerHTML = `<div class="demoServer">${icon('dns')}<p><strong>Inventory Demo</strong><span>${server.Version}</span></p></div>`
         + MENU.map(([title, entries]) => `<h3>${title}</h3><ul>` + entries.map(([label, shape, opens]) =>
             `<li${label === 'Inventory' ? ' aria-current="page"' : ''}>${icon(shape)}<span>${label}</span>`
             + `${opens ? icon('expandMore') : ''}</li>`).join('') + '</ul>').join('');
