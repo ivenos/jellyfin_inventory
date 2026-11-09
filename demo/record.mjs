@@ -56,37 +56,41 @@ for (const tab of english.MediaTypes) {
     const levels = tab.Levels.map((entry) => entry.Level);
     const rows = [];
     const index = new Map();
+    // The version an item plays by default goes by the item's id, so a row is known by its parent too.
+    const identity = (row) => `${row.Id}/${row.ParentId ?? ''}`;
+    const items = levels.filter((level) => level !== 'Version');
 
-    for (const level of [...levels].reverse()) {
+    for (const level of [...items].reverse().concat(levels.includes('Version') ? ['Version'] : [])) {
         const here = await call('Items', { mediaType, level, limit: LIMIT });
         const there = await call('Items', { mediaType, level, limit: LIMIT, culture: other });
         if (here.TotalCount !== here.Rows.length) { throw new Error(`${mediaType}/${level} does not fit one page`); }
 
-        const translated = new Map(there.Rows.map((row) => [row.Id, row.Values]));
+        const translated = new Map(there.Rows.map((row) => [identity(row), row.Values]));
         for (const row of here.Rows) {
-            if (index.has(row.Id)) { continue; }
+            if (index.has(identity(row))) { continue; }
             // A cell that reads differently in another language is the word for mixed, not a value.
-            const mixed = keys.filter((key) => row.Values[key] !== translated.get(row.Id)[key]);
-            index.set(row.Id, rows.length);
+            const mixed = keys.filter((column) => row.Values[column] !== translated.get(identity(row))[column]);
+            index.set(identity(row), rows.length);
             rows.push({
                 Id: row.Id,
                 ParentId: row.ParentId ?? null,
                 Level: level,
                 Expandable: row.Expandable,
-                Values: Object.fromEntries(keys.filter((key) => !mixed.includes(key) && row.Values[key] != null)
-                    .map((key) => [key, row.Values[key]])),
+                Values: Object.fromEntries(keys.filter((column) => !mixed.includes(column) && row.Values[column] != null)
+                    .map((column) => [column, row.Values[column]])),
                 Mixed: mixed,
             });
         }
     }
 
-    const places = (answer) => answer.Rows.map((row) => index.get(row.Id));
+    const places = (answer) => answer.Rows.map((row) => index.get(identity(row)));
     const top = places(await call('Items', { mediaType, level: levels[0], limit: LIMIT }));
 
     const natural = {};
     for (const [depth, level] of levels.entries()) {
         if (depth === 0) { continue; }
-        const parentIds = rows.filter((row) => row.Level === levels[depth - 1]).map((row) => row.Id).join(',');
+        // Only the rows that open, or the ids of every film would not fit in a request line.
+        const parentIds = rows.filter((row) => row.Level === levels[depth - 1] && row.Expandable).map((row) => row.Id).join(',');
         natural[level] = places(await call('Items', { mediaType, level, parentIds }));
     }
 
@@ -198,7 +202,7 @@ for (const [mediaType, tab] of Object.entries(tabs)) {
         }
 
         if (depth > 0) {
-            const parents = tab.Rows.filter((row) => row.Level === tab.Levels[depth - 1]).map((row) => row.Id);
+            const parents = tab.Rows.filter((row) => row.Level === tab.Levels[depth - 1] && row.Expandable).map((row) => row.Id);
             for (const ids of [parents, parents.slice(0, 1), parents.slice(1, 3)]) {
                 const parentIds = ids.join(',');
                 add('Items', { mediaType, level, parentIds, columnLevel: tab.Levels[0] });
@@ -305,13 +309,14 @@ const photo = tabs.Photo.Rows[0].Id;
 const folder = tabs.AudioBook.Rows.find((row) => row.Level === 'Folder').Id;
 const single = tabs.AudioBook.Rows.find((row) => row.Level === 'AudioBook' && !row.ParentId).Id;
 const lokiEpisode = tabs.Series.Rows.find((row) => row.Level === 'Episode' && row.Values.series === 'Loki').Id;
+const cut = tabs.Movie.Rows.find((row) => row.Level === 'Version' && row.Id !== row.ParentId);
 
 async function holders() {
     for (const body of [
         { Ids: [godfather] }, { Ids: [breaking, mandalorian, hope] }, { Ids: [sherlock, album, folder, single] },
         { All: { MediaType: 'Series', Search: 's01e01' } }, { All: { MediaType: 'Movie', Search: 'star wars', Except: [hope] } },
         { All: { MediaType: 'Series', Search: 'loki', Except: [loki] } }, { All: { MediaType: 'Series', Search: 'loki', Except: [lokiEpisode] } },
-        { Ids: [photo, book, missing] }, { Ids: [] }, {},
+        { Ids: [photo, book, missing] }, { Ids: [] }, {}, { Ids: [cut.Id] },
     ]) {
         await both('Targets/Held', body);
     }
@@ -336,6 +341,8 @@ await change({ Kind: 'Collection', Name: 'Space/Operas', Ids: [empire] });
 await change({ Kind: 'Collection', Name: 'space\tOperas', Ids: [future] });
 await change({ Kind: 'Collection', Name: 'Seasons of Loki', All: { MediaType: 'Series', Search: 'loki', Except: [loki] } });
 await change({ Kind: 'Playlist', Name: 'Loki Again', All: { MediaType: 'Series', Search: 'loki', Except: [lokiEpisode] } });
+await change({ Kind: 'Collection', Name: 'Cuts', Ids: [cut.Id, cut.ParentId] });
+await change({ Kind: 'Playlist', Name: 'Every Cut', All: { MediaType: 'Movie', Level: 'Version', Search: 'cut' } });
 
 for (const wrong of [
     { Kind: 'Shelf', Name: 'Odd', Ids: [hope] }, { Kind: 'Collection', Id: operas, Name: 'Both', Ids: [hope] },

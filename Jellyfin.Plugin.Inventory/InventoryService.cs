@@ -30,19 +30,23 @@ public sealed partial class InventoryService : IDisposable
 {
     private static readonly StringComparer _natural = StringComparer.Create(CultureInfo.InvariantCulture, CompareOptions.NumericOrdering);
 
+    private static readonly char[] _delimiters = [' ', '-', '_', '.'];
+
     private readonly ILibraryManager _libraryManager;
     private readonly IMediaSourceManager _mediaSourceManager;
     private readonly IUserDataManager _userDataManager;
     private readonly IUserManager _userManager;
     private readonly IPlaylistManager _playlistManager;
     private readonly ILogger<InventoryService> _logger;
-    private readonly ConcurrentDictionary<BaseItemKind, Cached> _cache = new();
+    private readonly ConcurrentDictionary<Level, Cached> _cache = new();
 
     // Playback is per user, so the shared rows are copied once per user and the copies carry it.
-    private readonly ConcurrentDictionary<(BaseItemKind Kind, Guid UserId, bool Everyone), Cached> _perUser = new();
+    private readonly ConcurrentDictionary<(Level Level, Guid UserId, bool Everyone), Cached> _perUser = new();
 
     // Reading playback for every user costs a query each, so the totals are copied onto their own set.
-    private readonly ConcurrentDictionary<BaseItemKind, Cached> _everyone = new();
+    private readonly ConcurrentDictionary<Level, Cached> _everyone = new();
+
+    private readonly ConcurrentDictionary<BaseItemKind, Counted> _versioned = new();
 
     private readonly object _userLock = new();
 
@@ -102,15 +106,19 @@ public sealed partial class InventoryService : IDisposable
 
             // Music filed loose in a library has tracks and no album, and a tab listing the empty
             // album level would carry no row to reach them from.
-            var available = levels.Where((l, i) => i >= first && counts[i] > 0).ToArray();
+            var available = levels.Where((l, i) => i >= first && counts[i] > 0).Select(l => new Level(l)).ToList();
+            if (counts[^1] > 0 && Hierarchy.Versioned(levels[^1]) && VersionCount(levels[^1]) > 0)
+            {
+                available.Add(new Level(levels[^1], true));
+            }
 
             var tab = Hierarchy.Tab(levels);
             types.Add(new MediaTypeInfo(
                 tab.ToString(),
                 Translations.Get(culture, "mediaType." + tab),
                 levels[0] == BaseItemKind.MusicAlbum ? counts[^1] : counts[first],
-                available.Select(l => new LevelInfo(l.ToString(), Translations.Get(culture, "level." + l))).ToArray(),
-                available.SelectMany(Hierarchy.Targets).Distinct().ToArray()));
+                available.Select(l => new LevelInfo(l.Key, Translations.Get(culture, "level." + l.Key))).ToArray(),
+                available.Select(l => l.Kind).Distinct().SelectMany(Hierarchy.Targets).Distinct().ToArray()));
         }
 
         return types;
@@ -162,6 +170,23 @@ public sealed partial class InventoryService : IDisposable
         return count;
     }
 
+    // Counted off the items rather than the rows, which would build every tab to draw the tabs.
+    private int VersionCount(BaseItemKind kind)
+    {
+        var generation = Volatile.Read(ref _generation);
+        if (_versioned.TryGetValue(kind, out var known) && known.Generation == generation)
+        {
+            return known.Count;
+        }
+
+        var count = Items(kind).OfType<Video>().Count(HasVersions);
+        _versioned[kind] = new Counted(generation, count);
+        return count;
+    }
+
+    private static bool HasVersions(Video video)
+        => video.PrimaryVersionId is null && (video.LocalAlternateVersions.Length > 0 || video.LinkedAlternateVersions.Length > 0);
+
     private int Total(BaseItemKind kind, ExtraType[] extras) => _libraryManager.GetCount(new InternalItemsQuery
     {
         IncludeItemTypes = [kind],
@@ -209,7 +234,7 @@ public sealed partial class InventoryService : IDisposable
         bool topmost = false,
         IReadOnlySet<Guid>? except = null)
     {
-        var kind = Hierarchy.Resolve(mediaType, level)
+        var listed = Hierarchy.Resolve(mediaType, level)
             ?? throw new ArgumentException($"Unknown media type '{mediaType}' or level '{level}'.", nameof(mediaType));
         search = search?.Normalize();
 
@@ -224,30 +249,38 @@ public sealed partial class InventoryService : IDisposable
         var levels = Hierarchy.Levels(mediaType)!;
         var spanning = !string.IsNullOrWhiteSpace(search)
             && parentIds is not { Count: > 0 }
-            && kind == levels[0];
+            && listed == new Level(levels[0]);
 
         if (spanning)
         {
             // A search reaches through the whole tab: typing an episode name in the series view has
             // to find the episode, which is not on the level being listed.
-            rows = levels
+            var searched = levels.Select(l => new Level(l));
+            if (Hierarchy.Versioned(levels[^1]))
+            {
+                searched = searched.Append(new Level(levels[^1], true));
+            }
+
+            rows = searched
                 .SelectMany(l => Rows(l, user, everyone))
                 .Where(r => Matches(r, search!) && Meets(r, filters))
                 .ToArray();
         }
         else
         {
-            rows = Rows(kind, user, everyone);
+            rows = listed.Versions && parentIds is not { Count: > 0 }
+                ? Files(listed.Kind, user, everyone)
+                : Rows(listed, user, everyone);
 
             if (parentIds is { Count: > 0 })
             {
                 var wanted = parentIds.ToHashSet();
                 rows = rows.Where(r => r.ParentId.HasValue && wanted.Contains(r.ParentId.Value)).ToArray();
             }
-            else if (levels.Count > 1 && kind == levels[0])
+            else if (levels.Count > 1 && listed == new Level(levels[0]))
             {
                 // A track filed loose beside the albums is on no row that opens to reach it.
-                var loose = Rows(levels[^1], user, everyone).Where(r => r.AncestorId is null).ToArray();
+                var loose = Rows(new Level(levels[^1]), user, everyone).Where(r => r.AncestorId is null).ToArray();
                 if (loose.Length > 0)
                 {
                     rows = [.. rows, .. loose];
@@ -274,7 +307,8 @@ public sealed partial class InventoryService : IDisposable
         var counted = rows;
         if (spanning && rows.Count > 1)
         {
-            var present = rows.Select(r => r.Id).ToHashSet();
+            // The version an item plays by default goes by the item's id, and stands for no item itself.
+            var present = rows.Where(r => !r.Id.Equals(r.ParentId)).Select(r => r.Id).ToHashSet();
             counted = rows.Where(r => !Covered(r, present)).ToArray();
         }
 
@@ -399,40 +433,44 @@ public sealed partial class InventoryService : IDisposable
         // A play by anyone moves the totals, so they go whichever user wrote it.
         foreach (var kind in levels)
         {
-            _everyone.TryRemove(kind, out _);
+            _everyone.TryRemove(new Level(kind), out _);
+            _everyone.TryRemove(new Level(kind, true), out _);
         }
 
         // By entry rather than by key, or a set another thread has just published is taken with it.
         foreach (var entry in _perUser)
         {
-            if ((entry.Key.UserId == e.UserId || entry.Key.Everyone) && levels.Contains(entry.Key.Kind))
+            if ((entry.Key.UserId == e.UserId || entry.Key.Everyone) && levels.Contains(entry.Key.Level.Kind))
             {
                 _perUser.TryRemove(entry);
             }
         }
     }
 
-    private IReadOnlyList<InventoryRow> Rows(BaseItemKind kind, User? user, bool everyone)
+    private InventoryRow[] Files(BaseItemKind kind, User? user, bool everyone)
+        => [.. Rows(new Level(kind), user, everyone).Where(r => r.Versions.Count == 0), .. Rows(new Level(kind, true), user, everyone)];
+
+    private IReadOnlyList<InventoryRow> Rows(Level level, User? user, bool everyone)
     {
         if (user is null)
         {
-            return everyone ? Everyone(kind) : Shared(kind);
+            return everyone ? Everyone(level) : Shared(level);
         }
 
-        return Build(_perUser, (kind, user.Id, everyone), _ =>
+        return Build(_perUser, (level, user.Id, everyone), _ =>
         {
             // Read inside the factory, or an invalidation landing in between is stamped away.
-            var basis = everyone ? Everyone(kind) : Shared(kind);
-            var levels = Hierarchy.Of(kind);
-            var leaf = levels is null ? kind : levels[^1];
+            var basis = everyone ? Everyone(level) : Shared(level);
+            var levels = Hierarchy.Of(level.Kind);
+            var leaf = levels is null ? level.Kind : levels[^1];
             var playlists = Holders(Playlists(user));
 
-            if (leaf != kind)
+            if (!level.Versions && leaf != level.Kind)
             {
                 // Jellyfin keeps no playback record on a series, a season or an album, and folds
                 // what its own client shows there out of the children.
-                var toLeaves = levels![0] == kind;
-                var byParent = Rows(leaf, user, everyone).ToLookup(r => toLeaves ? r.AncestorId : r.ParentId);
+                var toLeaves = levels![0] == level.Kind;
+                var byParent = Rows(new Level(leaf), user, everyone).ToLookup(r => toLeaves ? r.AncestorId : r.ParentId);
 
                 return basis.Select(row =>
                 {
@@ -442,7 +480,7 @@ public sealed partial class InventoryService : IDisposable
                 }).ToArray();
             }
 
-            var playback = _userDataManager.GetUserDataBatch(WithVersions(Items(kind), basis), user);
+            var playback = _userDataManager.GetUserDataBatch(Played(level.Kind, basis), user);
 
             return basis.Select(row =>
             {
@@ -462,8 +500,8 @@ public sealed partial class InventoryService : IDisposable
         });
     }
 
-    private IReadOnlyList<InventoryRow> Everyone(BaseItemKind kind)
-        => Build(_everyone, kind, k => BuildEveryone(k, Users()));
+    private IReadOnlyList<InventoryRow> Everyone(Level level)
+        => Build(_everyone, level, l => BuildEveryone(l, Users()));
 
     // An index stands for a user and nothing tells a plugin that an account came or went, so the
     // list and the number standing for it are read together and the order holds across levels.
@@ -491,16 +529,16 @@ public sealed partial class InventoryService : IDisposable
         }
     }
 
-    private IReadOnlyList<InventoryRow> BuildEveryone(BaseItemKind kind, IReadOnlyList<User> users)
+    private IReadOnlyList<InventoryRow> BuildEveryone(Level level, IReadOnlyList<User> users)
     {
-        var rows = Shared(kind);
-        var levels = Hierarchy.Of(kind);
-        var leaf = levels is null ? kind : levels[^1];
+        var rows = Shared(level);
+        var levels = Hierarchy.Of(level.Kind);
+        var leaf = levels is null ? level.Kind : levels[^1];
 
-        if (leaf != kind)
+        if (!level.Versions && leaf != level.Kind)
         {
-            var toLeaves = levels![0] == kind;
-            var byParent = Everyone(leaf).ToLookup(r => toLeaves ? r.AncestorId : r.ParentId);
+            var toLeaves = levels![0] == level.Kind;
+            var byParent = Everyone(new Level(leaf)).ToLookup(r => toLeaves ? r.AncestorId : r.ParentId);
 
             return rows.Select(row =>
             {
@@ -510,7 +548,7 @@ public sealed partial class InventoryService : IDisposable
             }).ToArray();
         }
 
-        var items = WithVersions(Items(kind), rows);
+        var items = Played(level.Kind, rows);
         var copies = rows.Select(r => r.Copy()).ToArray();
         var watchers = new List<int>?[copies.Length];
         var index = 0;
@@ -552,22 +590,20 @@ public sealed partial class InventoryService : IDisposable
     }
 
     // Jellyfin keeps a play on the version that was played, and shows the film played by it.
-    private IReadOnlyList<BaseItem> WithVersions(IReadOnlyList<BaseItem> items, IReadOnlyList<InventoryRow> rows)
+    private IReadOnlyList<BaseItem> Played(BaseItemKind kind, IReadOnlyList<InventoryRow> rows)
     {
-        var versions = rows.SelectMany(r => r.Versions).Select(_libraryManager.GetItemById).OfType<BaseItem>().ToArray();
+        var items = Items(kind);
+        var known = items.Select(i => i.Id).ToHashSet();
+        var versions = rows.SelectMany(r => r.Versions.Prepend(r)).Select(r => r.Id).Where(id => !known.Contains(id)).Distinct()
+            .Select(_libraryManager.GetItemById).OfType<BaseItem>().ToArray();
         return versions.Length > 0 ? [.. items, .. versions] : items;
     }
 
     private static IEnumerable<UserItemData> Records(Dictionary<Guid, UserItemData> playback, InventoryRow row)
     {
-        if (playback.TryGetValue(row.Id, out var own))
+        foreach (var file in row.Versions.Count > 0 ? row.Versions : [row])
         {
-            yield return own;
-        }
-
-        foreach (var version in row.Versions)
-        {
-            if (playback.TryGetValue(version, out var data))
+            if (playback.TryGetValue(file.Id, out var data))
             {
                 yield return data;
             }
@@ -632,7 +668,7 @@ public sealed partial class InventoryService : IDisposable
         return both;
     }
 
-    private IReadOnlyList<InventoryRow> Shared(BaseItemKind kind) => Build(_cache, kind, BuildRows);
+    private IReadOnlyList<InventoryRow> Shared(Level level) => Build(_cache, level, BuildRows);
 
     // Lazy rather than a plain factory: a page that opens several tabs builds each set once.
     private IReadOnlyList<InventoryRow> Build<TKey>(
@@ -664,9 +700,15 @@ public sealed partial class InventoryService : IDisposable
         }
     }
 
-    private IReadOnlyList<InventoryRow> BuildRows(BaseItemKind kind)
+    private IReadOnlyList<InventoryRow> BuildRows(Level level)
     {
+        if (level.Versions)
+        {
+            return Shared(new Level(level.Kind)).SelectMany(r => r.Versions).ToArray();
+        }
+
         var watch = Stopwatch.StartNew();
+        var kind = level.Kind;
         var levels = Hierarchy.Of(kind);
         var leaf = levels is null ? kind : levels[^1];
         var items = Items(kind);
@@ -700,7 +742,7 @@ public sealed partial class InventoryService : IDisposable
 
             foreach (var item in items)
             {
-                var row = NewRow(item, roots, libraries, listed);
+                var row = NewRow(item, roots, libraries);
                 if (!timed)
                 {
                     row.Duration = null;
@@ -738,6 +780,12 @@ public sealed partial class InventoryService : IDisposable
                     ApplyFile(row, item);
                 }
 
+                if (item is Video video && Versions(video, listed) is { Length: > 1 } versions)
+                {
+                    row.Versions = VersionRows(row, versions, roots, libraries);
+                    FoldVersions(row, row.Versions);
+                }
+
                 rows.Add(row);
             }
         }
@@ -746,17 +794,17 @@ public sealed partial class InventoryService : IDisposable
             // The leaf rows already carry every stream attribute, so a series totals its episodes
             // from memory instead of asking the database again for each series and each season.
             var toLeaves = levels![0] == kind;
-            var byParent = Shared(leaf).ToLookup(r => toLeaves ? r.AncestorId : r.ParentId);
+            var byParent = Shared(new Level(leaf)).ToLookup(r => toLeaves ? r.AncestorId : r.ParentId);
 
             // What can be opened is the level directly below, which for a series is its seasons
             // rather than the episodes it is totaled from.
             var below = toLeaves && levels[1] != leaf
-                ? Shared(levels[1]).ToLookup(r => r.ParentId)
+                ? Shared(new Level(levels[1])).ToLookup(r => r.ParentId)
                 : byParent;
 
             foreach (var item in items)
             {
-                var row = NewRow(item, roots, libraries, listed);
+                var row = NewRow(item, roots, libraries);
                 var children = byParent[item.Id].ToArray();
                 Fold(row, children);
                 row.Expandable = below[item.Id].Any();
@@ -777,22 +825,33 @@ public sealed partial class InventoryService : IDisposable
         }
 
         // Jellyfin keeps the genres of a show on the series, not on its seasons and episodes.
-        if (kind is BaseItemKind.Season or BaseItemKind.Episode)
+        var shows = kind is BaseItemKind.Season or BaseItemKind.Episode ? Items(BaseItemKind.Series) : null;
+        if (shows is not null)
         {
-            var shows = Items(BaseItemKind.Series).ToDictionary(s => s.Id, s => Joined(s.Genres));
+            var genres = shows.ToDictionary(s => s.Id, s => Joined(s.Genres));
             foreach (var row in rows)
             {
-                if (row.Genres is null && row.AncestorId is { } show && shows.TryGetValue(show, out var genres))
+                if (row.Genres is null && row.AncestorId is { } show && genres.TryGetValue(show, out var named))
                 {
-                    row.Genres = genres;
+                    row.Genres = named;
                 }
             }
         }
+
+        CountDuplicates(kind, items, rows, shows);
 
         var collections = Holders(Collections());
         foreach (var row in rows)
         {
             row.Collections = Listed(collections[row.Id]);
+
+            // Jellyfin keeps genres and collections on an item, not on its other versions.
+            foreach (var version in row.Versions)
+            {
+                version.Genres = row.Genres;
+                version.Collections = row.Collections;
+                version.Duplicates = row.Duplicates;
+            }
         }
 
         _logger.LogDebug("Built {Count} inventory rows for {Kind} in {Elapsed} ms", rows.Count, kind, watch.ElapsedMilliseconds);
@@ -811,13 +870,13 @@ public sealed partial class InventoryService : IDisposable
             (ItemSortBy.IndexNumber, SortOrder.Ascending),
             (ItemSortBy.SortName, SortOrder.Ascending)
         ],
-        DtoOptions = kind == BaseItemKind.AudioBook ? Lean(ItemFields.Settings) : Lean()
+        DtoOptions = kind == BaseItemKind.AudioBook ? Lean(ItemFields.Settings, ItemFields.ProviderIds) : Lean(ItemFields.ProviderIds)
     // A trailer or a making of belongs to the film it sits with, not to a row of its own.
     }).Where(item => item.ExtraType is null).ToArray();
 
     private IReadOnlyList<BaseItem> Books()
     {
-        var ids = Shared(BaseItemKind.AudioBook).Select(r => r.AncestorId).OfType<Guid>().Distinct().ToArray();
+        var ids = Shared(new Level(BaseItemKind.AudioBook)).Select(r => r.AncestorId).OfType<Guid>().Distinct().ToArray();
         return ids.Length == 0 ? [] : _libraryManager.GetItemList(new InternalItemsQuery
         {
             ItemIds = ids,
@@ -886,7 +945,173 @@ public sealed partial class InventoryService : IDisposable
     [GeneratedRegex(@"^(?:cd|dis[ck])\s*(\d{1,3})$", RegexOptions.IgnoreCase)]
     private static partial Regex DiscName();
 
-    private static void Fold(InventoryRow row, IReadOnlyList<InventoryRow> children)
+    // Jellyfin 12.1 lists a version filed in another library as a row of its own, which weighs itself.
+    private static Video[] Versions(Video video, HashSet<Guid> listed)
+        => HasVersions(video)
+            ? [video, .. video.GetAllVersions().Where(v => !v.Id.Equals(video.Id) && !listed.Contains(v.Id))]
+            : [];
+
+    private InventoryRow[] VersionRows(InventoryRow item, IReadOnlyList<Video> versions, List<Folder> roots, Dictionary<Guid, string?> libraries)
+    {
+        var labels = Labels(versions);
+        var rows = new InventoryRow[versions.Count];
+        for (var at = 0; at < versions.Count; at++)
+        {
+            var row = at == 0 ? item.Copy() : NewRow(versions[at], roots, libraries);
+            if (at > 0)
+            {
+                ApplyStreams(row, _mediaSourceManager.GetMediaStreams(versions[at].Id));
+            }
+
+            row.Name = labels[at] is { } label ? $"{item.Name} - {label}" : item.Name;
+            row.Year = item.Year;
+            row.Artists = item.Artists;
+            row.SeriesName = item.SeriesName;
+            row.SeasonNumber = item.SeasonNumber;
+            row.EpisodeNumber = item.EpisodeNumber;
+            row.Library ??= item.Library;
+            row.ParentId = item.Id;
+            row.AncestorId = item.AncestorId ?? item.Id;
+            rows[at] = row;
+        }
+
+        return rows;
+    }
+
+    // Jellyfin gives a film the runtime of the cut it plays by default.
+    private static void FoldVersions(InventoryRow row, IReadOnlyList<InventoryRow> versions)
+    {
+        var duration = row.Duration;
+        var mixed = Fold(row, versions);
+        row.Duration = duration;
+        row.Rateable = false;
+        row.TotalBitrate = CommonValue(versions, v => v.TotalBitrate, mixed, "totalBitrate");
+        row.Expandable = true;
+    }
+
+    // Jellyfin labels a version by what the name of its file adds to the name the versions share.
+    private static string?[] Labels(IReadOnlyList<Video> versions)
+    {
+        var names = versions.Select(FileName).ToArray();
+        var shared = Prefix(names).Length;
+        return names.Select(name => name[shared..].Trim(_delimiters) is { Length: > 0 } label ? label : null).ToArray();
+    }
+
+    private static string FileName(Video video)
+    {
+        var name = video.VideoType is VideoType.Dvd or VideoType.BluRay
+            ? Path.GetFileName(video.Path)
+            : Path.GetFileNameWithoutExtension(video.Path);
+        return video.AdditionalParts.Length == 0
+            ? name ?? string.Empty
+            : Prefix([name ?? string.Empty, .. video.AdditionalParts.Select(p => Path.GetFileNameWithoutExtension(p) ?? string.Empty)]).TrimEnd(_delimiters);
+    }
+
+    // Cut back to the end of a word, or "1080p" and "1440p" would share their "1".
+    private static string Prefix(IReadOnlyList<string> names)
+    {
+        var first = names[0];
+        var at = 0;
+        while (at < first.Length && names.All(n => at < n.Length && char.ToUpperInvariant(n[at]) == char.ToUpperInvariant(first[at])))
+        {
+            at++;
+        }
+
+        if (at > 0 && char.IsLetterOrDigit(first[at - 1]) && names.Any(n => at < n.Length && char.IsLetterOrDigit(n[at])))
+        {
+            while (at > 0 && char.IsLetterOrDigit(first[at - 1]))
+            {
+                at--;
+            }
+        }
+
+        return first[..at];
+    }
+
+    // Items Jellyfin keeps as versions of one another are one title to it, and not counted as duplicates.
+    private static void CountDuplicates(BaseItemKind kind, IReadOnlyList<BaseItem> items, List<InventoryRow> rows, IReadOnlyList<BaseItem>? shows)
+    {
+        var series = shows is null ? null : Shows(shows);
+        var keys = new string[items.Count][];
+        for (var at = 0; at < items.Count; at++)
+        {
+            var row = rows[at];
+            var show = row.AncestorId is { } id ? series?.GetValueOrDefault(id, id) ?? id : (Guid?)null;
+            keys[at] = kind switch
+            {
+                BaseItemKind.Season when show is not null && row.SeasonNumber is { } season
+                    => [string.Create(CultureInfo.InvariantCulture, $"{show:N}/{season}")],
+                BaseItemKind.Episode when show is not null && row.EpisodeNumber is { } episode
+                    => [string.Create(CultureInfo.InvariantCulture, $"{show:N}/{row.SeasonNumber}/{episode}")],
+                _ => Ids(items[at], Providers(kind))
+            };
+        }
+
+        var titles = Titles(keys);
+        var groups = items.Select(i => (i as Video)?.PrimaryVersionId ?? i.Id).ToArray();
+        var members = Enumerable.Range(0, items.Count)
+            .Where(at => titles[at].HasValue)
+            .ToLookup(at => titles[at]!.Value, at => groups[at]);
+        for (var at = 0; at < rows.Count; at++)
+        {
+            rows[at].Duplicates = titles[at] is { } title ? members[title].Count(g => !g.Equals(groups[at])) : null;
+        }
+    }
+
+    // A show without an id is a title of its own, so its episodes are still held against one another.
+    private static Dictionary<Guid, Guid> Shows(IReadOnlyList<BaseItem> shows)
+    {
+        var titles = Titles(shows.Select(s => Ids(s, Providers(BaseItemKind.Series))).ToArray());
+        return shows.Select((show, at) => (show.Id, Title: titles[at] is { } title ? shows[title].Id : show.Id))
+            .ToDictionary(s => s.Id, s => s.Title);
+    }
+
+    private static MetadataProvider[] Providers(BaseItemKind kind) => kind switch
+    {
+        BaseItemKind.Movie or BaseItemKind.Series or BaseItemKind.MusicVideo or BaseItemKind.Video
+            => [MetadataProvider.Tmdb, MetadataProvider.Imdb, MetadataProvider.Tvdb],
+        BaseItemKind.MusicAlbum => [MetadataProvider.MusicBrainzAlbum],
+        BaseItemKind.Audio => [MetadataProvider.MusicBrainzTrack],
+        _ => []
+    };
+
+    private static string[] Ids(BaseItem item, MetadataProvider[] providers)
+        => providers.Select(p => item.GetProviderId(p) is { Length: > 0 } id ? p + ":" + id.Trim() : null).OfType<string>().ToArray();
+
+    // One item can share an id with a second and another id with a third, which makes the three one title.
+    private static int?[] Titles(IReadOnlyList<IReadOnlyList<string>> keys)
+    {
+        var parent = Enumerable.Range(0, keys.Count).ToArray();
+        int Root(int at)
+        {
+            while (parent[at] != at)
+            {
+                at = parent[at] = parent[parent[at]];
+            }
+
+            return at;
+        }
+
+        var claimed = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        for (var at = 0; at < keys.Count; at++)
+        {
+            foreach (var key in keys[at])
+            {
+                if (claimed.TryGetValue(key, out var other))
+                {
+                    parent[Root(at)] = Root(other);
+                }
+                else
+                {
+                    claimed[key] = at;
+                }
+            }
+        }
+
+        return keys.Select((k, at) => k.Count > 0 ? Root(at) : (int?)null).ToArray();
+    }
+
+    private static HashSet<string> Fold(InventoryRow row, IReadOnlyList<InventoryRow> children)
     {
         row.Children = children.Count;
         if (children.Count == 0)
@@ -895,7 +1120,7 @@ public sealed partial class InventoryService : IDisposable
             row.Size = null;
             row.Duration = null;
             row.Container = null;
-            return;
+            return [];
         }
 
         var mixed = new HashSet<string>(StringComparer.Ordinal);
@@ -939,9 +1164,10 @@ public sealed partial class InventoryService : IDisposable
         row.TotalBitrate = row.Rateable && row.Size is > 0 && row.Duration is > 0
             ? (long?)(row.Size.Value * 8 / row.Duration.Value)
             : null;
+        return mixed;
     }
 
-    private InventoryRow NewRow(BaseItem item, List<Folder> roots, Dictionary<Guid, string?> libraries, HashSet<Guid> listed)
+    private InventoryRow NewRow(BaseItem item, List<Folder> roots, Dictionary<Guid, string?> libraries)
     {
         var row = new InventoryRow
         {
@@ -975,21 +1201,6 @@ public sealed partial class InventoryService : IDisposable
             {
                 row.Size = FolderSize(item.Path);
                 row.Rateable = false;
-            }
-
-            // Jellyfin 12.1 lists a version filed in another library as a row of its own, which weighs itself.
-            var versions = video.PrimaryVersionId is null
-                && (video.LocalAlternateVersions.Length > 0 || video.LinkedAlternateVersions.Length > 0)
-                ? video.GetAllVersions().Where(v => !v.Id.Equals(item.Id) && !listed.Contains(v.Id)).ToArray()
-                : [];
-
-            if (versions.Length > 0)
-            {
-                // Several cuts of one film are one item, all one length, and any of them can be stacked.
-                var bytes = versions.Sum(v => (v.Size ?? 0) + v.GetAdditionalParts().Sum(p => p.Size ?? 0));
-                row.Size = bytes > 0 ? (row.Size ?? 0) + bytes : row.Size;
-                row.Rateable = false;
-                row.Versions = versions.Select(v => v.Id).ToArray();
             }
         }
 
@@ -1184,6 +1395,13 @@ public sealed partial class InventoryService : IDisposable
         string? column)
         where T : struct
     {
+        // An episode kept in versions that differ is mixed itself, and its series with it.
+        if (column is not null && children.Any(c => c.Mixed?.Contains(column) == true))
+        {
+            mixed.Add(column);
+            return null;
+        }
+
         var values = children.Select(read).Where(v => v.HasValue).Select(v => v!.Value).ToArray();
         var distinct = values.Distinct().Take(2).ToArray();
         if (distinct.Length == 1 && values.Length == children.Count)
@@ -1221,6 +1439,12 @@ public sealed partial class InventoryService : IDisposable
         IEqualityComparer<T> comparer)
         where T : class
     {
+        if (children.Any(c => c.Mixed?.Contains(column) == true))
+        {
+            mixed.Add(column);
+            return null;
+        }
+
         var values = children.Select(read).OfType<T>().ToArray();
         var distinct = values.Distinct(comparer).Take(2).ToArray();
         if (distinct.Length == 1 && values.Length == children.Count)

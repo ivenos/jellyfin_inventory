@@ -29,6 +29,7 @@ public static class Columns
         Listing("narrators", "General", r => r.Narrators),
         new("library", "General", ColumnFormat.Text, r => r.Library),
         new("children", "General", ColumnFormat.Number, r => r.Children),
+        new("duplicates", "General", ColumnFormat.Number, r => r.Duplicates),
         new("container", "General", ColumnFormat.Text, r => r.Container),
         new("size", "General", ColumnFormat.Bytes, r => r.Size),
         new("duration", "General", ColumnFormat.Duration, r => r.Duration),

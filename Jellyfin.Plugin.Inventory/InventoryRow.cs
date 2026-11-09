@@ -240,6 +240,11 @@ public class InventoryRow
     public int? Children { get; set; }
 
     /// <summary>
+    /// Gets or sets how many other items of the kind are the same title, or null where nothing identifies it.
+    /// </summary>
+    public int? Duplicates { get; set; }
+
+    /// <summary>
     /// Gets or sets when the item was last played, for the user asking.
     /// </summary>
     public DateTime? LastPlayed { get; set; }
@@ -277,9 +282,10 @@ public class InventoryRow
     public int? PlayedByCount => PlayedBy?.Count;
 
     /// <summary>
-    /// Gets or sets the ids of the versions of a film that have no row of their own and play as this one.
+    /// Gets or sets the rows of the versions of an item that are listed as no item of their own, the one
+    /// it plays by default first, or none where it is kept in one.
     /// </summary>
-    public IReadOnlyList<Guid> Versions { get; set; } = [];
+    public IReadOnlyList<InventoryRow> Versions { get; set; } = [];
 
     /// <summary>
     /// Gets or sets a value indicating whether the size and the runtime measure the same files, which

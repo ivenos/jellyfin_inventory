@@ -11,7 +11,7 @@
 <a href="https://github.com/ivenos/jellyfin_inventory/releases"><picture><source media="(prefers-color-scheme: dark)" srcset="https://shieldcn.dev/github/downloads/ivenos/jellyfin_inventory.svg?variant=secondary&amp;mode=dark"><img alt="Downloads" src="https://shieldcn.dev/github/downloads/ivenos/jellyfin_inventory.svg?variant=secondary&amp;mode=light"></picture></a>
 <a href="LICENSE"><picture><source media="(prefers-color-scheme: dark)" srcset="https://shieldcn.dev/badge/license-GPL_3.0.svg?variant=secondary&amp;mode=dark"><img alt="License" src="https://shieldcn.dev/badge/license-GPL_3.0.svg?variant=secondary&amp;mode=light"></picture></a>
 
-Inventory is a Jellyfin plugin that puts everything in your libraries into one sortable, searchable and filterable table in the dashboard, from a whole series down to a single episode. It shows where the space has gone and what your files are made of, exports the result as a spreadsheet, and puts the rows you pick into a collection or playlist. The page keeps its tab, search, filters and sort order in its address, so a bookmark or a link opens the table the same way again.
+Inventory is a Jellyfin plugin that puts everything in your libraries into one sortable, searchable and filterable table in the dashboard, from a whole series down to a single episode. It shows where the space has gone, what your files are made of and which titles you keep twice, exports the result as a spreadsheet, and puts the rows you pick into a collection or playlist. The page keeps its tab, search, filters and sort order in its address, so a bookmark or a link opens the table the same way again.
 
 <img alt="The movies table, with size, size per hour, bitrate, codec, resolution, HDR and audio" src=".github/assets/movies.png" width="48%">
 <img alt="The series table expanded to episodes, with seasons and series totaled from them" src=".github/assets/series.png" width="48%">
@@ -36,11 +36,13 @@ The Inventory plugin then appears in the catalog under General. Restart the serv
 
 | Group | Columns |
 | --- | --- |
-| General | Name, Series, Season, Episode, Year, Genres, Collections, Playlists, Artists, Authors, Narrators, Library, Items, Container, Size, Duration, Size/hour, Bitrate, Date added, Path |
+| General | Name, Series, Season, Episode, Year, Genres, Collections, Playlists, Artists, Authors, Narrators, Library, Items, Duplicates, Container, Size, Duration, Size/hour, Bitrate, Date added, Path |
 | Video | Video codec, Profile, Resolution, Quality, Height, Video bitrate, Framerate, Bit depth, HDR, Dolby Vision, Pixel format, Interlaced |
 | Audio | Audio codec, Layout, Channels, Audio bitrate, Sample rate, Spatial, Audio tracks, Audio languages |
 | Subtitles | Subtitle tracks, Subtitle languages |
 | Playback | Last played, Last played (all users), Plays, Plays (all users), Fully played, Fully played by |
+
+A film, an episode, a music video or a video kept in several versions opens to them, and shows Mixed where they differ. Duplicates counts the other items of a tab that are the same title: a film, a series, a music video or a video by its TMDb, IMDb or TheTVDB id, an album or a track by its MusicBrainz id, and a season or an episode by its number in the same show. Items Jellyfin groups as versions of one another do not count, and an item without an id stays empty.
 
 ## API
 
@@ -59,6 +61,8 @@ Nine endpoints under `/Inventory`, all requiring an administrator token. An API 
 | `POST Targets/Held` | `Ids` and `All` as `POST Targets` takes them, in the body | The collections that hold any of the items, and the user's playlists that hold what they play |
 
 `filters` is a JSON array of up to 20 conditions, and a row has to meet all of them: `[{"column":"height","op":"ge","value":1080}]`. `op` is one of the operators `Schema` lists for the column, out of `eq`, `ne`, `ge`, `le`, `contains`, `notContains`, `empty` and `notEmpty`, the last two taking no `value`. A value is in the unit `Items` answers in, which is bytes, bytes per hour, seconds or bits per second, a date is `yyyy-MM-dd`, a truth value is `true` or `false`, and a quality is one of the classes `Schema` lists, compared by its place in that list. In a column `Schema` marks as `List`, `eq` and `ne` check each value on its own. An empty cell meets only `ne`, `notContains` and `empty`, and a cell that reads as mixed meets no condition.
+
+The level `Version` lists every file of a tab: an item kept in one file as itself, and one kept in several once per version, named after the item and what the name of its file adds.
 
 `search` is a substring of the name, the series name, the path, an artist, an author or a narrator. On the outermost level it reaches every level of the tab, and `Export` then leaves out a row whose series, season, album or book matched as well. A `csv` names the unit in its header and takes its decimal and field separators from `culture`, an `ods` types its cells.
 

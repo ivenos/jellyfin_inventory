@@ -94,7 +94,7 @@ import json, pathlib, re
 tabs = re.findall(r'^\s*\[(BaseItemKind\.[^\]]+)\]', pathlib.Path('$ROOT/Jellyfin.Plugin.Inventory/Hierarchy.cs').read_text(encoding='utf-8'), re.M)
 tabs = [re.findall(r'BaseItemKind\.(\w+)', tab) for tab in tabs]
 strings = json.loads(pathlib.Path('$ROOT/Jellyfin.Plugin.Inventory/Strings/en.json').read_text(encoding='utf-8'))
-wanted = {'level.' + k for tab in tabs for k in tab} | {'mediaType.' + (tab[-1] if tab[0] == 'Folder' else tab[0]) for tab in tabs}
+wanted = {'level.' + k for tab in tabs for k in tab} | {'mediaType.' + (tab[-1] if tab[0] == 'Folder' else tab[0]) for tab in tabs} | {'level.Version'}
 missing = sorted(wanted - set(strings))
 print('ok' if tabs and not missing else missing)")" "ok"
 # CONTRIBUTING puts it the other way round: a column that is not in the README does not exist.
@@ -375,7 +375,9 @@ fi
 
 # Left behind by the growing-library check, and it would throw off this run's counts.
 rm -rf "${WORK:?}/media/movies/Late Arrival 2 (2025)" "${WORK:?}/media/movies/Late Arrival 10 (2025)" \
-    "${WORK:?}/media/movies/Late Arrival 11 (2025)" "${WORK:?}/media/movies/Disc Rip (2001)" "${WORK:?}/media/copies"
+    "${WORK:?}/media/movies/Late Arrival 11 (2025)" "${WORK:?}/media/movies/Disc Rip (2001)" "${WORK:?}/media/copies" \
+    "${WORK:?}/media/movies/Late Cut (2025)" \
+    "${WORK:?}/media/shows/Twin Cut (2024)" "${WORK:?}/media/shows/Long Run Again (2020)"
 
 echo "== start =="
 docker rm -f "$CONTAINER" >/dev/null 2>&1 || true
@@ -518,6 +520,9 @@ check "a book has no level below it" \
     "$(printf '%s\n' "$SCHEMA" | field "len([l for t in json.load(sys.stdin)['MediaTypes'] if t['MediaType']=='Book' for l in t['Levels']])")" "1"
 check "series offers its three levels" \
     "$(printf '%s\n' "$SCHEMA" | field "','.join(l['Level'] for t in json.load(sys.stdin)['MediaTypes'] if t['MediaType']=='Series' for l in t['Levels'])")" "Series,Season,Episode"
+check "a tab of films kept in several versions has a level for them, named in the caller's language" \
+    "$(printf '%s\n' "$SCHEMA" | field "','.join(l['Level'] for t in json.load(sys.stdin)['MediaTypes'] if t['MediaType']=='Movie' for l in t['Levels'])")/$(api 'Inventory/Schema?culture=de' \
+        | field "[l['Label'] for t in json.load(sys.stdin)['MediaTypes'] if t['MediaType']=='Movie' for l in t['Levels']][-1]")" "Movie,Version/Versionen"
 check "columns are offered" \
     "$(printf '%s\n' "$SCHEMA" | field "len(json.load(sys.stdin)['Columns']) > 30")" "True"
 check "an extra sitting beside a film is not an item of its own" \
@@ -592,16 +597,46 @@ check "and so does one whose own cut is the split one" \
 check "and runs as long as the cut it was measured from" \
     "$(api 'Inventory/Items?mediaType=Movie&search=Two%20Cuts' \
         | field "round(json.load(sys.stdin)['Rows'][0]['Values']['duration'])")" "10"
-check "a film in several cuts takes no rate from bytes and a runtime that measure different files" \
+check "a film in several cuts takes no rate from bytes and a runtime that measure different files, and reads as mixed where its cuts differ" \
     "$(api 'Inventory/Items?mediaType=Movie&search=Double%20Cut' \
-        | field "(lambda v: v['sizePerHour'] is None and 0 < v['totalBitrate'] < v['size'] * 8 / v['duration'])(json.load(sys.stdin)['Rows'][0]['Values'])")" "True"
+        | field "(lambda v: '%s/%s/%s' % (v['sizePerHour'], v['totalBitrate'], v['videoCodec']))(json.load(sys.stdin)['Rows'][0]['Values'])")" "None/Mixed/h264"
+curl -sf -X POST "$BASE/Inventory/Columns?level=Video" -H "Authorization: MediaBrowser Token=\"$TOKEN\"" -H "$JSON" \
+    -d '["name","children","size","duration","sizePerHour","totalBitrate","resolution","quality","videoCodec","library","path"]' >/dev/null || refused "Inventory/Columns?level=Video"
+DOUBLE=$(api 'Inventory/Items?mediaType=Movie' | identify 'Double Cut (2022)')
+CUTS_OF=$(api "Inventory/Items?mediaType=Movie&level=Version&parentIds=$DOUBLE&columnLevel=Video")
+check "a film kept in two cuts opens to them, counts them, and holds the resolution they differ in mixed" \
+    "$(api 'Inventory/Items?mediaType=Movie&columnLevel=Video' | field "(lambda r: '%s/%s/%s/%s' % (r['Expandable'], r['Values']['children'], r['Values']['resolution'], r['Values']['quality']))([r for r in json.load(sys.stdin)['Rows'] if r['Values']['name']=='Double Cut (2022)'][0])")" \
+    "True/2/Mixed/Mixed"
+check "each cut is named after the film and what its file adds, the one it plays by default first" \
+    "$(printf '%s\n' "$CUTS_OF" | field "'|'.join(r['Values']['name'] for r in json.load(sys.stdin)['Rows'])")/$(api "Inventory/Items?mediaType=Movie&level=Version&parentIds=$(api 'Inventory/Items?mediaType=Movie' | identify 'Two Cuts (2019)')&columnLevel=Video" \
+        | field "'|'.join(r['Values']['name'] for r in json.load(sys.stdin)['Rows'])")" \
+    "Double Cut (2022)|Double Cut (2022) - 720p/Two Cuts (2019)|Two Cuts (2019) - Directors Cut"
+check "and weighs its own files, a split one both of its parts, at a rate of its own" \
+    "$(printf '%s\n' "$CUTS_OF" | field "'/'.join('%s:%s' % (r['Values']['size'], round(r['Values']['sizePerHour']) == round(r['Values']['size'] / r['Values']['duration'] * 3600)) for r in json.load(sys.stdin)['Rows'])")" \
+    "$(wc -c < "$WORK/media/movies/Double Cut (2022)/Double Cut (2022).mkv" | tr -d ' '):True/$(cat "$WORK/media/movies/Double Cut (2022)"/*720p*.mkv | wc -c | tr -d ' '):True"
+check "the level of versions lists every file once, a film kept in one as itself, and weighs what the films do" \
+    "$(api 'Inventory/Items?mediaType=Movie&level=Version' | field "(lambda d: '%s/%s' % (d['TotalCount'], d['TotalSize']))(json.load(sys.stdin))")" \
+    "9/$(api 'Inventory/Items?mediaType=Movie' | field "json.load(sys.stdin)['TotalSize']")"
+check "so a filter there finds the cut that a mixed film hides" \
+    "$(api "Inventory/Items?mediaType=Movie&level=Version&filters=$(filtered '[{"column":"quality","op":"eq","value":"720p"}]')" \
+        | field "','.join(sorted(r['Values']['name'] for r in json.load(sys.stdin)['Rows']))")/$(api \
+        "Inventory/Items?mediaType=Movie&filters=$(filtered '[{"column":"quality","op":"eq","value":"720p"}]')" | field "json.load(sys.stdin)['TotalCount']")" \
+    "Double Cut (2022) - 720p,Two Cuts (2019) - Directors Cut/0"
+check "a search from the top finds a film and its cuts, and weighs them once" \
+    "$(api 'Inventory/Items?mediaType=Movie&search=Double%20Cut' | field "(lambda d: '%s/%s' % (d['TotalCount'], d['TotalSize']))(json.load(sys.stdin))")" "3/$VERSIONS"
+check "and one that only the name of a cut meets counts that cut" \
+    "$(api 'Inventory/Items?mediaType=Movie&search=Cut%20(2022)%20-%20720' | field "(lambda d: '%s/%s' % (d['TotalCount'], d['TotalSize']))(json.load(sys.stdin))")" \
+    "1/$(cat "$WORK/media/movies/Double Cut (2022)"/*720p*.mkv | wc -c | tr -d ' ')"
+check "the level of versions is refused on a tab whose items come in one file" \
+    "$(curl -s -o /dev/null -w '%{http_code}' "$BASE/Inventory/Items?mediaType=MusicAlbum&level=Version" \
+        -H "Authorization: MediaBrowser Token=\"$TOKEN\"")" "400"
 check "the totals line adds up the runtimes it is showing" \
     "$(printf '%s\n' "$MOVIES" | field "(lambda d: round(d['TotalDuration']) == round(sum(r['Values']['duration'] or 0 for r in d['Rows'])))(json.load(sys.stdin))")" "True"
 check "and that runtime is not zero" \
     "$(printf '%s\n' "$MOVIES" | field "json.load(sys.stdin)['TotalDuration'] > 0")" "True"
 check "and is rounded to the digits the rows carry" \
     "$(api 'Inventory/Items?mediaType=Series&limit=1' | field "(lambda t: t == round(t, 3))(json.load(sys.stdin)['TotalDuration'])")" "True"
-check "a movie cannot be expanded" \
+check "a movie kept in one file cannot be expanded" \
     "$(printf '%s\n' "$MOVIES" | field "json.load(sys.stdin)['Rows'][0]['Expandable']")" "False"
 check "a bitrate is the bytes of a file over its runtime, counted in bits" \
     "$(printf '%s\n' "$MOVIES" | field "(lambda v: v['totalBitrate'] == int(v['size'] * 8 / v['duration']))([r['Values'] for r in json.load(sys.stdin)['Rows'] if r['Values']['name']=='Blue Harbour (2021)'][0])")" "True"
@@ -848,7 +883,7 @@ check "a film cropped to scope is still the class its width puts it in" \
 check "and one filmed upright is classed by its long side" \
     "$(printf '%s\n' "$QUALITY" | named '=Formula Trap (2024)' quality)" "240p"
 check "quality sorts by class, not by how the text reads" \
-    "$(printf '%s\n' "$QUALITY" | field "','.join(dict.fromkeys(r['Values']['quality'] for r in json.load(sys.stdin)['Rows']))")" "240p,360p,1080p,4K"
+    "$(printf '%s\n' "$QUALITY" | field "','.join(dict.fromkeys(r['Values']['quality'] for r in json.load(sys.stdin)['Rows']))")" "240p,360p,1080p,4K,Mixed"
 curl -sf -X POST "$BASE/Inventory/Columns?level=MusicVideo" \
     -H "Authorization: MediaBrowser Token=\"$TOKEN\"" -H "$JSON" -d '["name","series","genres"]' >/dev/null || refused "Inventory/Columns?level=MusicVideo"
 GENRES=$(api 'Inventory/Items?mediaType=Movie&columnLevel=MusicVideo')
@@ -898,7 +933,7 @@ check "and a class is held against another by its place among them, not by how i
     "$(api "Inventory/Items?mediaType=Movie&filters=$(filtered '[{"column":"quality","op":"ge","value":"1080p"}]')" \
         | field "json.load(sys.stdin)['TotalCount']")/$(api "Inventory/Items?mediaType=Movie&filters=$(filtered '[{"column":"quality","op":"le","value":"360p"}]')" \
         | field "json.load(sys.stdin)['TotalCount']")/$(api "Inventory/Items?mediaType=Movie&filters=$(filtered '[{"column":"quality","op":"eq","value":"4k"}]')" | names)" \
-    "3/4/Night Signal (2023)"
+    "3/2/Night Signal (2023)"
 check "text is held against the value whatever its case" \
     "$(api "Inventory/Items?mediaType=Movie&filters=$(filtered '[{"column":"videoCodec","op":"eq","value":"HEVC"}]')" | names)" "Night Signal (2023)"
 check "a genre is found among the others a film has" \
@@ -1030,6 +1065,48 @@ check "a name with a comma in it is one value of a list to = and ≠" \
         'Inventory/Items?mediaType=Movie&columnLevel=MusicVideo' | named 'Night Signal (2023)' genres)" \
     "Night Signal (2023)||6|Crime, Thriller"
 edit "$COMMA" '{"Genres": [], "LockedFields": []}'
+curl -sf -X POST "$BASE/Inventory/Columns?level=MusicVideo" \
+    -H "Authorization: MediaBrowser Token=\"$TOKEN\"" -H "$JSON" -d '["name","duplicates"]' >/dev/null || refused "Inventory/Columns?level=MusicVideo"
+twins() { api "Inventory/Items?mediaType=$1&columnLevel=MusicVideo&limit=1000${2:-}" | field "','.join('%s=%s' % (r['Values']['name'], r['Values']['duplicates']) for r in sorted(json.load(sys.stdin)['Rows'], key=lambda r: r['Values']['name']))"; }
+check "no film counts a duplicate while no provider has identified any" \
+    "$(api 'Inventory/Items?mediaType=Movie&columnLevel=MusicVideo' | field "sorted({str(r['Values']['duplicates']) for r in json.load(sys.stdin)['Rows']})")" "['None']"
+edit "$(api 'Inventory/Items?mediaType=Movie' | identify 'Blue Harbour (2021)')" '{"ProviderIds": {"Tmdb": "1001"}}'
+edit "$(api 'Inventory/Items?mediaType=Movie' | identify 'Two Part Feature (2019)')" '{"ProviderIds": {"Tmdb": "1001", "Imdb": "tt0000002"}}'
+edit "$(api 'Inventory/Items?mediaType=Movie' | identify '=Formula Trap (2024)')" '{"ProviderIds": {"Imdb": "TT0000002"}}'
+edit "$COMMA" '{"ProviderIds": {"Tmdb": "1002", "Tvdb": "1001"}}'
+i=0
+until [ "$(twins Movie | grep -c '=2' || true)" = 3 ] || [ "$i" -gt 15 ]; do
+    i=$((i + 1))
+    sleep 1
+done
+check "a film is the same title as one a provider gave the same id, and as a third that shares another id with that one" \
+    "$(twins Movie)" \
+    "=Formula Trap (2024)=2,Blue Harbour (2021)=2,Double Cut (2022)=None,Night Signal (2023)=0,Two Cuts (2019)=None,Two Part Feature (2019)=2,Ärger, \"Quoted\" & <Mövie> (2018)=None"
+check "and a filter finds the films kept twice" \
+    "$(api "Inventory/Items?mediaType=Movie&filters=$(filtered '[{"column":"duplicates","op":"ge","value":1}]')" | names)" \
+    "=Formula Trap (2024),Blue Harbour (2021),Two Part Feature (2019)"
+TRACKS=$(api 'Inventory/Items?mediaType=MusicAlbum&level=Audio' | field "' '.join(r['Id'] for r in json.load(sys.stdin)['Rows'] if r['Values']['name'] in ('Track 1', 'Track 2'))")
+tagged() {
+    n=0
+    for track in $TRACKS; do
+        n=$((n + 1))
+        edit "$track" "{\"ProviderIds\": {\"MusicBrainzTrack\": \"5e8c2f6a-0000-4000-8000-00000000000$([ "$1" = same ] && echo 1 || echo $n)\", \"MusicBrainzAlbum\": \"5e8c2f6a-0000-4000-8000-000000000009\"}}"
+    done
+    i=0
+    until twins MusicAlbum '&level=Audio' | grep -q "Track 2=$2" || [ "$i" -gt 15 ]; do
+        i=$((i + 1))
+        sleep 1
+    done
+    twins MusicAlbum '&level=Audio'
+}
+check "the tracks of one album are not one title by the album id they share" "$(tagged apart 0)" "Loose Single=None,Track 1=0,Track 2=0"
+check "while two that MusicBrainz gave one track id count each other" "$(tagged same 1)" "Loose Single=None,Track 1=1,Track 2=1"
+for film in "Blue Harbour (2021)" "Two Part Feature (2019)" "=Formula Trap (2024)" "Night Signal (2023)"; do
+    edit "$(api 'Inventory/Items?mediaType=Movie' | identify "$film")" '{"ProviderIds": {}}'
+done
+for track in $TRACKS; do
+    edit "$track" '{"ProviderIds": {}}'
+done
 check "a rate is held against the digits the table shows, not the ones it is kept as" \
     "$(api "Inventory/Items?mediaType=Movie&filters=$(filtered '[{"column":"frameRate","op":"eq","value":23.976}]')" | names)" "Blue Harbour (2021)"
 check "a truth value that is false is a value, not an empty cell" \
@@ -1045,7 +1122,7 @@ check "an empty cell meets a negated condition, since it does not hold the value
 check "a bound belongs to the range it closes" \
     "$(api "Inventory/Items?mediaType=Movie&filters=$(filtered '[{"column":"height","op":"le","value":1080}]')" \
         | field "json.load(sys.stdin)['TotalCount']")/$(api "Inventory/Items?mediaType=Movie&filters=$(filtered '[{"column":"height","op":"le","value":1079}]')" \
-        | field "json.load(sys.stdin)['TotalCount']")" "6/5"
+        | field "json.load(sys.stdin)['TotalCount']")" "4/3"
 check "a number only some of the items below carry is not read as all of them" \
     "$(api "Inventory/Items?mediaType=Series&filters=$(filtered '[{"column":"height","op":"ge","value":0}]')" | names)" "Harbour Lights"
 check "an episode is found by its season and by its number" \
@@ -1159,6 +1236,16 @@ curl -sf -X POST "$BASE/Inventory/Expand?mediaType=Series&level=Episode" \
     -H "Authorization: MediaBrowser Token=\"$TOKEN\"" >/dev/null || refused "Inventory/Expand?mediaType=Series&level=Episode"
 check "how far a tab is expanded is remembered" \
     "$(api 'Inventory/Schema' | field "[t['ExpandedTo'] for t in json.load(sys.stdin)['MediaTypes'] if t['MediaType']=='Series'][0]")" "Episode"
+check "and a tab of films can be opened down to their versions, under the name the level goes by" \
+    "$(curl -s -X POST "$BASE/Inventory/Expand?mediaType=Movie&level=version" -H "Authorization: MediaBrowser Token=\"$TOKEN\"" \
+        | field "json.load(sys.stdin)['Level']")/$(api 'Inventory/Schema' | field "[t['ExpandedTo'] for t in json.load(sys.stdin)['MediaTypes'] if t['MediaType']=='Movie'][0]")" "Version/Version"
+curl -sf -X POST "$BASE/Inventory/Expand?mediaType=Movie&level=Movie" -H "Authorization: MediaBrowser Token=\"$TOKEN\"" >/dev/null \
+    || refused "Inventory/Expand?mediaType=Movie&level=Movie"
+check "the versions start with columns of their own, and keep the ones chosen for them" \
+    "$(api 'Inventory/Items?mediaType=Movie&level=Version&limit=1' | field "','.join(c['Key'] for c in json.load(sys.stdin)['Columns'])")/$(curl -sf -X POST "$BASE/Inventory/Columns?level=version" \
+        -H "Authorization: MediaBrowser Token=\"$TOKEN\"" -H "$JSON" -d '["name","path"]' | field "json.load(sys.stdin)['Level']")/$(api 'Inventory/Items?mediaType=Movie&level=Version&limit=1' \
+        | field "','.join(c['Key'] for c in json.load(sys.stdin)['Columns'])")" \
+    "name,size,duration,sizePerHour,totalBitrate,videoCodec,resolution,videoRange,audioCodec,audioLayout,path/Version/name,path"
 check "the schema says how each column is to be formatted" \
     "$(api 'Inventory/Schema' | field "','.join(sorted('%s=%s' % (c['Key'], c['Format']) for c in json.load(sys.stdin)['Columns'] if c['Key'] in ('size', 'duration', 'sizePerHour', 'dateAdded', 'played')))")" \
     "dateAdded=Date,duration=Duration,played=Boolean,size=Bytes,sizePerHour=BytesPerHour"
@@ -1307,6 +1394,11 @@ at = [rows[0].index(name) for name in ('Duration (s)', 'Size/hour (B)')]
 print('ok' if all(len(r[i].partition('.')[2]) <= 3 for r in rows[1:] for i in at) else rows[1:])")" "ok"
 check "csv export is offered as a file" \
     "$(curl -sf -o /dev/null -D - "$BASE/Inventory/Export?mediaType=Movie&format=csv" -H "Authorization: MediaBrowser Token=\"$TOKEN\"" | grep -ci 'filename=inventory-movie.csv')" "1"
+check "the versions of a tab are exported under the name of its items" \
+    "$(curl -sf -o /dev/null -D - "$BASE/Inventory/Export?mediaType=Movie&level=Version&format=csv" -H "Authorization: MediaBrowser Token=\"$TOKEN\"" | grep -ci 'filename=inventory-movie-versions.csv')/$(curl -sf \
+        "$BASE/Inventory/Export?mediaType=Movie&level=Version&format=csv" -H "Authorization: MediaBrowser Token=\"$TOKEN\"" | python3 -c "
+import csv, io, sys
+print(len(list(csv.reader(io.StringIO(sys.stdin.buffer.read().decode('utf-8-sig'))))) - 1)")" "1/9"
 check "the books of the audiobook tab are exported under its name, their files beside them" \
     "$(curl -sf -o /dev/null -D - "$BASE/Inventory/Export?mediaType=AudioBook&level=Folder&format=csv" -H "Authorization: MediaBrowser Token=\"$TOKEN\"" | grep -ci 'filename=inventory-audiobook.csv')/$(curl -sf -o /dev/null -D - "$BASE/Inventory/Export?mediaType=AudioBook&level=AudioBook&format=csv" -H "Authorization: MediaBrowser Token=\"$TOKEN\"" | grep -ci 'filename=inventory-audiobook-files.csv')" "1/1"
 curl -sf "$BASE/Inventory/Export?mediaType=Movie&format=ods" -H "Authorization: MediaBrowser Token=\"$TOKEN\"" -o "$WORK/export.ods" \
@@ -1522,6 +1614,10 @@ check "a film played in its second cut counts and dates that play, which jellyfi
     "$(curl -sf "$BASE/Inventory/Items?mediaType=Movie&search=Two%20Cuts" -H "Authorization: MediaBrowser Token=\"$SECOND_TOKEN\"" \
         | field "(lambda v: '%s/%s/%s' % (v['played'], v['everyonePlayCount'], v['everyoneLastPlayed'] is not None))(json.load(sys.stdin)['Rows'][0]['Values'])")" \
     "True/1/True"
+check "and the row of that cut counts the play, while jellyfin marks every cut of the film played" \
+    "$(curl -sf "$BASE/Inventory/Items?mediaType=Movie&level=Version&parentIds=$TWO_CUTS&columnLevel=Movie" -H "Authorization: MediaBrowser Token=\"$SECOND_TOKEN\"" \
+        | field "','.join('%s=%s/%s' % (r['Values']['name'], r['Values']['played'], r['Values']['everyonePlayCount']) for r in json.load(sys.stdin)['Rows'])")" \
+    "Two Cuts (2019)=True/0,Two Cuts (2019) - Directors Cut=True/1"
 curl -sf -X POST "$BASE/Auth/Keys?app=inventory-test" -H "Authorization: MediaBrowser Token=\"$TOKEN\"" >/dev/null || refused "Auth/Keys"
 KEY=$(curl -sf "$BASE/Auth/Keys" -H "Authorization: MediaBrowser Token=\"$TOKEN\"" \
     | field "[k['AccessToken'] for k in json.load(sys.stdin)['Items'] if k['AppName']=='inventory-test'][0]")
@@ -1696,6 +1792,14 @@ check "a series picked with one of its episodes adds that episode once" \
 check "items picked by hand go in beside a whole listing" \
     "$(targets "{\"Kind\":\"Collection\",\"Name\":\"Inventory Pile\",\"Ids\":[\"$BLUE\"],\"All\":{\"MediaType\":\"Series\",\"Search\":\"Patchy\"}}" | outcome)" \
     "Inventory Pile/2/0"
+CUT=$(api "Inventory/Items?mediaType=Movie&level=Version&parentIds=$DOUBLE" | field "json.load(sys.stdin)['Rows'][-1]['Id']")
+check "a version picked goes in as its film, once beside the film itself, and the film names the collection" \
+    "$(targets "{\"Kind\":\"Collection\",\"Name\":\"Inventory Cuts\",\"Ids\":[\"$CUT\",\"$DOUBLE\"]}" | outcome)|$(listed Movie 'Double Cut (2022)' collections | tr ',' '\n' | grep -c 'Inventory Cuts')" \
+    "Inventory Cuts/1/0|1"
+check "and what holds a version is what holds its film" \
+    "$(held "{\"Ids\":[\"$CUT\"]}" | cut -d/ -f1 | tr ',' '\n' | grep -c 'Inventory Cuts')" "1"
+check "a listing of versions picked whole puts each film in once" \
+    "$(targets '{"Kind":"Collection","Name":"Inventory Every Cut","All":{"MediaType":"Movie","Level":"Version","Search":"Cut"}}' | outcome)" "Inventory Every Cut/2/0"
 
 LONG_RUN=$(api 'Inventory/Items?mediaType=Series' | identify 'Long Run')
 check "a series left out of a search that also finds its seasons leaves the seasons in" \
@@ -2043,6 +2147,9 @@ cp -r "$WORK/media/movies/Blue Harbour (2021)" "$WORK/media/movies/Late Arrival 
 mv "$WORK/media/movies/Late Arrival 2 (2025)/Blue Harbour (2021).mkv" \
    "$WORK/media/movies/Late Arrival 2 (2025)/Late Arrival 2 (2025).mkv"
 cp -r "$WORK/media/spare/Late Arrival 10 (2025)" "$WORK/media/spare/Late Arrival 11 (2025)" "$WORK/media/spare/Disc Rip (2001)" "$WORK/media/movies/"
+mkdir -p "$WORK/media/movies/Late Cut (2025)"
+cp "$WORK/media/movies/Blue Harbour (2021)/Blue Harbour (2021).mkv" "$WORK/media/movies/Late Cut (2025)/Late Cut (2025) - 1080p.mkv"
+cp "$WORK/media/movies/Double Cut (2022)/Double Cut (2022).mkv" "$WORK/media/movies/Late Cut (2025)/Late Cut (2025) - 360p.mkv"
 curl -sf -X POST "$BASE/Inventory/Columns?level=Video" \
     -H "Authorization: MediaBrowser Token=\"$TOKEN\"" -H "$JSON" \
     -d '["name","container","size","duration","sizePerHour","videoCodec"]' >/dev/null || refused "Inventory/Columns?level=Video"
@@ -2050,7 +2157,7 @@ curl -sf -X POST "$BASE/Library/Refresh" -H "Authorization: MediaBrowser Token=\
 printf 'waiting for the new films'
 i=0
 until [ "$(api 'Inventory/Items?mediaType=Movie&columnLevel=Video&limit=100' \
-    | field "(lambda d: '%s/%s' % (d['TotalCount'], [bool(r['Values']['videoCodec']) for r in d['Rows'] if r['Values']['name'] in ('Disc Rip (2001)', 'Late Arrival 10 (2025)', 'Late Arrival 11 (2025)')]))(json.load(sys.stdin))")" = "11/[True, True, True]" ]; do
+    | field "(lambda d: '%s/%s' % (d['TotalCount'], [bool(r['Values']['videoCodec']) for r in d['Rows'] if r['Values']['name'] in ('Disc Rip (2001)', 'Late Arrival 10 (2025)', 'Late Arrival 11 (2025)', 'Late Cut (2025)')]))(json.load(sys.stdin))")" = "12/[True, True, True, True]" ]; do
     i=$((i + 1))
     [ "$i" -gt 40 ] && { echo; echo "the new films never arrived" >&2; exit 1; }
     [ $((i % 10)) = 0 ] && curl -sf -X POST "$BASE/Library/Refresh" \
@@ -2060,7 +2167,20 @@ until [ "$(api 'Inventory/Items?mediaType=Movie&columnLevel=Video&limit=100' \
 done
 echo
 check "a film added while the server runs reaches the table without a restart" \
-    "$(api 'Inventory/Items?mediaType=Movie' | field "json.load(sys.stdin)['TotalCount']")" "11"
+    "$(api 'Inventory/Items?mediaType=Movie' | field "json.load(sys.stdin)['TotalCount']")" "12"
+LATE_CUT=$(api 'Inventory/Items?mediaType=Movie&search=Late%20Cut&limit=1000' | identify 'Late Cut (2025)')
+check "two cuts of which neither goes by the name of their folder are both named after what their file adds" \
+    "$(api "Inventory/Items?mediaType=Movie&level=Version&parentIds=$LATE_CUT" | field "'|'.join(sorted(r['Values']['name'] for r in json.load(sys.stdin)['Rows']))")" \
+    "Late Cut (2025) - 1080p|Late Cut (2025) - 360p"
+edit "$LATE_CUT" '{"Name": "Renamed Cut", "LockedFields": ["Name"]}'
+i=0
+until [ "$(api 'Inventory/Items?mediaType=Movie&search=Renamed%20Cut' | field "json.load(sys.stdin)['TotalCount']")" = 3 ] || [ "$i" -gt 15 ]; do
+    i=$((i + 1))
+    sleep 1
+done
+check "a search that only the names of the cuts meet counts both, though the one played by default goes by the film's id" \
+    "$(api "Inventory/Items?mediaType=Movie&search=$(filtered 'Renamed Cut -')" | field "(lambda d: '%s/%s' % (d['TotalCount'], d['TotalSize']))(json.load(sys.stdin))")" \
+    "2/$(cat "$WORK/media/movies/Late Cut (2025)"/*.mkv | wc -c | tr -d ' ')"
 check "a container is the one name the file goes by, out of the six ffprobe has for an mp4" \
     "$(api 'Inventory/Items?mediaType=Movie&columnLevel=Video&search=Late%20Arrival' | named 'Late Arrival 10 (2025)' container)" "mp4"
 check "and an m4v keeps its own name, which is not among them" \
@@ -2074,7 +2194,7 @@ check "a disc folder weighs every file in it, not the one jellyfin probed, and t
         | field "(lambda v: '%s/%s/%s' % (v['size'], v['duration'] is not None, v['sizePerHour']))(json.load(sys.stdin)['Rows'][0]['Values'])")" \
     "$(find "$WORK/media/movies/Disc Rip (2001)" -type f -exec cat {} + | wc -c | tr -d ' ')/True/None"
 rm -rf "$WORK/media/movies/Late Arrival 2 (2025)" "$WORK/media/movies/Late Arrival 10 (2025)" \
-    "$WORK/media/movies/Late Arrival 11 (2025)" "$WORK/media/movies/Disc Rip (2001)"
+    "$WORK/media/movies/Late Arrival 11 (2025)" "$WORK/media/movies/Disc Rip (2001)" "$WORK/media/movies/Late Cut (2025)"
 curl -sf -X POST "$BASE/Library/Refresh" -H "Authorization: MediaBrowser Token=\"$TOKEN\"" >/dev/null || refused "Library/Refresh"
 i=0
 until [ "$(api 'Inventory/Items?mediaType=Movie' | field "json.load(sys.stdin)['TotalCount']")" = "7" ] || [ "$i" -gt 40 ]; do
@@ -2099,6 +2219,18 @@ until [ "$(api 'Inventory/Items?mediaType=Movie&search=Night%20Signal' | field "
         -H "Authorization: MediaBrowser Token=\"$TOKEN\"" >/dev/null 2>&1 || true
     sleep 3
 done
+curl -sf -X POST "$BASE/Inventory/Columns?level=MusicVideo" \
+    -H "Authorization: MediaBrowser Token=\"$TOKEN\"" -H "$JSON" -d '["name","duplicates"]' >/dev/null || refused "Inventory/Columns?level=MusicVideo"
+for night in $(api 'Inventory/Items?mediaType=Movie&search=Night%20Signal' | field "' '.join(r['Id'] for r in json.load(sys.stdin)['Rows'])"); do
+    edit "$night" '{"ProviderIds": {"Tmdb": "1003"}}'
+done
+nights() { twins Movie | python3 -c "import sys; print(','.join(p for p in sys.stdin.read().strip().split(',') if p.startswith('Night')))"; }
+i=0
+until [ "$(nights)" = "Night Signal (2023)=1,Night Signal (2023)=1" ] || [ "$i" -gt 15 ]; do
+    i=$((i + 1))
+    sleep 1
+done
+check "the same film in a second library is a duplicate of the first" "$(nights)" "Night Signal (2023)=1,Night Signal (2023)=1"
 curl -sf -X POST "$BASE/Videos/MergeVersions?ids=$(api 'Inventory/Items?mediaType=Movie&search=Night%20Signal' \
     | field "','.join(r['Id'] for r in json.load(sys.stdin)['Rows'])")" \
     -H "Authorization: MediaBrowser Token=\"$TOKEN\"" >/dev/null || refused "Videos/MergeVersions"
@@ -2111,6 +2243,72 @@ done
 # 12.0 hides the version in the other library, while 12.1 lists it there as a row of its own.
 check "a film grouped with a version in another library weighs both files once, whether or not that library lists it" \
     "$(api 'Inventory/Items?mediaType=Movie&search=Night%20Signal' | field "json.load(sys.stdin)['TotalSize']")" "$TWICE"
+check "and is no longer a duplicate of it" "$(nights | tr ',' '\n' | sort -u)" "Night Signal (2023)=0"
+
+echo "== a show kept twice, and an episode in two files =="
+cp -r "$WORK/media/shows/Long Run (2020)" "$WORK/media/shows/Long Run Again (2020)"
+mkdir -p "$WORK/media/shows/Twin Cut (2024)/Season 01"
+cp "$WORK/media/shows/Harbour Lights (2022)/Season 01/Harbour Lights S01E01.mkv" "$WORK/media/shows/Twin Cut (2024)/Season 01/Twin Cut S01E01.mkv"
+cp "$WORK/media/shows/Long Run (2020)/Season 01/Long Run S01E01.mkv" "$WORK/media/shows/Twin Cut (2024)/Season 01/Twin Cut S01E01 - Remux.mkv"
+curl -sf -X POST "$BASE/Inventory/Columns?level=Video" -H "Authorization: MediaBrowser Token=\"$TOKEN\"" -H "$JSON" \
+    -d '["name","series","children","duplicates","size","resolution","videoCodec"]' >/dev/null || refused "Inventory/Columns?level=Video"
+curl -sf -X POST "$BASE/Library/Refresh" -H "Authorization: MediaBrowser Token=\"$TOKEN\"" >/dev/null || refused "Library/Refresh"
+printf 'waiting for the new shows'
+i=0
+until [ "$(api 'Inventory/Items?mediaType=Series&columnLevel=Video&limit=1000' \
+    | field "(lambda d: '%s/%s' % (d['TotalCount'], [r['Values']['children'] for r in d['Rows'] if r['Values']['name'] in ('Long Run Again', 'Twin Cut')]))(json.load(sys.stdin))")" = "5/[2, 1]" ] \
+   && [ "$(api 'Inventory/Items?mediaType=Series&level=Version&columnLevel=Video&search=Twin&limit=1000' | field "len([r for r in json.load(sys.stdin)['Rows'] if r['Values']['videoCodec']])")" = 2 ]; do
+    i=$((i + 1))
+    [ "$i" -gt 40 ] && { echo; echo "the new shows never arrived" >&2; exit 1; }
+    [ $((i % 10)) = 0 ] && curl -sf -X POST "$BASE/Library/Refresh" \
+        -H "Authorization: MediaBrowser Token=\"$TOKEN\"" >/dev/null 2>&1 || true
+    printf '.'
+    sleep 3
+done
+echo
+check "a tab of shows with an episode in two files has a level for the files" \
+    "$(api 'Inventory/Schema' | field "','.join(l['Level'] for t in json.load(sys.stdin)['MediaTypes'] if t['MediaType']=='Series' for l in t['Levels'])")" \
+    "Series,Season,Episode,Version"
+TWIN=$(api 'Inventory/Items?mediaType=Series&level=Episode&columnLevel=Video&limit=1000' | field "[r for r in json.load(sys.stdin)['Rows'] if r['Values']['name'] == 'Twin Cut S01E01'][0]['Id']")
+check "the episode opens to its files and holds the resolution they differ in mixed, and so do its season and its show, which hold nothing else" \
+    "$(api 'Inventory/Items?mediaType=Series&search=Twin&columnLevel=Video&limit=1000' \
+        | field "'|'.join('%s:%s' % (r['Values']['name'], r['Values']['resolution']) for r in json.load(sys.stdin)['Rows'] if r['Expandable'])")" \
+    "Season 1:Mixed|Twin Cut:Mixed|Twin Cut S01E01:Mixed"
+check "its files are named after it and what their names add, and weigh what the show does" \
+    "$(api "Inventory/Items?mediaType=Series&level=Version&parentIds=$TWIN&columnLevel=Video" | field "(lambda d: '%s/%s' % ('|'.join(r['Values']['name'] for r in d['Rows']), sum(r['Values']['size'] for r in d['Rows'])))(json.load(sys.stdin))")" \
+    "Twin Cut S01E01|Twin Cut S01E01 - Remux/$(cat "$WORK/media/shows/Twin Cut (2024)/Season 01"/*.mkv | wc -c | tr -d ' ')"
+check "and the files of the tab are every episode once, the one in two files twice" \
+    "$(api 'Inventory/Items?mediaType=Series&level=Version' | field "(lambda d: '%s/%s' % (d['TotalCount'], d['TotalSize']))(json.load(sys.stdin))")" \
+    "$(api 'Inventory/Items?mediaType=Series&level=Episode' | field "(lambda d: '%s/%s' % (d['TotalCount'] + 1, d['TotalSize']))(json.load(sys.stdin))")"
+seasons() {
+    api "Inventory/Items?mediaType=Series&level=$1&columnLevel=Video&limit=1000" \
+        | field "','.join(sorted('%s %s=%s' % (r['Values']['series'] or '', r['Values']['name'], r['Values']['duplicates']) for r in json.load(sys.stdin)['Rows']))"
+}
+check "a show kept twice without an id counts no duplicate, while its episodes are still held against the others of the same show" \
+    "$(twins Series)|$(seasons Episode | tr ',' '\n' | cut -d= -f2 | sort -u)" "Harbour Lights=None,Long Run=None,Long Run Again=None,Patchy=None,Twin Cut=None|0"
+for show in "Long Run" "Long Run Again"; do
+    edit "$(api 'Inventory/Items?mediaType=Series&limit=1000' | identify "$show")" '{"ProviderIds": {"Tvdb": "2001"}}'
+done
+i=0
+until twins Series | grep -q 'Long Run Again=1' || [ "$i" -gt 15 ]; do
+    i=$((i + 1))
+    sleep 1
+done
+check "a show a provider gave one id twice is a duplicate, and so is each of its seasons and episodes" \
+    "$(twins Series)|$(seasons Season)|$(seasons Episode)" \
+    "Harbour Lights=None,Long Run=1,Long Run Again=1,Patchy=None,Twin Cut=None|Harbour Lights Season 1=0,Long Run Again Season 1=1,Long Run Again Season 2=1,Long Run Season 1=1,Long Run Season 2=1,Patchy Season 1=0,Twin Cut Season 1=0|Harbour Lights Harbour Lights S01E01=0,Harbour Lights Harbour Lights S01E02=0,Harbour Lights Harbour Lights S01E03=0,Long Run Again Long Run S01E01=1,Long Run Again Long Run S02E01=1,Long Run Long Run S01E01=1,Long Run Long Run S02E01=1,Patchy Patchy S01E05=0,Patchy Patchy S01E06=0,Twin Cut Twin Cut S01E01=0"
+rm -rf "$WORK/media/shows/Long Run Again (2020)" "$WORK/media/shows/Twin Cut (2024)"
+curl -sf -X POST "$BASE/Library/Refresh" -H "Authorization: MediaBrowser Token=\"$TOKEN\"" >/dev/null || refused "Library/Refresh"
+i=0
+until [ "$(api 'Inventory/Items?mediaType=Series' | field "json.load(sys.stdin)['TotalCount']")" = "3" ] || [ "$i" -gt 40 ]; do
+    i=$((i + 1))
+    [ $((i % 10)) = 0 ] && curl -sf -X POST "$BASE/Library/Refresh" \
+        -H "Authorization: MediaBrowser Token=\"$TOKEN\"" >/dev/null 2>&1 || true
+    sleep 3
+done
+check "and the shows taken away leave the tab without the level for files" \
+    "$(api 'Inventory/Schema' | field "','.join(l['Level'] for t in json.load(sys.stdin)['MediaTypes'] if t['MediaType']=='Series' for l in t['Levels'])")" \
+    "Series,Season,Episode"
 
 curl -sf -X POST "$BASE/Plugins/$GUID/Configuration" -H "Authorization: MediaBrowser Token=\"$TOKEN\"" -H "$JSON" \
     -d '{"Presets":null,"Expanded":null,"PageSize":100}' >/dev/null || refused "Plugins/$GUID/Configuration"

@@ -5,6 +5,7 @@ const MAX_PAGE_SIZE = 10000;
 const SEARCHED = ['name', 'series', 'path', 'artists', 'authors', 'narrators'];
 const FORMATS = { csv: 'text/csv; charset=utf-8', ods: 'application/vnd.oasis.opendocument.spreadsheet' };
 const FILE_NAMES = { Folder: 'audiobook', AudioBook: 'audiobook-files' };
+const VERSION = 'Version';
 const GUID = /^[0-9a-f]{32}$|^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i;
 const KINDS = ['Collection', 'Playlist'];
 const TARGETS = { Photo: [], Audio: ['Playlist'], Book: ['Collection'] };
@@ -58,8 +59,10 @@ export function createBackend(data) {
 
     const tabs = Object.fromEntries(Object.entries(data.Tabs).map(([type, tab]) => {
         const rows = tab.Rows.map((row, index) => ({ ...row, Values: { ...row.Values }, index }));
-        const byId = new Map(rows.map((row) => [row.Id, row]));
-        const leaf = tab.Levels[tab.Levels.length - 1];
+        // The version an item plays by default goes by the item's id.
+        const byId = new Map(rows.filter((row) => row.Level !== VERSION).map((row) => [row.Id, row]));
+        const items = tab.Levels.filter((level) => level !== VERSION);
+        const leaf = items[items.length - 1];
         const position = (list) => {
             const at = new Array(rows.length).fill(rows.length);
             list.forEach((index, place) => { at[index] = place; });
@@ -80,6 +83,7 @@ export function createBackend(data) {
             levels: tab.Levels,
             leaf,
             rows,
+            versionOf: new Map(rows.filter((row) => row.Level === VERSION).map((row) => [row.Id, row.ParentId])),
             byId,
             below,
             position,
@@ -90,7 +94,7 @@ export function createBackend(data) {
         }];
     }));
 
-    const found = new Map(Object.values(tabs).flatMap((tab) => tab.rows.map((row) => [row.Id, { tab, row }])));
+    const found = new Map(Object.values(tabs).flatMap((tab) => tab.rows.filter((row) => row.Level !== VERSION).map((row) => [row.Id, { tab, row }])));
     const targets = Object.fromEntries(KINDS.map((kind) => [kind,
         data.Targets[`${kind}s`].map((target) => ({ ...brief(target), held: new Set() }))]));
     let made = 0;
@@ -281,6 +285,8 @@ export function createBackend(data) {
         } else {
             if (parents) {
                 rows = tab.rows.filter((row) => row.Level === kind && parents.has(row.ParentId));
+            } else if (kind === VERSION) {
+                rows = [...tab.rows.filter((row) => row.Level === tab.leaf && !row.Expandable), ...tab.rows.filter((row) => row.Level === VERSION)];
             } else {
                 rows = kind === tab.levels[0] ? tab.top : tab.rows.filter((row) => row.Level === kind);
             }
@@ -293,7 +299,7 @@ export function createBackend(data) {
 
         let counted = rows;
         if (spanning && rows.length > 1) {
-            const present = new Set(rows.map((row) => row.Id));
+            const present = new Set(rows.filter((row) => row.Id !== row.ParentId).map((row) => row.Id));
             counted = rows.filter((row) => !covered(tab, row, present));
         }
 
@@ -305,7 +311,7 @@ export function createBackend(data) {
             : tab.natural[kind];
         const sorted = place ? [...rows].sort((a, b) => place[a.index] - place[b.index]) : rows;
 
-        return { known, kind, keys, parents, rows, counted, sorted };
+        return { known, tab, kind, keys, parents, rows, counted, sorted };
     }
 
     function items(params) {
@@ -327,10 +333,10 @@ export function createBackend(data) {
         const format = Object.keys(FORMATS).find((name) => same(name, params.format));
         if (!format) { throw new BadRequest(`Unknown format '${params.format}'.`); }
 
-        const { known, kind, keys, sorted } = list({ ...params, parentIds: undefined }, true);
+        const { known, tab, kind, keys, sorted } = list({ ...params, parentIds: undefined }, true);
         return {
             Format: format,
-            FileName: `inventory-${FILE_NAMES[kind] ?? kind.toLowerCase()}.${format}`,
+            FileName: `inventory-${kind === VERSION ? `${tab.leaf.toLowerCase()}-versions` : FILE_NAMES[kind] ?? kind.toLowerCase()}.${format}`,
             ContentType: FORMATS[format],
             Culture: params.culture,
             SheetName: known.Strings[`level.${kind}`],
@@ -379,9 +385,11 @@ export function createBackend(data) {
 
         for (const tab of Object.values(tabs)) {
             for (const row of tab.rows) {
-                row.Values[key] = listed(kind === 'Playlist' && row.Level !== tab.leaf
+                // Jellyfin keeps a collection on the item, and a playlist on what plays.
+                const item = kind === 'Collection' && row.Level === VERSION ? tab.byId.get(row.ParentId) : row;
+                row.Values[key] = listed(kind === 'Playlist' && row.Level !== tab.leaf && row.Level !== VERSION
                     ? (tab.below.get(row.Id) ?? []).flatMap(names)
-                    : names(row));
+                    : names(item));
             }
 
             tab.rank[key] = [1, -1].map((sign) => tab.position([...tab.rows].sort((a, b) => {
@@ -407,8 +415,9 @@ export function createBackend(data) {
             ids.push(...rows.map((row) => row.Id));
         }
 
-        const wanted = [...new Set(ids)];
-        if (wanted.length === 0) { throw new BadRequest('No item was given.'); }
+        if (ids.length === 0) { throw new BadRequest('No item was given.'); }
+        const owner = (id) => (found.has(id) ? id : Object.values(tabs).map((tab) => tab.versionOf.get(id)).find(Boolean) ?? id);
+        const wanted = [...new Set(ids.map(owner))];
         return { asked: wanted.length, picked: wanted.map((id) => found.get(id)).filter(Boolean), except };
     }
 

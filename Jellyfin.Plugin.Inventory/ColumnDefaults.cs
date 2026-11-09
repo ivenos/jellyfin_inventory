@@ -30,6 +30,9 @@ public static class ColumnDefaults
     private static readonly string[] _book =
         ["name", "authors", "narrators", "year", "children", "size", "duration", "sizePerHour", "container"];
 
+    private static readonly string[] _version =
+        ["name", "size", "duration", "sizePerHour", "totalBitrate", "videoCodec", "resolution", "videoRange", "audioCodec", "audioLayout", "path"];
+
     private static readonly string[] _generic =
         ["name", "year", "library", "size", "duration", "sizePerHour", "container"];
 
@@ -53,6 +56,7 @@ public static class ColumnDefaults
         var t when string.Equals(t, "Folder", StringComparison.OrdinalIgnoreCase) => _book,
         var t when string.Equals(t, "Book", StringComparison.OrdinalIgnoreCase) => _static,
         var t when string.Equals(t, "Photo", StringComparison.OrdinalIgnoreCase) => _static,
+        var t when string.Equals(t, Hierarchy.Version, StringComparison.OrdinalIgnoreCase) => _version,
         _ => _generic
     };
 }

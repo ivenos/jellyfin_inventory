@@ -88,7 +88,9 @@ call("Library/VirtualFolders", {"LibraryOptions": options["LibraryOptions"] | {"
      name="Collections", collectionType="boxsets", paths="/config/data/collections", refreshLibrary="false")
 call("Library/Refresh", {})
 
-files = sum(1 for path in (out / "media").rglob("*") if path.is_file() and path.suffix != ".nfo")
+# A further cut beside a film is a version of it, which Jellyfin lists as no item of its own.
+files = sum(1 for path in (out / "media").rglob("*") if path.is_file() and path.suffix != ".nfo"
+            and not (path.parent.parent.name == "movies" and path.stem != path.parent.name))
 for attempt in range(360):
     found = held(Limit=0)["TotalRecordCount"]
     if found == files and all(task["State"] == "Idle" for task in call("ScheduledTasks") if task["Key"] == "RefreshLibrary"):

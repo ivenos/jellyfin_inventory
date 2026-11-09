@@ -7,6 +7,12 @@ All notable changes to this project are documented in this file, in the format o
 ### Added
 
 - The page keeps its tab, search, filters and sort order in its address, so a reload or a bookmark brings them back (#15).
+- A Duplicates column counts the other films, series, episodes, albums and tracks that are the same title.
+- A film or an episode kept in several versions opens to them, and the new Versions level lists every file on its own.
+
+### Changed
+
+- A film kept in several versions shows Mixed where its versions differ, rather than what the first of them has.
 
 ### Fixed
 

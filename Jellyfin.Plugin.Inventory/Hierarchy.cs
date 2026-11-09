@@ -21,6 +21,11 @@ public static class Hierarchy
     /// </summary>
     public const string Playlist = "Playlist";
 
+    /// <summary>
+    /// The key of the level that lists every file of a tab, an item kept in several versions once per version.
+    /// </summary>
+    public const string Version = "Version";
+
     private static readonly BaseItemKind[][] _all =
     [
         [BaseItemKind.Movie],
@@ -32,6 +37,9 @@ public static class Hierarchy
         [BaseItemKind.Folder, BaseItemKind.AudioBook],
         [BaseItemKind.Photo]
     ];
+
+    private static readonly BaseItemKind[] _versioned =
+        [BaseItemKind.Movie, BaseItemKind.Episode, BaseItemKind.MusicVideo, BaseItemKind.Video];
 
     /// <summary>
     /// Gets every tab, as the levels it contains.
@@ -66,6 +74,13 @@ public static class Hierarchy
         => _all.FirstOrDefault(h => Array.IndexOf(h, kind) >= 0);
 
     /// <summary>
+    /// Gets whether Jellyfin can keep an item of a kind in several versions.
+    /// </summary>
+    /// <param name="kind">The item kind.</param>
+    /// <returns>Whether its tab can have a level of versions below it.</returns>
+    public static bool Versioned(BaseItemKind kind) => Array.IndexOf(_versioned, kind) >= 0;
+
+    /// <summary>
     /// Gets what an item of a level can be added to, by the rules jellyfin-web offers it by: no track
     /// or photo goes into a collection, and nothing that plays nothing into a playlist.
     /// </summary>
@@ -83,16 +98,21 @@ public static class Hierarchy
     /// Resolves a level key, whichever tab it belongs to.
     /// </summary>
     /// <param name="level">The level key.</param>
-    /// <returns>The item kind, or null if no tab has that level.</returns>
-    public static BaseItemKind? Level(string? level)
+    /// <returns>The key as the level goes by, or null if no tab has that level.</returns>
+    public static string? Key(string? level)
     {
+        if (string.Equals(level, Version, StringComparison.OrdinalIgnoreCase))
+        {
+            return Version;
+        }
+
         foreach (var kinds in _all)
         {
             foreach (var kind in kinds)
             {
                 if (string.Equals(kind.ToString(), level, StringComparison.OrdinalIgnoreCase))
                 {
-                    return kind;
+                    return kind.ToString();
                 }
             }
         }
@@ -105,8 +125,8 @@ public static class Hierarchy
     /// </summary>
     /// <param name="mediaType">The media type key.</param>
     /// <param name="level">The level key, or null for the one the tab is named after.</param>
-    /// <returns>The item kind, or null if the level does not belong to the tab.</returns>
-    public static BaseItemKind? Resolve(string mediaType, string? level)
+    /// <returns>The level, or null if it does not belong to the tab.</returns>
+    public static Level? Resolve(string mediaType, string? level)
     {
         var levels = Levels(mediaType);
         if (levels is null)
@@ -116,14 +136,19 @@ public static class Hierarchy
 
         if (string.IsNullOrEmpty(level))
         {
-            return Tab(levels);
+            return new Level(Tab(levels));
+        }
+
+        if (string.Equals(level, Version, StringComparison.OrdinalIgnoreCase))
+        {
+            return Versioned(levels[^1]) ? new Level(levels[^1], true) : null;
         }
 
         foreach (var kind in levels)
         {
             if (string.Equals(kind.ToString(), level, StringComparison.OrdinalIgnoreCase))
             {
-                return kind;
+                return new Level(kind);
             }
         }
 

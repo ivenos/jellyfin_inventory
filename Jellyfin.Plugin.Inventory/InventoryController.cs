@@ -190,9 +190,9 @@ public class InventoryController : ControllerBase
             return BadRequest($"Unknown media type '{mediaType}' or level '{level}'.");
         }
 
-        var selection = string.IsNullOrEmpty(columnLevel) ? listed.ToString() : columnLevel;
+        var selection = string.IsNullOrEmpty(columnLevel) ? listed.Key : columnLevel;
 
-        if (Hierarchy.Level(selection) is null)
+        if (Hierarchy.Key(selection) is null)
         {
             return BadRequest($"'{columnLevel}' is not a level.");
         }
@@ -284,15 +284,14 @@ public class InventoryController : ControllerBase
             return BadRequest($"Unknown format '{format}'.");
         }
 
-        var kind = Hierarchy.Resolve(mediaType, level);
-        if (kind is null)
+        if (Hierarchy.Resolve(mediaType, level) is not { } listed)
         {
             return BadRequest($"Unknown media type '{mediaType}' or level '{level}'.");
         }
 
-        var exported = kind.Value.ToString();
+        var exported = listed.Key;
         var selection = string.IsNullOrEmpty(columnLevel) ? exported : columnLevel;
-        if (Hierarchy.Level(selection) is null)
+        if (Hierarchy.Key(selection) is null)
         {
             return BadRequest($"'{columnLevel}' is not a level.");
         }
@@ -329,7 +328,7 @@ public class InventoryController : ControllerBase
         var name = Translations.Get(culture, "level." + exported);
         var yes = Translations.Get(culture, "Yes");
         var no = Translations.Get(culture, "No");
-        var attachment = $"attachment; filename=inventory-{FileName(kind.Value)}.{(isOds ? "ods" : "csv")}";
+        var attachment = $"attachment; filename=inventory-{FileName(listed)}.{(isOds ? "ods" : "csv")}";
 
         // Written to a file first: a spreadsheet is filled in by seeking back over it, and a
         // failure halfway through still becomes an error rather than half a download.
@@ -383,7 +382,7 @@ public class InventoryController : ControllerBase
     {
         // Anything stored here is written to the configuration file, which Jellyfin rewrites whole and
         // silently resets if it cannot read it back.
-        if (Hierarchy.Level(level) is not { } known)
+        if (Hierarchy.Key(level) is not { } known)
         {
             return BadRequest($"'{level}' is not a level.");
         }
@@ -404,25 +403,25 @@ public class InventoryController : ControllerBase
         var plugin = Plugin.Instance;
         if (plugin is null)
         {
-            return Ok(new { Level = known.ToString(), Columns = chosen });
+            return Ok(new { Level = known, Columns = chosen });
         }
 
         lock (_configLock)
         {
             var config = plugin.Configuration;
             var presets = config.Presets
-                .Where(p => p is not null && !string.Equals(p.Level, known.ToString(), StringComparison.OrdinalIgnoreCase));
+                .Where(p => p is not null && !string.Equals(p.Level, known, StringComparison.OrdinalIgnoreCase));
 
             var books = nameof(BaseItemKind.Folder);
-            if (known == BaseItemKind.AudioBook && !config.Presets.Any(p => string.Equals(p?.Level, books, StringComparison.OrdinalIgnoreCase)))
+            if (known == nameof(BaseItemKind.AudioBook) && !config.Presets.Any(p => string.Equals(p?.Level, books, StringComparison.OrdinalIgnoreCase)))
             {
                 presets = presets.Append(new ColumnPreset { Level = books, Columns = config.GetColumns(books) ?? [] });
             }
 
-            config.Presets = presets.Append(new ColumnPreset { Level = known.ToString(), Columns = chosen }).ToArray();
+            config.Presets = presets.Append(new ColumnPreset { Level = known, Columns = chosen }).ToArray();
 
             plugin.UpdateConfiguration(config);
-            return Ok(new { Level = known.ToString(), Columns = chosen });
+            return Ok(new { Level = known, Columns = chosen });
         }
     }
 
@@ -482,7 +481,7 @@ public class InventoryController : ControllerBase
             return Ok(new { MediaType = mediaType, Level = level });
         }
 
-        var canonical = known.ToString();
+        var canonical = known.Key;
         var tab = Hierarchy.Tab(Hierarchy.Levels(mediaType)!).ToString();
 
         lock (_configLock)
@@ -665,16 +664,22 @@ public class InventoryController : ControllerBase
         }
 
         var wanted = ids.Distinct().ToArray();
-        asked = wanted.Length;
         if (wanted.Length == 0)
         {
             error = "No item was given.";
             return [];
         }
 
+        // Jellyfin's query skips a version it lists as no item of its own, and that version stands for its item.
         var known = _libraryManager.GetItemList(new InternalItemsQuery { ItemIds = wanted, DtoOptions = new DtoOptions(false) })
             .ToDictionary(i => i.Id);
-        return wanted.Select(known.GetValueOrDefault).OfType<BaseItem>()
+        var items = wanted
+            .Select(id => known.GetValueOrDefault(id)
+                ?? (_libraryManager.GetItemById(id) is Video { PrimaryVersionId: { } primary } ? _libraryManager.GetItemById(primary) : null))
+            .ToArray();
+        asked = items.Select((item, at) => item?.Id ?? wanted[at]).Distinct().Count();
+        return items.OfType<BaseItem>()
+            .DistinctBy(i => i.Id)
             .Where(i => Hierarchy.Of(i.GetBaseItemKind()) is not null)
             .ToArray();
     }
@@ -786,11 +791,12 @@ public class InventoryController : ControllerBase
     private static object Outcome(Guid id, string? name, int count, int skipped)
         => new { Id = id, Name = name, Count = count, Skipped = skipped };
 
-    private static string FileName(BaseItemKind kind) => kind switch
+    private static string FileName(Level level) => level switch
     {
-        BaseItemKind.Folder => "audiobook",
-        BaseItemKind.AudioBook => "audiobook-files",
-        _ => kind.ToString().ToLowerInvariant()
+        { Versions: true } => level.Kind.ToString().ToLowerInvariant() + "-versions",
+        { Kind: BaseItemKind.Folder } => "audiobook",
+        { Kind: BaseItemKind.AudioBook } => "audiobook-files",
+        _ => level.Kind.ToString().ToLowerInvariant()
     };
 
     // The headers are translated, so the numbers beside them are written the same way round.

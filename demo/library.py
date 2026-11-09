@@ -92,6 +92,18 @@ ROLLS = {
     "2025-12 New Year": ("PXL_{:04}.jpg", 8160, 6120, 9, 17, 18),
 }
 
+# Films kept in further cuts beside the one the folder is named after: (what the name of the file adds, minutes, release or None).
+CUTS = {
+    ("Blade Runner", "1982"): [("Final Cut", 117, None)],
+    ("The Lord of the Rings: The Fellowship of the Ring", "2001"): [("Theatrical Cut", 178, None)],
+    ("The Lord of the Rings: The Two Towers", "2002"): [("Theatrical Cut", 179, None)],
+    ("Kingdom of Heaven", "2005"): [("Theatrical Cut", 144, "bluray")],
+    ("Apocalypse Now", "1979"): [("Final Cut", 183, "uhd remux"), ("Theatrical Cut", 153, "dvd")],
+    ("Dune", "2021"): [("2160p", 155, "uhd remux")],
+}
+# Films kept a second time in a folder of their own: the release of the copy, and what its folder adds.
+COPIES = {("Avatar", "2009"): ("dvd", "DVD"), ("Terminator 2: Judgment Day", "1991"): ("dvdrip", "DVDRip")}
+
 FILM = (16 / 9, 1.85, 1.85, 2.39, 2.39, 2.39)
 TELEVISION = (16 / 9,) * 7 + (2.0, 2.0, 2.39)
 FORMATS = {"mkv": "matroska,webm", "mp4": "mov,mp4,m4a,3gp,3g2,mj2", "m4a": "mov,mp4,m4a,3gp,3g2,mj2", "m4b": "mov,mp4,m4a,3gp,3g2,mj2", "opus": "ogg"}
@@ -259,26 +271,37 @@ class Library:
 
 
 def movies(library):
-    for title, year, minutes, language, genres in listed("movies.tsv"):
+    for number, (title, year, minutes, language, genres) in enumerate(listed("movies.tsv"), 1):
         rng = random.Random(f"{title} {year}")
         release = release_for(int(year), rng)
         name = f"{safe(title)} ({year})"
         day = added(int(year), rng)
         relative = f"movies/{name}/{name}.{RELEASES[release][1]}"
         library.probed(relative, int(minutes) * 60 + rng.randrange(60), tracks(release, int(year), language, rng), day)
-        library.note(f"movies/{name}", "movie", day, genres, title=title, year=year)
+        library.note(f"movies/{name}", "movie", day, genres, title=title, year=year, tmdbid=number)
         library.played(relative, day, rng, {"admin": 0.42, "mara": 0.3, "jonas": 0.18, "lena": 0.08})
+        for label, length, kind in CUTS.get((title, year), []):
+            cut = kind or release_for(int(year), rng)
+            later = min(day + datetime.timedelta(days=rng.randrange(30, 400)), datetime.datetime.combine(TODAY, datetime.time(20)))
+            library.probed(f"movies/{name}/{name} - {label}.{RELEASES[cut][1]}", length * 60 + rng.randrange(60),
+                           tracks(cut, int(year), language, rng), later)
+        if (title, year) in COPIES:
+            kind, label = COPIES[title, year]
+            copy = f"{name} {label}"
+            since = added(int(year), rng)
+            library.probed(f"movies/{copy}/{copy}.{RELEASES[kind][1]}", int(minutes) * 60 + rng.randrange(60), tracks(kind, int(year), language, rng), since)
+            library.note(f"movies/{copy}", "movie", since, genres, title=title, year=year, tmdbid=number)
 
 
 def series(library):
     episodic = {name: RELEASES[name] for name in ("uhd web", "bluray", "web", "x265", "720p", "dvdrip")}
-    for title, year, seasons, episodes, minutes, language, genres in listed("series.tsv"):
+    for number, (title, year, seasons, episodes, minutes, language, genres) in enumerate(listed("series.tsv"), 1):
         rng = random.Random(f"{title} {year}")
         year, seasons, episodes, minutes = int(year), int(seasons), int(episodes), int(minutes)
         minutes = minutes if 20 <= minutes <= 65 else rng.choice((24, 44, 48, 52, 58))
         show = f"shows/{safe(title)} ({year})"
         day = added(year, rng)
-        library.note(show, "tvshow", day, genres, title=title, year=year)
+        library.note(show, "tvshow", day, genres, title=title, year=year, tmdbid=number)
         follows = {user: rng.random() < share for user, share in zip(USERS, (0.5, 0.35, 0.25, 0.1))}
         seen = {user: rng.randrange(1, episodes + 1) for user in USERS}
         shape = (4 / 3 if year < 2004 else rng.choice(TELEVISION),)

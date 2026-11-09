@@ -29,7 +29,7 @@ async function render(items, mode) {
     const openable = JSON.parse(JSON.stringify(items));
     openable.Rows.forEach(function (row) { row.Expandable = true; });
     const deep = JSON.parse(JSON.stringify(schema));
-    deep.MediaTypes[0].Levels.push({ Level: 'Child', Label: 'Children' });
+    deep.MediaTypes[0].Levels = [deep.MediaTypes[0].Levels[0], { Level: 'Child', Label: 'Children' }];
     deep.MediaTypes[0].ExpandedTo = null;
     deep.MaxFilters = 2;
     const download = gate();
@@ -373,7 +373,7 @@ async function render(items, mode) {
         page.querySelectorAll('.invType')[1].dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
         page.querySelectorAll('#invHead th')[1].dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
         await settle();
-        const report = { sorts: requests().slice(before).map((url) => param(url, 'sortBy') || '-').join(',') };
+        const report = { sorts: requests().slice(before).filter((url) => !param(url, 'parentIds')).map((url) => param(url, 'sortBy') || '-').join(',') };
         window.close();
         return report;
     }
