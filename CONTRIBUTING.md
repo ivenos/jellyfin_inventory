@@ -68,7 +68,7 @@ Everything under `demo/` belongs to one sample library, which the README screens
 - `.github/scripts/screenshots.sh` rebuilds the README screenshots from it. Run it when a change alters what the table looks like.
 - `demo/record.sh` records it into `demo/web/data.json` and checks the web demo against the server. `python3 -m http.server` in the repository then shows the demo under `/demo/web/`.
 - The web demo answers the page from that recording. A change to how the API filters, sorts or exports goes into `backend.js` or `export.js` there too, or the check fails.
-- The Demo workflow runs that check on every push. On a release, once a month and when started by hand it also keeps `demo/web/` as the artifact `demo`, which is what a site showing the demo fetches.
+- The Demo workflow runs that check on every push to main and every pull request. On a release, once a month and when started by hand it runs it on the latest release and keeps that `demo/web/` as the artifact `demo`, which is what a site showing the demo fetches.
 
 ## Jellyfin versions
 

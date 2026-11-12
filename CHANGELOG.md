@@ -12,12 +12,21 @@ All notable changes to this project are documented in this file, in the format o
 
 ### Changed
 
-- A film kept in several versions shows Mixed where its versions differ, rather than what the first of them has.
+- A film or an episode kept in several versions shows Mixed where its versions differ, rather than what the first of them has.
+- A .strm has no size, rather than the size of the address written in it.
+- A filter on the films, or on the episodes, lists the files of one kept in several versions, so a film with a 4K copy is found by that copy.
 
 ### Fixed
 
 - Filtering with = or ≠ missed a genre, artist, collection or other name that has a comma in it.
 - The first collection made from the table could end up empty, and making it set off a scan of every library.
+- The page kept every earlier visit in memory, which slowed the dashboard down the longer it stayed open.
+- The page numbers below the table follow the interface language.
+- A DVD or Blu-ray folder counted the extras and other files beside it in its size.
+- A track or a photo that Jellyfin put into a collection can be taken out of it again.
+- One name with a broken character stopped search and text filters from working on its tab.
+- The French and Spanish Fully played columns use Jellyfin's word for played.
+- A collection or playlist whose name starts with a dot vanished at the next scan, so such a name is now refused.
 
 ## [1.3.0] - 2026-11-01
 

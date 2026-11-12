@@ -17,11 +17,12 @@ const caseless = new Intl.Collator('en', { numeric: true, sensitivity: 'accent' 
 class BadRequest extends Error { status = 400; }
 class NotFound extends Error { status = 404; }
 
-// Ordinal and case-insensitive, as the server compares: one code unit at a time.
+// Ordinal and case-insensitive, as the server compares: one code unit at a time, and .NET maps no
+// letter outside ASCII onto one inside it, as JavaScript does with the dotless i.
 function fold(text) {
     return Array.from(String(text).normalize(), (char) => {
         const upper = char.toUpperCase();
-        return upper.length === char.length ? upper : char;
+        return upper.length === char.length && (char < '\x80' || upper >= '\x80') ? upper : char;
     }).join('');
 }
 
@@ -43,9 +44,8 @@ function holds(row, kind) {
 
 function listed(names) {
     const seen = new Set();
-    const kept = names.filter((name) => name.trim() !== '').sort(natural)
+    return names.filter((name) => name.trim() !== '').sort(natural)
         .filter((name) => !seen.has(name.toLowerCase()) && seen.add(name.toLowerCase()));
-    return kept.length > 0 ? kept.join(', ') : undefined;
 }
 
 function brief(target) {
@@ -84,6 +84,8 @@ export function createBackend(data) {
             leaf,
             rows,
             versionOf: new Map(rows.filter((row) => row.Level === VERSION).map((row) => [row.Id, row.ParentId])),
+            versions: rows.filter((row) => row.Level === VERSION)
+                .reduce((map, row) => map.set(row.ParentId, [...(map.get(row.ParentId) ?? []), row]), new Map()),
             byId,
             below,
             position,
@@ -188,9 +190,10 @@ export function createBackend(data) {
         }
     }
 
-    function equal(filter, cell) {
+    // A name the page made can hold the comma the cell joins its names with.
+    function equal(filter, cell, row) {
         return filter.definition.List
-            ? String(cell).split(', ').some((part) => compare(filter, part) === 0)
+            ? (row.Names?.[filter.definition.Key] ?? String(cell).split(', ')).some((part) => compare(filter, part) === 0)
             : compare(filter, cell) === 0;
     }
 
@@ -206,15 +209,18 @@ export function createBackend(data) {
         switch (filter.op) {
             case 'contains': return fold(cell).includes(filter.value);
             case 'notContains': return !fold(cell).includes(filter.value);
-            case 'eq': return equal(filter, cell);
-            case 'ne': return !equal(filter, cell);
+            case 'eq': return equal(filter, cell, row);
+            case 'ne': return !equal(filter, cell, row);
             case 'ge': return compare(filter, cell) >= 0;
             default: return compare(filter, cell) <= 0;
         }
     }
 
-    function matches(row, search) {
-        return SEARCHED.some((key) => typeof row.Values[key] === 'string' && fold(row.Values[key]).includes(search));
+    // Jellyfin gives an item kept in several versions the path of the one it plays by default.
+    function matches(tab, row, search) {
+        const holds = (values, key) => typeof values[key] === 'string' && fold(values[key]).includes(search);
+        const versions = row.Level === tab.leaf ? tab.versions.get(row.Id) : undefined;
+        return SEARCHED.some((key) => (key === 'path' && versions ? versions.every((version) => holds(version.Values, key)) : holds(row.Values, key)));
     }
 
     function covered(tab, row, present) {
@@ -281,7 +287,7 @@ export function createBackend(data) {
 
         let rows;
         if (spanning) {
-            rows = tab.rows.filter((row) => matches(row, needle) && filters.every((filter) => meets(row, filter)));
+            rows = tab.rows.filter((row) => matches(tab, row, needle) && filters.every((filter) => meets(row, filter)));
         } else {
             if (parents) {
                 rows = tab.rows.filter((row) => row.Level === kind && parents.has(row.ParentId));
@@ -291,7 +297,7 @@ export function createBackend(data) {
                 rows = kind === tab.levels[0] ? tab.top : tab.rows.filter((row) => row.Level === kind);
             }
 
-            if (searching) { rows = rows.filter((row) => matches(row, needle)); }
+            if (searching) { rows = rows.filter((row) => matches(tab, row, needle)); }
             rows = rows.filter((row) => filters.every((filter) => meets(row, filter)));
         }
 
@@ -387,9 +393,11 @@ export function createBackend(data) {
             for (const row of tab.rows) {
                 // Jellyfin keeps a collection on the item, and a playlist on what plays.
                 const item = kind === 'Collection' && row.Level === VERSION ? tab.byId.get(row.ParentId) : row;
-                row.Values[key] = listed(kind === 'Playlist' && row.Level !== tab.leaf && row.Level !== VERSION
+                const parts = listed(kind === 'Playlist' && row.Level !== tab.leaf && row.Level !== VERSION
                     ? (tab.below.get(row.Id) ?? []).flatMap(names)
                     : names(item));
+                row.Values[key] = parts.length > 0 ? parts.join(', ') : undefined;
+                row.Names = { ...row.Names, [key]: parts };
             }
 
             tab.rank[key] = [1, -1].map((sign) => tab.position([...tab.rows].sort((a, b) => {
@@ -443,7 +451,8 @@ export function createBackend(data) {
     function collect(remove, target, name, picked, asked) {
         const holdable = picked.filter(({ row }) => holds(row, 'Collection')).map(({ row }) => row.Id);
         target ??= targets.Collection.find((known) => same(validFilename(known.Name), validFilename(name))) ?? create('Collection', name);
-        return move('Collection', remove, target, holdable, asked - holdable.length);
+        const ids = remove ? picked.map(({ row }) => row.Id).filter((id) => target.held.has(id)) : holdable;
+        return move('Collection', remove, target, ids, asked - new Set([...holdable, ...ids]).size);
     }
 
     function play(remove, target, name, picked, asked, except) {

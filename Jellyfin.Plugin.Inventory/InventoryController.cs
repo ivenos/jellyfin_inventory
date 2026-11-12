@@ -136,7 +136,7 @@ public class InventoryController : ControllerBase
                 t.Label,
                 t.Count,
                 t.Levels,
-                ExpandedTo = config.GetExpandLevel(t.MediaType),
+                ExpandedTo = config.GetExpandLevel(t.MediaType) is { Length: > 0 } stored ? Hierarchy.Resolve(t.MediaType, stored)?.Key : null,
                 t.Targets
             }),
             Columns = Columns.All.Select(c => Describe(c, culture)),
@@ -522,7 +522,7 @@ public class InventoryController : ControllerBase
     /// <response code="200">The target, how many entries it gained or lost, and how many of the items
     /// cannot go there.</response>
     /// <response code="400">The kind is not known, the request names both an existing target and a new
-    /// one or neither, the name is empty or too long for a folder, the playlist is not the caller's to edit,
+    /// one or neither, the name is empty, starts with a dot or is too long for a folder, the playlist is not the caller's to edit,
     /// the listing cannot be read, no item was given, or a playlist was asked for without a user.</response>
     /// <response code="404">The target does not exist.</response>
     /// <returns>The outcome.</returns>
@@ -547,6 +547,12 @@ public class InventoryController : ControllerBase
         if (name is { Length: 0 })
         {
             return BadRequest("A new target needs a name.");
+        }
+
+        // Jellyfin hides a folder whose name starts with a dot, and drops what is in it at the next scan.
+        if (name?.StartsWith('.') == true)
+        {
+            return BadRequest("A name cannot start with a dot.");
         }
 
         var user = Caller;
@@ -715,8 +721,11 @@ public class InventoryController : ControllerBase
             return Ok(Outcome(created.Id, created.Name, holdable.Length, asked - holdable.Length));
         }
 
+        // Jellyfin's own client can put a track or a photo into a collection.
         var linked = Linked(target).ToHashSet();
-        var moved = holdable.Where(i => remove ? linked.Contains(i) : !linked.Contains(i)).ToArray();
+        var moved = remove
+            ? items.Select(i => i.Id).Where(linked.Contains).ToArray()
+            : holdable.Where(i => !linked.Contains(i)).ToArray();
         if (moved.Length > 0)
         {
             await (remove
@@ -724,7 +733,7 @@ public class InventoryController : ControllerBase
                 : _collectionManager.AddToCollectionAsync(target.Id, moved)).ConfigureAwait(false);
         }
 
-        return Ok(Outcome(target.Id, target.Name, moved.Length, asked - holdable.Length));
+        return Ok(Outcome(target.Id, target.Name, moved.Length, asked - holdable.Union(moved).Count()));
     }
 
     // Jellyfin's CollectionManager makes this library the same way, but also starts a scan of every library,

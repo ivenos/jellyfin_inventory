@@ -105,7 +105,7 @@ docker run --rm --init --security-opt label=disable --user "$(id -u):$(id -g)" \
     -v "$WORK/browser:/b" -v "$ROOT/.github/assets:/out" -v "$ROOT:/repo:ro" -w /b "$BROWSER_IMAGE" sh -c \
     "set -e
      [ -f node_modules/.playwright-$BROWSER_VERSION ] || { rm -rf node_modules
-       npm install --no-audit --no-fund --silent playwright@$BROWSER_VERSION
+       npm install --no-audit --no-fund --loglevel=error playwright@$BROWSER_VERSION
        touch node_modules/.playwright-$BROWSER_VERSION; }
      node /b/shots.mjs"
 

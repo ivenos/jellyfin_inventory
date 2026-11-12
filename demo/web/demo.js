@@ -76,6 +76,12 @@ picker.addEventListener('change', () => {
     page.dispatchEvent(new Event('pageshow'));
 });
 
+// The web client opens another address of the page as a view of its own.
+window.addEventListener('hashchange', () => {
+    page.dispatchEvent(new Event('viewhide'));
+    page.dispatchEvent(new Event('pageshow'));
+});
+
 // Inside another page the language is that page's to choose: it is told what there is, and answers with one.
 if (window.parent !== window) {
     document.querySelector('.demoLanguage').remove();
@@ -93,4 +99,11 @@ view.addEventListener('click', (event) => {
         event.preventDefault();
         say('On a server this opens the item in Jellyfin.');
     }
+});
+
+document.querySelector('#demoDrawer').addEventListener('click', (event) => {
+    if (event.target.closest('#demoDrawer ul > li:not([aria-current])')) { say('This demo has only the Inventory page.'); }
+});
+document.querySelectorAll('.demoBar [data-icon="arrowBack"], .demoUser').forEach((node) => {
+    node.addEventListener('click', () => say('This demo has only the Inventory page.'));
 });

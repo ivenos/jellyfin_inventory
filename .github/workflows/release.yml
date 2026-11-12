@@ -64,10 +64,8 @@ jobs:
       - name: Package
         run: |
           python3 .github/scripts/make-meta.py --version "$PLUGIN_VERSION" --out meta.json
-          dll=Jellyfin.Plugin.Inventory/bin/Release/net10.0/Jellyfin.Plugin.Inventory.dll
-          # zip only fails where nothing at all matched, not where one name did not.
-          [ -f "$dll" ] || { echo "the build left no assembly at $dll" >&2; exit 1; }
-          zip -j "inventory_$PLUGIN_VERSION.zip" meta.json "$dll" .github/assets/thumb.png
+          # Without -MM zip only fails where nothing at all matched, not where one name did not.
+          zip -MM -j "inventory_$PLUGIN_VERSION.zip" meta.json Jellyfin.Plugin.Inventory/bin/Release/net10.0/Jellyfin.Plugin.Inventory.dll .github/assets/thumb.png
 
       - name: Push the commit and the tag
         if: github.event_name == 'workflow_dispatch'

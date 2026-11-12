@@ -34,16 +34,19 @@ if not packages:
     raise SystemExit(f"{path} is missing or empty; it holds the plugin metadata and is not generated")
 
 versions = packages[0].setdefault("versions", [])
+listed = next((v for v in versions if v.get("version") == args.version), None)
+timestamp = listed["timestamp"] if listed and listed.get("checksum", "").lower() == args.checksum.lower() else args.timestamp
 # Older entries stay: a server only sees versions whose targetAbi it satisfies, so leaving
 # them is what keeps installations on an older Jellyfin working.
 versions = [v for v in versions if v.get("version") != args.version]
 versions.append({
     "version": args.version,
-    "changelog": args.changelog,
+    # Notes edited on GitHub come back with Windows line ends.
+    "changelog": args.changelog.replace("\r\n", "\n"),
     "targetAbi": args.target_abi,
     "sourceUrl": args.source_url,
     "checksum": args.checksum,
-    "timestamp": args.timestamp,
+    "timestamp": timestamp,
 })
 
 

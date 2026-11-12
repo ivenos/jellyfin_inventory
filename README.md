@@ -46,7 +46,7 @@ A film, an episode, a music video or a video kept in several versions opens to t
 
 ## API
 
-Nine endpoints under `/Inventory`, all requiring an administrator token. An API key carries no user, so Playlists, Last played, Plays and Fully played are empty for one, and it can change no playlist. `mediaType` names a tab, `level` one of the levels inside it, by default the one the tab is named after; those and the column keys all come from `Schema`.
+Nine endpoints under `/Inventory`, all requiring an administrator token. An API key carries no user, so Playlists, Last played, Plays and Fully played are empty for one, and it can change no playlist. `mediaType` names a tab, `level` one of the levels inside it, by default the one the tab is named after, which for `AudioBook` is its files rather than the books in `Folder`; those and the column keys all come from `Schema`.
 
 | Endpoint | Parameters | Answers with |
 | --- | --- | --- |
@@ -68,7 +68,7 @@ The level `Version` lists every file of a tab: an item kept in one file as itsel
 
 The address of the page takes `mediaType`, `search`, `filters`, `sortBy` and `descending` as `Items` does.
 
-`POST Targets` takes `Kind`, which is `Collection` or `Playlist`, `Remove` as `true` or `false`, the `Id` of an existing target or, when adding, the `Name` of a new one, and the items as ids in `Ids`. A new collection whose name or folder name matches an existing collection goes into that one. `All` takes every row of a listing as well, given by `MediaType`, `Level`, `Search` and `Filters` as `Items` takes them, less the ids in `Except`, each of which leaves out only itself, and like `Export` leaves out a row whose series, season, album or book matched too. A collection holds what is picked. A playlist holds the episodes, tracks or files of a picked series, album or audiobook, each once and none that is in `Except`. A track or a photo goes into no collection, a photo or an e-book into no playlist.
+`POST Targets` takes `Kind`, which is `Collection` or `Playlist`, `Remove` as `true` or `false`, the `Id` of an existing target or, when adding, the `Name` of a new one, which cannot start with a dot, and the items as ids in `Ids`. A new collection whose name or folder name matches an existing collection goes into that one. `All` takes every row of a listing as well, given by `MediaType`, `Level`, `Search` and `Filters` as `Items` takes them, less the ids in `Except`, each of which leaves out only itself, and like `Export` leaves out a row whose series, season, album or book matched too. A version goes in and out of either as the item it belongs to. A collection holds what is picked. A playlist holds the episodes, tracks or files of a picked series, album or audiobook, each once and none that is in `Except`. A track or a photo goes into no collection, a photo or an e-book into no playlist.
 
 ## License
 

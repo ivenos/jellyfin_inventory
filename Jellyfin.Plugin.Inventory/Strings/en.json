@@ -119,6 +119,7 @@
   "Target": "Collection or playlist",
   "NewCollection": "New collection",
   "NewPlaylist": "New playlist",
+  "NameDot": "A name cannot start with a dot.",
   "Add": "Add",
   "Remove": "Remove",
   "Cancel": "Cancel",

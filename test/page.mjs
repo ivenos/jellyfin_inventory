@@ -34,8 +34,12 @@ async function render(items, mode) {
     deep.MaxFilters = 2;
     const download = gate();
     const asked = [];
+    const listening = [];
     const fetched = [];
     const posted = [];
+    const versioned = JSON.parse(JSON.stringify(schema));
+    versioned.MediaTypes[0].Levels = [{ Level: 'Movie', Label: 'Movies' }, { Level: 'Version', Label: 'Versions' }];
+    versioned.MediaTypes[0].ExpandedTo = null;
     const narrowed = JSON.parse(JSON.stringify(schema));
     narrowed.Columns = narrowed.Columns.filter((column) => column.Key !== 'videoCodec');
     // The second visit finds a library that has changed, so a discarded answer is visible.
@@ -60,10 +64,17 @@ async function render(items, mode) {
 
     const dom = new JSDOM(source, {
         runScripts: 'dangerously',
-        url: 'http://localhost/web/index.html' + (mode === 'address' ? '#/configurationpage?name=Inventory' : ''),
+        url: 'http://localhost/web/index.html' + (mode === 'address' || mode === 'views' ? '#/configurationpage?name=Inventory' : ''),
         virtualConsole: new VirtualConsole()
             .on('jsdomError', (e) => { if (!e.message.startsWith('Not implemented')) { raised.push(e.message); } }),
         beforeParse(window) {
+            [window, window.document].forEach(function (target) {
+                const add = target.addEventListener.bind(target);
+                target.addEventListener = (type, listener, options) => {
+                    listening.push(options && options.signal);
+                    return add(type, listener, options);
+                };
+            });
             window.ApiClient = {
                 serverId: () => 'server',
                 accessToken: () => 'token',
@@ -73,6 +84,7 @@ async function render(items, mode) {
                     if (url.startsWith('Inventory/Schema')) {
                         if (mode === 'down' || (mode === 'offline' && failing)) { return Promise.reject(new Error('no')); }
                         if (mode === 'stuck' || mode === 'filter' || mode === 'tree' || mode === 'nested') { return Promise.resolve(deep); }
+                        if (mode === 'files') { return Promise.resolve(versioned); }
                         const call = ++served;
                         if (mode === 'gone') { return Promise.resolve(call > 1 ? narrowed : schema); }
                         if (mode === 'stale') {
@@ -138,7 +150,7 @@ async function render(items, mode) {
                 hideLoadingMsg() { overlay = 0; },
                 alert(message) {
                     toasts.push(message);
-                    if (!picking && !['failed', 'retry', 'stuck', 'switch', 'down', 'offline'].includes(mode)) {
+                    if (!picking && !['failed', 'retry', 'stuck', 'switch', 'down', 'offline', 'views'].includes(mode)) {
                         throw new Error('the page gave up: ' + message);
                     }
                 },
@@ -484,6 +496,56 @@ async function render(items, mode) {
             schemas: asked.filter((url) => url.startsWith('Inventory/Schema')).length - schemas,
             exports: fetched.length - exported,
         };
+        window.close();
+        return report;
+    }
+
+    if (mode === 'files') {
+        const plain = param(requests().at(-1), 'level');
+        click('#invFilterBtn');
+        await settle();
+        change(page.querySelector('#invFilters select'), 'size', 'change');
+        await typed();
+        change(page.querySelector('#invFilters input'), '1.5', 'input');
+        await typed();
+        await settle();
+        const last = requests().at(-1);
+        click('#invCsv');
+        await settle();
+        const report = { listed: [plain, param(last, 'level'), param(last, 'columnLevel'), param(fetched.at(-1), 'level')].join('/') };
+        window.close();
+        return report;
+    }
+
+    if (mode === 'views') {
+        failing = true;
+        page.querySelector('#invHead th[data-key="size"]').dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+        await settle();
+        failing = false;
+        const report = { unsorted: window.location.hash };
+        const live = () => listening.filter((signal) => !(signal && signal.aborted)).length;
+        leave();
+        await settle();
+        const second = another();
+        second.dispatchEvent(new window.Event('pageshow'));
+        await settle();
+        report.labels = [...second.querySelectorAll('label[for]')].map((label) => second.contains(label.control)).join(',');
+        report.named = [...second.querySelectorAll('label[for]')].map((label) => label.control.labels.length).join(',');
+        report.gradient = second.contains(window.document.getElementById('invMarkGradient'));
+        report.dialog = second.contains(window.document.getElementById(second.querySelector('dialog').getAttribute('aria-labelledby')));
+        const before = live();
+        page.dispatchEvent(new window.Event('viewdestroy'));
+        page.remove();
+        report.released = before - live();
+        second.dispatchEvent(new window.Event('viewhide'));
+        await settle();
+        window.history.replaceState(null, '', '#/configurationpage?name=Inventory&filters='
+            + encodeURIComponent(JSON.stringify([{ column: 'size', op: 'le', value: 500 }])));
+        const sent = requests().length;
+        const third = another();
+        third.dispatchEvent(new window.Event('pageshow'));
+        await settle();
+        report.tiny = third.querySelector('#invFilters input').value + '|' + param(requests()[sent], 'filters');
         window.close();
         return report;
     }
@@ -852,6 +914,11 @@ async function render(items, mode) {
         change(page.querySelector('#invName'), '   ', 'input');
         await submit();
         report.blank = posted.length - sent;
+        change(page.querySelector('#invName'), ' .hack ', 'input');
+        await submit();
+        report.dotted = (posted.length - sent) + '/' + page.querySelector('#invName').validationMessage;
+        change(page.querySelector('#invName'), '.hack', 'input');
+        report.retyped = page.querySelector('#invName').validationMessage;
         change(page.querySelector('#invName'), ' Rock $& Mix ', 'input');
         answer.Skipped = 3;
         await submit();
@@ -1238,6 +1305,16 @@ const linked = [{ column: 'size', op: 'ge', value: '2147483648' }, { column: 'du
     { column: 'quality', op: 'ge', value: '720p' }, { column: 'name', op: 'empty' }];
 const wanted = {
     switch: { select: 'true' },
+    files: { listed: 'Movie/Version/Movie/Version' },
+    views: {
+        unsorted: '#/configurationpage?name=Inventory&mediaType=Movie',
+        labels: 'true,true,true,true',
+        named: '1,1,1,1',
+        gradient: 'true',
+        dialog: 'true',
+        released: '3',
+        tiny: '0.000000465661287308|' + JSON.stringify([{ column: 'size', op: 'le', value: '500' }]),
+    },
     searched: { from: 'startIndex=0', drawn: '7/7 items' },
     address: {
         opened: '#/configurationpage?name=Inventory&mediaType=Movie',
@@ -1258,7 +1335,7 @@ const wanted = {
     },
     toolbar: {
         names: 'Columns=Columns,Filters=Filters,Select=Select,Export=Export,Previous=Previous,Next=Next',
-        pager: 'true/true/1 / 4/false',
+        pager: 'true/true/१ / ४/false',
         menu: 'open:invCsv,invOds,closed:invExportBtn,closed,closed,closed:ods:1',
         badge: '१|Filters (१)|Filters (१)',
         unbadged: 'false|Filters',
@@ -1280,6 +1357,8 @@ const wanted = {
         escaped: 'true',
         reopened: 'Collection:/',
         blank: '0',
+        dotted: '0/A name cannot start with a dot.',
+        retyped: '',
         tickedBody: JSON.stringify({ Kind: 'Playlist', Remove: false, Id: null, Name: 'Rock $& Mix', Ids: [ids[0], ids[1]], All: null }),
         toast: 'Added 5 items to "Rock $& Mix". 3 items cannot be in it.',
         already: 'Everything is already in "Classics".',

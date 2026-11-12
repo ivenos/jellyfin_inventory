@@ -31,6 +31,7 @@ public sealed partial class InventoryService : IDisposable
     private static readonly StringComparer _natural = StringComparer.Create(CultureInfo.InvariantCulture, CompareOptions.NumericOrdering);
 
     private static readonly char[] _delimiters = [' ', '-', '_', '.'];
+    private static readonly string[] _discFolders = ["VIDEO_TS", "BDMV"];
 
     private readonly ILibraryManager _libraryManager;
     private readonly IMediaSourceManager _mediaSourceManager;
@@ -236,7 +237,7 @@ public sealed partial class InventoryService : IDisposable
     {
         var listed = Hierarchy.Resolve(mediaType, level)
             ?? throw new ArgumentException($"Unknown media type '{mediaType}' or level '{level}'.", nameof(mediaType));
-        search = search?.Normalize();
+        search = search is null ? null : RowFilter.Composed(search);
 
         // The account list is what notices one that came or went, and a request that spans three
         // levels would otherwise ask the database for it three times over.
@@ -309,7 +310,16 @@ public sealed partial class InventoryService : IDisposable
         {
             // The version an item plays by default goes by the item's id, and stands for no item itself.
             var present = rows.Where(r => !r.Id.Equals(r.ParentId)).Select(r => r.Id).ToHashSet();
-            counted = rows.Where(r => !Covered(r, present)).ToArray();
+            var parents = new Dictionary<Guid, Guid>();
+            foreach (var row in levels.SelectMany(l => Shared(new Level(l))))
+            {
+                if (row.ParentId is { } parent && !parent.Equals(row.Id))
+                {
+                    parents.TryAdd(row.Id, parent);
+                }
+            }
+
+            counted = rows.Where(r => !Covered(r, present, parents)).ToArray();
         }
 
         // A file carries no totals line, so it holds the rows the totals are made of instead.
@@ -361,12 +371,31 @@ public sealed partial class InventoryService : IDisposable
     private static object? Present(InventoryRow row, ColumnDefinition column, string mixed)
         => row.Mixed?.Contains(column.Key) == true ? mixed : column.Value(row);
 
-    private static bool Covered(InventoryRow row, HashSet<Guid> present)
-        => (row.ParentId.HasValue && present.Contains(row.ParentId.Value))
-            || (row.AncestorId.HasValue && present.Contains(row.AncestorId.Value));
+    private static bool Covered(InventoryRow row, HashSet<Guid> present, Dictionary<Guid, Guid> parents)
+    {
+        if (row.AncestorId.HasValue && present.Contains(row.AncestorId.Value))
+        {
+            return true;
+        }
 
+        var up = row.ParentId;
+        for (var depth = 0; up is { } id && depth < 4; depth++)
+        {
+            if (present.Contains(id))
+            {
+                return true;
+            }
+
+            up = parents.TryGetValue(id, out var next) ? next : null;
+        }
+
+        return false;
+    }
+
+    // Jellyfin gives an item kept in several versions the path of the one it plays by default.
     private static bool Matches(InventoryRow row, string search)
-        => Holds(row.Name, search) || Holds(row.SeriesName, search) || Holds(row.Path, search)
+        => Holds(row.Name, search) || Holds(row.SeriesName, search)
+            || (row.Versions.Count == 0 ? Holds(row.Path, search) : row.Versions.All(v => Holds(v.Path, search)))
             || Holds(row.Artists, search) || Holds(row.Authors, search) || Holds(row.Narrators, search);
 
     private static bool Holds(string? text, string search)
@@ -953,7 +982,11 @@ public sealed partial class InventoryService : IDisposable
 
     private InventoryRow[] VersionRows(InventoryRow item, IReadOnlyList<Video> versions, List<Folder> roots, Dictionary<Guid, string?> libraries)
     {
-        var labels = Labels(versions);
+        // Jellyfin labels a version by what the name of its file adds to the name the versions share.
+        var names = versions.Select(FileName).ToArray();
+        var shared = Prefix(names);
+        var labels = names.Select(name => name[shared.Length..].Trim(_delimiters) is { Length: > 0 } label ? label : null).ToArray();
+        var title = Title(item.Name, shared.Trim(_delimiters), names[0]);
         var rows = new InventoryRow[versions.Count];
         for (var at = 0; at < versions.Count; at++)
         {
@@ -963,7 +996,7 @@ public sealed partial class InventoryService : IDisposable
                 ApplyStreams(row, _mediaSourceManager.GetMediaStreams(versions[at].Id));
             }
 
-            row.Name = labels[at] is { } label ? $"{item.Name} - {label}" : item.Name;
+            row.Name = labels[at] is { } label ? $"{title} - {label}" : item.Name;
             row.Year = item.Year;
             row.Artists = item.Artists;
             row.SeriesName = item.SeriesName;
@@ -986,15 +1019,25 @@ public sealed partial class InventoryService : IDisposable
         row.Duration = duration;
         row.Rateable = false;
         row.TotalBitrate = CommonValue(versions, v => v.TotalBitrate, mixed, "totalBitrate");
+        row.SizePerHour = CommonValue(versions, v => v.SizePerHour, mixed, "sizePerHour");
+        if (versions.Select(v => v.Path).Distinct(StringComparer.Ordinal).Count() > 1)
+        {
+            mixed.Add("path");
+        }
+
         row.Expandable = true;
     }
 
-    // Jellyfin labels a version by what the name of its file adds to the name the versions share.
-    private static string?[] Labels(IReadOnlyList<Video> versions)
+    // Jellyfin names an episode or a music video after the file of its default version.
+    private static string Title(string name, string stem, string file)
     {
-        var names = versions.Select(FileName).ToArray();
-        var shared = Prefix(names).Length;
-        return names.Select(name => name[shared..].Trim(_delimiters) is { Length: > 0 } label ? label : null).ToArray();
+        var bare = name.TrimEnd(_delimiters);
+        if (stem.Length > 0 && string.Equals(bare, stem, StringComparison.OrdinalIgnoreCase))
+        {
+            return bare;
+        }
+
+        return stem.Length > 0 && string.Equals(bare, file.TrimEnd(_delimiters), StringComparison.OrdinalIgnoreCase) ? stem : name;
     }
 
     private static string FileName(Video video)
@@ -1048,13 +1091,23 @@ public sealed partial class InventoryService : IDisposable
         }
 
         var titles = Titles(keys);
-        var groups = items.Select(i => (i as Video)?.PrimaryVersionId ?? i.Id).ToArray();
+        // Jellyfin 12.0 clears a merged copy's PrimaryVersionId on the next scan, while the primary still lists the copy.
+        var primaries = new Dictionary<Guid, Guid>();
+        foreach (var video in items.OfType<Video>().Where(HasVersions))
+        {
+            foreach (var version in video.GetAllVersions())
+            {
+                primaries.TryAdd(version.Id, video.Id);
+            }
+        }
+
+        var groups = items.Select(i => primaries.TryGetValue(i.Id, out var primary) ? primary : (i as Video)?.PrimaryVersionId ?? i.Id).ToArray();
         var members = Enumerable.Range(0, items.Count)
             .Where(at => titles[at].HasValue)
             .ToLookup(at => titles[at]!.Value, at => groups[at]);
         for (var at = 0; at < rows.Count; at++)
         {
-            rows[at].Duplicates = titles[at] is { } title ? members[title].Count(g => !g.Equals(groups[at])) : null;
+            rows[at].Duplicates = titles[at] is { } title ? members[title].Where(g => !g.Equals(groups[at])).Distinct().Count() : null;
         }
     }
 
@@ -1204,8 +1257,10 @@ public sealed partial class InventoryService : IDisposable
             }
         }
 
+        // Jellyfin weighs a .strm by its text, not by what it points at.
         if (item.IsShortcut)
         {
+            row.Size = null;
             row.Rateable = false;
         }
 
@@ -1290,19 +1345,29 @@ public sealed partial class InventoryService : IDisposable
 
     private static Guid? Identifier(Guid value) => value.Equals(default) ? null : value;
 
+    // A disc folder can sit in the film's folder, beside its extras and files Jellyfin ignores.
     private static long? FolderSize(string? path)
     {
         try
         {
-            return Directory.Exists(path)
-                ? new DirectoryInfo(path).EnumerateFiles("*", SearchOption.AllDirectories).Sum(f => f.Length)
-                : null;
+            if (!Directory.Exists(path))
+            {
+                return null;
+            }
+
+            var folder = new DirectoryInfo(path);
+            var disc = IsDisc(folder) ? folder : folder.EnumerateDirectories().FirstOrDefault(IsDisc);
+            return disc is null
+                ? folder.EnumerateFiles().Sum(f => f.Length)
+                : disc.EnumerateFiles("*", SearchOption.AllDirectories).Sum(f => f.Length);
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException)
         {
             return null;
         }
     }
+
+    private static bool IsDisc(DirectoryInfo folder) => _discFolders.Contains(folder.Name, StringComparer.OrdinalIgnoreCase);
 
     // Jellyfin names no container for a photo, a book or an audiobook, and keeps a photo's
     // dimensions on the item rather than on a stream. Both are only read where nothing was found.

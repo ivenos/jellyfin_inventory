@@ -8,6 +8,8 @@ namespace Jellyfin.Plugin.Inventory;
 /// </summary>
 public class InventoryRow
 {
+    private double? _sizePerHour;
+
     /// <summary>
     /// Gets or sets the item id.
     /// </summary>
@@ -294,10 +296,14 @@ public class InventoryRow
     public bool Rateable { get; set; } = true;
 
     /// <summary>
-    /// Gets the size per hour of runtime in bytes, the measure of how expensive an item is for its length.
+    /// Gets or sets the size per hour of runtime in bytes, the measure of how expensive an item is for its length,
+    /// worked out from the size and the runtime unless it is set.
     /// </summary>
-    public double? SizePerHour =>
-        Rateable && Size is > 0 && Duration is > 0 ? Math.Round(Size.Value / (Duration.Value / 3600d)) : null;
+    public double? SizePerHour
+    {
+        get => _sizePerHour ?? (Rateable && Size is > 0 && Duration is > 0 ? Math.Round(Size.Value / (Duration.Value / 3600d)) : null);
+        set => _sizePerHour = value;
+    }
 
     /// <summary>
     /// Gets or sets the resolution as a display string.

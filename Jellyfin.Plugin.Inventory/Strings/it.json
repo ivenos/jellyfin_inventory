@@ -119,6 +119,7 @@
   "Target": "Collezione o scaletta",
   "NewCollection": "Nuova collezione",
   "NewPlaylist": "Nuova scaletta",
+  "NameDot": "Un nome non può iniziare con un punto.",
   "Add": "Aggiungi",
   "Remove": "Rimuovi",
   "Cancel": "Annulla",

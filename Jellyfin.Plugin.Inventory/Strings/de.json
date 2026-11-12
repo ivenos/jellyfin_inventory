@@ -119,6 +119,7 @@
   "Target": "Sammlung oder Wiedergabeliste",
   "NewCollection": "Neue Sammlung",
   "NewPlaylist": "Neue Wiedergabeliste",
+  "NameDot": "Ein Name darf nicht mit einem Punkt beginnen.",
   "Add": "Hinzufügen",
   "Remove": "Entfernen",
   "Cancel": "Abbrechen",

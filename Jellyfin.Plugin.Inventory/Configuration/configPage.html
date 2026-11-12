@@ -113,7 +113,7 @@
                     background: var(--jf-palette-background-paper, rgba(255,255,255,.03));
                 }
                 .invGroups { display: flex; flex-wrap: wrap; gap: 2em; }
-                .invGroup h4 { margin: 0 0 .5em; color: var(--jf-palette-text-secondary, inherit); font-weight: 500; }
+                .invGroup h3 { margin: 0 0 .5em; color: var(--jf-palette-text-secondary, inherit); font-size: 1em; font-weight: 500; }
                 .invGroup label { display: block; padding: .15em 0; cursor: pointer; }
                 .invGroup input { margin-inline-end: .5em; accent-color: var(--jf-palette-primary-main, #00a4dc); }
                 .invFilter { display: flex; flex-wrap: wrap; gap: .5em; align-items: center; margin-bottom: .6em; }
@@ -356,6 +356,15 @@
             // The web client can still hold an earlier view of this page, whose controls are taken.
             var page = document.querySelector('#InventoryPage:not([data-bound])');
             page.setAttribute('data-bound', '');
+            var gone = new AbortController();
+            page.addEventListener('viewdestroy', function () { gone.abort(); });
+            // An id resolves to the first match in the document, which can be an earlier, hidden view.
+            var linked = {};
+            page.querySelectorAll('[for], [aria-controls], [aria-labelledby], [fill^="url(#"]').forEach(function (el) {
+                var id = el.getAttribute('for') || el.getAttribute('aria-controls') || el.getAttribute('aria-labelledby')
+                    || el.getAttribute('fill').slice(5, -1);
+                linked[id] = page.querySelector('#' + id);
+            });
             var showing = false;
             // Jellyfin keeps the chosen interface language on the root element and updates it live.
             var culture = document.documentElement.getAttribute('lang') || 'en-US';
@@ -476,7 +485,7 @@
                 if (!isNumeric(format)) { return text === '' ? null : text; }
                 if (format !== 'FrameRate') { text = ungrouped(text); }
                 var number = /^[+-]?(\d+([.,]\d*)?|[.,]\d+)$/.test(text) ? Number(text.replace(',', '.')) : NaN;
-                return isFinite(number) ? String(number * scale(format).by) : null;
+                return isFinite(number) ? String(Number((number * scale(format).by).toPrecision(12))) : null;
             }
 
             function conditions() {
@@ -496,10 +505,12 @@
             }
 
             // A folder row has no single value to hold a condition against, so a filtered table
-            // lists the level the tab is expanded to, flat.
+            // lists the level the tab is expanded to, flat, and an item kept in several versions its files.
             function listing() {
                 var filters = conditions();
                 var opened = filters.length ? state.levels[state.expandTo] : null;
+                var below = opened && state.levels[state.expandTo + 1];
+                if (below && below.Level === 'Version') { opened = below; }
                 return {
                     level: opened ? opened.Level : state.level,
                     filters: filters.length ? JSON.stringify(filters) : ''
@@ -569,7 +580,7 @@
                     if (isNumeric(column.Format) && /^-?\d+(\.\d+)?$/.test(value)) {
                         var number = Number(value) / scale(column.Format).by;
                         if (!isFinite(number)) { return null; }
-                        value = String(Number(number.toPrecision(12)));
+                        value = number.toLocaleString('en-US', { useGrouping: false, maximumSignificantDigits: 12 });
                         if (comma) { value = value.replace('.', ','); }
                     }
                     var offered = column.Format === 'Boolean' ? ['true', 'false'] : column.Values;
@@ -662,7 +673,7 @@
                 host.style.display = '';
                 page.querySelector('#invExpandLabel').textContent = t('ExpandTo');
 
-                var select = page.querySelector('#invExpand');
+                var select = linked.invExpand;
                 select.innerHTML = '';
                 state.levels.forEach(function (level, index) {
                     var option = document.createElement('option');
@@ -682,7 +693,7 @@
                     sizes.sort(function (a, b) { return a - b; });
                 }
 
-                var select = page.querySelector('#invSize');
+                var select = linked.invSize;
                 select.innerHTML = '';
                 sizes.forEach(function (size) {
                     var option = document.createElement('option');
@@ -1049,7 +1060,7 @@
                 groups.forEach(function (group) {
                     var box = document.createElement('div');
                     box.className = 'invGroup';
-                    var title = document.createElement('h4');
+                    var title = document.createElement('h3');
                     title.textContent = group.label;
                     box.appendChild(title);
 
@@ -1446,9 +1457,9 @@
 
             function showDialog(remove, groups, items) {
                 var dialog = page.querySelector('#invDialog');
-                var select = page.querySelector('#invTarget');
-                var name = page.querySelector('#invName');
-                page.querySelector('#invDialogTitle').textContent = remove ? t('RemoveFromTitle', 'Remove from') : t('AddToTitle', 'Add to');
+                var select = linked.invTarget;
+                var name = linked.invName;
+                linked.invDialogTitle.textContent = remove ? t('RemoveFromTitle', 'Remove from') : t('AddToTitle', 'Add to');
                 page.querySelector('#invDialogOkLabel').textContent = remove ? t('Remove', 'Remove') : t('Add', 'Add');
                 select.innerHTML = '';
                 groups.forEach(function (group) {
@@ -1485,18 +1496,25 @@
             }
 
             function naming() {
-                var fresh = /:$/.test(page.querySelector('#invTarget').value);
+                var fresh = /:$/.test(linked.invTarget.value);
                 page.querySelector('#invNameField').style.display = fresh ? '' : 'none';
-                page.querySelector('#invName').required = fresh;
+                linked.invName.required = fresh;
             }
 
             function submitDialog() {
                 var dialog = page.querySelector('#invDialog');
-                var value = page.querySelector('#invTarget').value;
-                var name = page.querySelector('#invName');
+                var value = linked.invTarget.value;
+                var name = linked.invName;
                 var fresh = /:$/.test(value);
                 if (fresh && !name.value.trim()) {
                     name.value = '';
+                    name.reportValidity();
+                    return;
+                }
+
+                // Jellyfin hides a folder whose name starts with a dot, and drops what is in it at the next scan.
+                if (fresh && name.value.trim().charAt(0) === '.') {
+                    name.setCustomValidity(t('NameDot', 'A name cannot start with a dot.'));
                     name.reportValidity();
                     return;
                 }
@@ -1803,7 +1821,7 @@
 
                 var pages = Math.max(1, Math.ceil(count / state.limit));
                 var current = Math.floor(state.start / state.limit) + 1;
-                page.querySelector('#invPage').textContent = current + ' / ' + pages;
+                page.querySelector('#invPage').textContent = current.toLocaleString(culture) + ' / ' + pages.toLocaleString(culture);
                 var prev = page.querySelector('#invPrev');
                 var next = page.querySelector('#invNext');
                 // Disabling the button under the caret drops the focus to the body, so where it
@@ -1819,7 +1837,7 @@
                 page.querySelector('#invHead').innerHTML = '';
                 page.querySelector('#invBody').innerHTML = '';
                 page.querySelector('#invGroups').innerHTML = '';
-                page.querySelector('#invColumnsPanel').style.display = 'none';
+                linked.invColumnsPanel.style.display = 'none';
                 page.querySelector('#invTotals').textContent = '';
                 page.querySelector('#invPage').textContent = '';
                 page.querySelector('#invPrev').disabled = true;
@@ -1922,6 +1940,7 @@
                         state.limit = drawn.limit;
                         state.total = drawn.total;
                         renderPageSizes();
+                        writeAddress(drawn.filters);
                     } else {
                         clear();
                     }
@@ -1974,8 +1993,8 @@
                 // A tab opened to its episodes shows those; a search flattens it back again, unless
                 // a filter has the table listing that level as well.
                 var asked = listing();
-                var opened = (asked.filters || !state.search) && state.levels[state.expandTo];
-                var level = opened ? opened.Level : state.level;
+                var opened = !state.search && state.levels[state.expandTo];
+                var level = asked.filters ? asked.level : opened ? opened.Level : state.level;
                 var target = url('Export', {
                     mediaType: state.type,
                     level: level,
@@ -2034,7 +2053,7 @@
             }
 
             function exportMenu(open) {
-                page.querySelector('#invExportMenu').hidden = !open;
+                linked.invExportMenu.hidden = !open;
                 page.querySelector('#invExportBtn').setAttribute('aria-expanded', open ? 'true' : 'false');
                 if (open) { page.querySelector('#invCsv').focus(); }
             }
@@ -2057,10 +2076,10 @@
             });
 
             page.querySelector('#invExportBtn').addEventListener('click', released(function () {
-                exportMenu(page.querySelector('#invExportMenu').hidden);
+                exportMenu(linked.invExportMenu.hidden);
             }));
 
-            page.querySelector('#invExportMenu').addEventListener('keydown', function (e) {
+            linked.invExportMenu.addEventListener('keydown', function (e) {
                 if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') { return; }
                 e.preventDefault();
                 var items = [page.querySelector('#invCsv'), page.querySelector('#invOds')];
@@ -2074,14 +2093,14 @@
             });
 
             document.addEventListener('click', function (e) {
-                if (!page.querySelector('#invExportMenu').hidden && !page.querySelector('#invExportHost').contains(e.target)) {
+                if (!linked.invExportMenu.hidden && !page.querySelector('#invExportHost').contains(e.target)) {
                     exportMenu(false);
                 }
-            });
+            }, { signal: gone.signal });
 
             document.addEventListener('keydown', function (e) {
                 if (e.key !== 'Escape' || !showing) { return; }
-                if (!page.querySelector('#invExportMenu').hidden) {
+                if (!linked.invExportMenu.hidden) {
                     exportMenu(false);
                     page.querySelector('#invExportBtn').focus();
                     return;
@@ -2097,7 +2116,7 @@
                 if (picked.on && !(e.target.closest && e.target.closest('select, textarea, input:not([type="checkbox"])'))) {
                     endPicking();
                 }
-            });
+            }, { signal: gone.signal });
 
             page.querySelector('#invPickBtn').addEventListener('click', released(function () {
                 if (picked.on) {
@@ -2125,7 +2144,9 @@
 
             page.querySelector('#invAddTo').addEventListener('click', released(function () { openDialog(false); }));
             page.querySelector('#invRemoveFrom').addEventListener('click', released(function () { openDialog(true); }));
-            page.querySelector('#invTarget').addEventListener('change', naming);
+            linked.invTarget.addEventListener('change', naming);
+            linked.invName.addEventListener('input', function () { linked.invName.setCustomValidity(''); });
+
             page.querySelector('#invDialogForm').addEventListener('submit', function (e) {
                 e.preventDefault();
                 submitDialog();
@@ -2138,24 +2159,24 @@
                 if (page.querySelector('#invDialogOk').getAttribute('aria-busy')) { e.preventDefault(); }
             });
 
-            page.querySelector('#invExpand').addEventListener('change', function (e) {
+            linked.invExpand.addEventListener('change', function (e) {
                 setExpansion(Number(e.target.value));
             });
 
-            page.querySelector('#invSize').addEventListener('change', function (e) {
+            linked.invSize.addEventListener('change', function (e) {
                 var size = Number(e.target.value);
                 if (size && size !== state.limit) { setPageSize(size); }
             });
 
             page.querySelector('#invColumnsBtn').addEventListener('click', released(function () {
-                var panel = page.querySelector('#invColumnsPanel');
+                var panel = linked.invColumnsPanel;
                 var opening = panel.style.display === 'none';
                 panel.style.display = opening ? '' : 'none';
                 this.setAttribute('aria-expanded', opening ? 'true' : 'false');
             }));
 
             page.querySelector('#invFilterBtn').addEventListener('click', released(function () {
-                var panel = page.querySelector('#invFilterPanel');
+                var panel = linked.invFilterPanel;
                 var opening = panel.style.display === 'none';
                 panel.style.display = opening ? '' : 'none';
                 this.setAttribute('aria-expanded', opening ? 'true' : 'false');
@@ -2187,6 +2208,19 @@
 
             page.addEventListener('pageshow', function () {
                 showing = true;
+                Object.keys(linked).forEach(function (id) {
+                    document.querySelectorAll('[id="' + id + '"]').forEach(function (el) {
+                        if (el !== linked[id]) { el.removeAttribute('id'); }
+                    });
+                    linked[id].id = id;
+                });
+                // Chromium names a control after every label that points at it, hidden ones too.
+                document.querySelectorAll('#InventoryPage label[for], #InventoryPage label[data-for]').forEach(function (label) {
+                    var to = label.getAttribute('for') || label.getAttribute('data-for');
+                    label.removeAttribute('for');
+                    label.removeAttribute('data-for');
+                    label.setAttribute(page.contains(label) ? 'for' : 'data-for', to);
+                });
                 var mine = ++visit;
                 generation++;
                 var restored = readAddress();
@@ -2278,9 +2312,9 @@
 
             // The sidebar moves with pushState, which fires no hashchange; currententrychange does, from inside the call.
             if (window.navigation) {
-                window.navigation.addEventListener('currententrychange', function () { setTimeout(follow); });
+                window.navigation.addEventListener('currententrychange', function () { setTimeout(follow); }, { signal: gone.signal });
             } else {
-                window.addEventListener('hashchange', follow);
+                window.addEventListener('hashchange', follow, { signal: gone.signal });
             }
 
             // The view stays in the DOM when the user navigates away, so a pending timer or request

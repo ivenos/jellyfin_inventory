@@ -145,7 +145,18 @@ public sealed class RowFilter
         };
     }
 
-    internal static string Composed(string text) => text.IsNormalized() ? text : text.Normalize();
+    internal static string Composed(string text)
+    {
+        try
+        {
+            return text.IsNormalized() ? text : text.Normalize();
+        }
+        catch (ArgumentException)
+        {
+            // .NET refuses to normalize a string that holds a noncharacter such as U+FFFE.
+            return text;
+        }
+    }
 
     private static RowFilter? Read(JsonElement entry, out string? error)
     {
@@ -173,7 +184,7 @@ public sealed class RowFilter
         var text = Text(entry, "value");
         object? value = column.Format switch
         {
-            ColumnFormat.Text => string.IsNullOrEmpty(text) ? null : text.Normalize(),
+            ColumnFormat.Text => string.IsNullOrEmpty(text) ? null : Composed(text),
             ColumnFormat.Boolean => bool.TryParse(text, out var flag) ? flag : null,
             ColumnFormat.Date => DateTime.TryParseExact(text, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var day) ? day : null,
             ColumnFormat.Quality => VideoQuality.Rank(text),
