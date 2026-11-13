@@ -537,6 +537,15 @@ check "and its bytes are not added to the film it sits with" \
 check "a movie table starts with the columns it was given" \
     "$(api 'Inventory/Items?mediaType=Movie&limit=1' | field "','.join(c['Key'] for c in json.load(sys.stdin)['Columns'])")" \
     "name,year,size,duration,sizePerHour,totalBitrate,videoCodec,resolution,videoRange,audioCodec,audioLayout"
+curl -sf -X POST "$BASE/Inventory/Columns?level=Movie" \
+    -H "Authorization: MediaBrowser Token=\"$TOKEN\"" -H "$JSON" \
+    -d '["series","season","episode"]' >/dev/null || refused "Inventory/Columns?level=Movie"
+check "show columns saved for a movie are not shown" \
+    "$(api 'Inventory/Items?mediaType=Movie&limit=1' | field "','.join(c['Key'] for c in json.load(sys.stdin)['Columns'])")" \
+    "name,year,size,duration,sizePerHour,totalBitrate,videoCodec,resolution,videoRange,audioCodec,audioLayout"
+check "episodes can still show their series, season and episode columns" \
+    "$(api 'Inventory/Items?mediaType=Series&level=Episode&limit=1' | field "','.join(c['Key'] for c in json.load(sys.stdin)['Columns'][:3])")" \
+    "series,season,episode"
 check "and a track table with its own" \
     "$(api 'Inventory/Items?mediaType=MusicAlbum&level=Audio&limit=1' | field "','.join(c['Key'] for c in json.load(sys.stdin)['Columns'])")" \
     "name,artists,year,size,duration,totalBitrate,audioCodec,audioChannels,audioSampleRate"
@@ -2025,6 +2034,9 @@ check "a page size is stored, and the rows are asked for again from the first" \
     "$(rendered controls.size)" "Inventory/PageSize?size=250&culture=en/0,250"
 check "a search is sent as it was typed" "$(rendered controls.search)" "Blue"
 check "the page raises nothing while it is driven" "$(rendered raised)" "0"
+check "show-only columns are hidden on movies but offered on series" \
+    "$(rendered columns.movie | tr ',' '\n' | grep -Ex 'series|season|episode' | wc -l | tr -d ' ')/$(rendered columns.series | cut -d, -f1-3)" \
+    "0/series,season,episode"
 check "the page takes its column headers from the strings" \
     "$(rendered headers)" "Name,Size,Duration,Size/hour,Video codec,Interlaced"
 check "the page names every tab and how much it holds" \

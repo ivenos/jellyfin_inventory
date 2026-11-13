@@ -456,6 +456,12 @@
                 return schema.columns.filter(function (column) { return column.Key === key; })[0];
             }
 
+            function columnsForType() {
+                return schema.columns.filter(function (column) {
+                    return !column.MediaTypes || column.MediaTypes.indexOf(state.type) !== -1;
+                });
+            }
+
             // The value box takes the unit the table prints, the server the one it keeps.
             function scale(format) {
                 switch (format) {
@@ -1039,16 +1045,18 @@
             function renderColumnPicker() {
                 var host = page.querySelector('#invGroups');
                 var chosen = columnKeys();
+                var offered = columnsForType();
 
                 // Only the ticks move; rebuilding would take the focus off the box just toggled.
-                if (host.childElementCount) {
+                if (host.childElementCount && renderedColumnType === state.type) {
                     mark(host, chosen);
                     return;
                 }
 
+                renderedColumnType = state.type;
                 var groups = [];
                 var byKey = {};
-                schema.columns.forEach(function (column) {
+                offered.forEach(function (column) {
                     if (!byKey[column.GroupKey]) {
                         byKey[column.GroupKey] = { label: column.Group, columns: [] };
                         groups.push(byKey[column.GroupKey]);
@@ -1106,7 +1114,7 @@
 
             // Behind the last chosen column the picker offers before it.
             function insert(keys, key) {
-                var offered = schema.columns.map(function (c) { return c.Key; });
+                var offered = columnsForType().map(function (c) { return c.Key; });
                 var at = 0;
                 keys.forEach(function (chosen, index) {
                     if (offered.indexOf(chosen) < offered.indexOf(key)) { at = index + 1; }
@@ -1129,6 +1137,7 @@
             var pending = null;
             var outstanding = 0;
             var saving = Promise.resolve();
+            var renderedColumnType = null;
 
             // The order the table will have once the request lands, so a second change made before
             // it does builds on the first instead of undoing it.

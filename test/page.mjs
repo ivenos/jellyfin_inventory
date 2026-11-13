@@ -380,6 +380,16 @@ async function render(items, mode) {
         return report;
     }
 
+    if (mode === 'columns') {
+        const offered = () => [...page.querySelectorAll('#invGroups input')].map((input) => input.getAttribute('data-key'));
+        const movie = offered();
+        page.querySelectorAll('.invType')[1].dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+        await settle();
+        const report = { movie: movie.join(','), series: offered().join(',') };
+        window.close();
+        return report;
+    }
+
     if (mode === 'early') {
         const before = requests().length;
         page.querySelectorAll('.invType')[1].dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
@@ -1292,7 +1302,7 @@ for (const [prefix, file] of [['one', itemFiles[1]], ['exact', itemFiles[2]]]) {
 }
 
 for (const mode of ['hide', 'export', 'stale', 'overlay', 'hung', 'failed', 'down', 'offline', 'retry', 'stuck', 'beyond',
-    'filter', 'tree', 'twice', 'revisit', 'debounce', 'gone', 'units', 'scroll', 'controls', 'early', 'rtl']) {
+    'filter', 'tree', 'twice', 'revisit', 'debounce', 'gone', 'units', 'scroll', 'controls', 'early', 'rtl', 'columns']) {
     const extra = await render(read(itemFiles[0]), mode);
     for (const [key, value] of Object.entries(extra)) { console.log(`${mode}.${key}=${value}`); }
 }

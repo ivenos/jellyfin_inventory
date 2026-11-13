@@ -208,7 +208,7 @@ public class InventoryController : ControllerBase
             return BadRequest(unreadable);
         }
 
-        var columns = Columns.Resolve(config.GetColumns(selection), selection);
+        var columns = Columns.Resolve(config.GetColumns(selection), selection, mediaType);
 
         // A Guid[] would only bind from a repeated parameter, so the ids arrive comma separated.
         var parents = parentIds?.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
@@ -307,7 +307,7 @@ public class InventoryController : ControllerBase
             return BadRequest(unreadable);
         }
 
-        var columns = Columns.Resolve(Configuration.GetColumns(selection), selection);
+        var columns = Columns.Resolve(Configuration.GetColumns(selection), selection, mediaType);
         var headers = columns.Select(c => Translations.Get(culture, "column." + c.Key)).ToArray();
 
         var page = _inventory.Query(
@@ -820,6 +820,7 @@ public class InventoryController : ControllerBase
         GroupKey = column.Group,
         Format = column.Format.ToString(),
         column.List,
+        column.MediaTypes,
         Operators = RowFilter.Operators(column.Format),
         Values = column.Format == ColumnFormat.Quality ? VideoQuality.Names : null
     };

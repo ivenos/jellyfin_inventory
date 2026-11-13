@@ -17,9 +17,9 @@ public static class Columns
     private static readonly ColumnDefinition[] _all =
     [
         new("name", "General", ColumnFormat.Text, r => r.Name),
-        new("series", "General", ColumnFormat.Text, r => r.SeriesName),
-        new("season", "General", ColumnFormat.Plain, r => r.SeasonNumber),
-        new("episode", "General", ColumnFormat.Plain, r => r.EpisodeNumber),
+        new("series", "General", ColumnFormat.Text, r => r.SeriesName, MediaTypes: ["Series"]),
+        new("season", "General", ColumnFormat.Plain, r => r.SeasonNumber, MediaTypes: ["Series"]),
+        new("episode", "General", ColumnFormat.Plain, r => r.EpisodeNumber, MediaTypes: ["Series"]),
         new("year", "General", ColumnFormat.Plain, r => r.Year),
         Listing("genres", "General", r => r.Genres),
         Listing("collections", "General", r => r.Collections),
@@ -93,14 +93,21 @@ public static class Columns
     /// </summary>
     /// <param name="keys">The keys to resolve, or null where the level has nothing stored.</param>
     /// <param name="level">The level whose defaults stand in for a selection that resolved to nothing.</param>
+    /// <param name="mediaType">The media type whose columns are being resolved.</param>
     /// <returns>The columns that matched.</returns>
-    public static IReadOnlyList<ColumnDefinition> Resolve(IEnumerable<string>? keys, string level)
+    public static IReadOnlyList<ColumnDefinition> Resolve(IEnumerable<string>? keys, string level, string mediaType)
     {
         // A configuration file edited by hand can repeat a key, and the row values are keyed by it.
-        var resolved = keys?.Select(Find).OfType<ColumnDefinition>().DistinctBy(c => c.Key).ToArray() ?? [];
+        var resolved = keys?.Select(Find).OfType<ColumnDefinition>()
+            .Where(c => c.IsAvailableFor(mediaType))
+            .DistinctBy(c => c.Key)
+            .ToArray() ?? [];
         return resolved.Length > 0
             ? resolved
-            : ColumnDefaults.For(level).Select(Find).OfType<ColumnDefinition>().DistinctBy(c => c.Key).ToArray();
+            : ColumnDefaults.For(level).Select(Find).OfType<ColumnDefinition>()
+                .Where(c => c.IsAvailableFor(mediaType))
+                .DistinctBy(c => c.Key)
+                .ToArray();
     }
 
     private static ColumnDefinition Listing(string key, string group, Func<InventoryRow, IReadOnlyList<string>?> names, ColumnSource source = ColumnSource.Item)

@@ -18,6 +18,7 @@ All notable changes to this project are documented in this file, in the format o
 
 ### Fixed
 
+- Series, season and episode columns no longer appear in the Movies tab.
 - Filtering with = or ≠ missed a genre, artist, collection or other name that has a comma in it.
 - The first collection made from the table could end up empty, and making it set off a scan of every library.
 - The page kept every earlier visit in memory, which slowed the dashboard down the longer it stayed open.

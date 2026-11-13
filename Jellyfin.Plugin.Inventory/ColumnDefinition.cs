@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 
 namespace Jellyfin.Plugin.Inventory;
 
@@ -14,6 +15,7 @@ namespace Jellyfin.Plugin.Inventory;
 /// <param name="Sort">Reads what the column is ordered by, where that is not the value shown.</param>
 /// <param name="Source">Where the value comes from.</param>
 /// <param name="Names">Reads the values one by one, where the value lists several.</param>
+/// <param name="MediaTypes">The media types that can show the column, or null for every type.</param>
 public sealed record ColumnDefinition(
     string Key,
     string Group,
@@ -21,10 +23,19 @@ public sealed record ColumnDefinition(
     Func<InventoryRow, object?> Value,
     Func<InventoryRow, object?>? Sort = null,
     ColumnSource Source = ColumnSource.Item,
-    Func<InventoryRow, IReadOnlyList<string>?>? Names = null)
+    Func<InventoryRow, IReadOnlyList<string>?>? Names = null,
+    IReadOnlyList<string>? MediaTypes = null)
 {
     /// <summary>
     /// Gets a value indicating whether the value lists several, comma separated.
     /// </summary>
     public bool List => Names is not null;
+
+    /// <summary>
+    /// Gets whether this column is available for a media type.
+    /// </summary>
+    /// <param name="mediaType">The media type key.</param>
+    /// <returns>Whether the column applies to the media type.</returns>
+    public bool IsAvailableFor(string mediaType)
+        => MediaTypes is null || MediaTypes.Contains(mediaType, StringComparer.OrdinalIgnoreCase);
 }
