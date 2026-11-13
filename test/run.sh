@@ -353,6 +353,8 @@ RECIPE=$(cat <<'FIXTURES'
         $FF -y -loglevel error -f lavfi -i sine=frequency=600:duration=4 \
             -c:a libmp3lame -b:a 64k -metadata artist="Bo Writer" -metadata title="Loose Tale" \
             "/media/audiobooks/Loose Tale.mp3"
+        mkdir -p /media/spare
+        $FF -y -loglevel error -f lavfi -i sine=frequency=650:duration=4 -c:a aac "/media/spare/Radio Play (2003).mkv"
 FIXTURES
 )
 BOOK_TITLE="The Fixture Manual"
@@ -380,7 +382,8 @@ fi
 rm -rf "${WORK:?}/media/movies/Late Arrival 2 (2025)" "${WORK:?}/media/movies/Late Arrival 10 (2025)" \
     "${WORK:?}/media/movies/Late Arrival 11 (2025)" "${WORK:?}/media/movies/Disc Rip (2001)" "${WORK:?}/media/copies" \
     "${WORK:?}/media/movies/Late Cut (2025)" "${WORK:?}/media/movies/Late Stream (2025)" \
-    "${WORK:?}/media/shows/Twin Cut (2024)" "${WORK:?}/media/shows/Long Run Again (2020)"
+    "${WORK:?}/media/shows/Twin Cut (2024)" "${WORK:?}/media/shows/Long Run Again (2020)" "${WORK:?}/media/musicvideos" \
+    "${WORK:?}/media/photos/Harbour Walk.mkv" "${WORK:?}/media/photos/Quay Walk.mkv" "${WORK:?}/media/movies/Radio Play (2003)"
 
 echo "== start =="
 docker rm -f "$CONTAINER" >/dev/null 2>&1 || true
@@ -551,6 +554,9 @@ check "while asking for no sort at all is how the table loads" \
         -H "Authorization: MediaBrowser Token=\"$TOKEN\"")" "200"
 check "every column has a caption rather than falling back to its key" \
     "$(printf '%s\n' "$SCHEMA" | field "all(not c['Label'].startswith('column.') and not c['Group'].startswith('group.') for c in json.load(sys.stdin)['Columns'])")" "True"
+check "the schema names the tabs a column can have a value in" \
+    "$(printf '%s\n' "$SCHEMA" | field "' '.join('%s=%s' % (c['Key'], ','.join(c['MediaTypes'])) for c in json.load(sys.stdin)['Columns'] if c['Key'] in ('name', 'series', 'artists', 'duplicates', 'videoCodec', 'height', 'audioCodec'))")" \
+    "name=Movie,Series,MusicAlbum,MusicVideo,Video,Book,AudioBook,Photo series=Series artists=MusicAlbum,MusicVideo duplicates=Movie,Series,MusicAlbum,MusicVideo,Video videoCodec=Movie,Series,MusicVideo,Video height=Movie,Series,MusicVideo,Video,Photo audioCodec=Movie,Series,MusicAlbum,MusicVideo,Video,AudioBook"
 
 # Rows are addressed by name: which row comes first is not something the API promises.
 named() { field "[r['Values']['$2'] for r in json.load(sys.stdin)['Rows'] if r['Values'].get('name')=='$1'][0]"; }
@@ -2025,6 +2031,13 @@ check "a page size is stored, and the rows are asked for again from the first" \
     "$(rendered controls.size)" "Inventory/PageSize?size=250&culture=en/0,250"
 check "a search is sent as it was typed" "$(rendered controls.search)" "Blue"
 check "the page raises nothing while it is driven" "$(rendered raised)" "0"
+check "a tab offers the columns that can have a value in it, in the picker and in the filters" \
+    "$(rendered columns.movie)|$(rendered columns.movieFilter)|$(rendered columns.musicFilter)" \
+    "duplicates,videoCodec,interlaced,height,audioCodec,subtitleTracks|duplicates,videoCodec,interlaced,height,audioCodec,subtitleTracks|artists,duplicates,audioCodec"
+check "and still offers a column chosen before, so it can be taken off, even after a box was ticked while the tab loaded" \
+    "$(rendered columns.music)" "artists,duplicates,audioCodec,subtitleTracks"
+check "a filter taken to another tab keeps its column" \
+    "$(rendered columns.carried)" "artists/artists,duplicates,videoCodec,interlaced,height,audioCodec,subtitleTracks"
 check "the page takes its column headers from the strings" \
     "$(rendered headers)" "Name,Size,Duration,Size/hour,Video codec,Interlaced"
 check "the page names every tab and how much it holds" \
@@ -2350,6 +2363,57 @@ done
 check "and the shows taken away leave the tab without the level for files" \
     "$(api 'Inventory/Schema' | field "','.join(l['Level'] for t in json.load(sys.stdin)['MediaTypes'] if t['MediaType']=='Series' for l in t['Levels'])")" \
     "Series,Season,Episode"
+
+mkdir -p "$WORK/media/musicvideos/Signal Song"
+cp "$WORK/media/shows/Harbour Lights (2022)/Season 01/Harbour Lights S01E01.mkv" "$WORK/media/musicvideos/Signal Song/Signal Song - 1080p.mkv"
+cp "$WORK/media/movies/Double Cut (2022)/Double Cut (2022).mkv" "$WORK/media/musicvideos/Signal Song/Signal Song - 360p.mkv"
+cp "$WORK/media/movies/Double Cut (2022)/Double Cut (2022).mkv" "$WORK/media/musicvideos/Echo Song.mkv"
+for clip in "Signal Song/Signal Song - 1080p" "Signal Song/Signal Song - 360p" "Echo Song"; do
+    printf '<musicvideo><artist>Test Band</artist><imdbid>tt0000777</imdbid></musicvideo>\n' > "$WORK/media/musicvideos/$clip.nfo"
+done
+cp "$WORK/media/shows/Harbour Lights (2022)/Season 01/Harbour Lights S01E01.mkv" "$WORK/media/photos/Harbour Walk.mkv"
+cp "$WORK/media/movies/Double Cut (2022)/Double Cut (2022).mkv" "$WORK/media/photos/Quay Walk.mkv"
+mkdir -p "$WORK/media/movies/Radio Play (2003)"
+cp "$WORK/media/spare/Radio Play (2003).mkv" "$WORK/media/movies/Radio Play (2003)/"
+printf '1\n00:00:00,000 --> 00:00:02,000\nHello\n\n' > "$WORK/media/movies/Radio Play (2003)/Radio Play (2003).en.srt"
+settled
+curl -sf --max-time 600 -X POST "$BASE/Library/VirtualFolders?name=Music%20videos&collectionType=musicvideos&paths=/media/musicvideos&refreshLibrary=false" \
+    -H "Authorization: MediaBrowser Token=\"$TOKEN\"" -H "$JSON" -d "$OFFLINE" >/dev/null || refused "Library/VirtualFolders?name=Music videos"
+curl -sf -X POST "$BASE/Library/Refresh" -H "Authorization: MediaBrowser Token=\"$TOKEN\"" >/dev/null || refused "Library/Refresh"
+curl -sf -X POST "$BASE/Inventory/Columns?level=Photo" -H "Authorization: MediaBrowser Token=\"$TOKEN\"" -H "$JSON" \
+    -d '["name","videoCodec","audioCodec"]' >/dev/null || refused "Inventory/Columns?level=Photo"
+probed() { api "Inventory/Items?mediaType=$1&columnLevel=Photo&limit=1000$3" | field "len([r for r in json.load(sys.stdin)['Rows'] if r['Values'].get('$2')])"; }
+i=0
+until [ "$(probed MusicVideo videoCodec '&level=Version')/$(probed Video videoCodec)/$(probed Movie audioCodec '&search=Radio%20Play')" = "3/2/1" ] \
+    || [ "$i" -gt 40 ]; do
+    i=$((i + 1))
+    [ $((i % 10)) = 0 ] && curl -sf -X POST "$BASE/Library/Refresh" \
+        -H "Authorization: MediaBrowser Token=\"$TOKEN\"" >/dev/null 2>&1 || true
+    sleep 3
+done
+for walk in "Harbour Walk" "Quay Walk"; do
+    edit "$(api 'Inventory/Items?mediaType=Video&columnLevel=MusicVideo&limit=1000' | identify "$walk")" '{"ProviderIds": {"Imdb": "tt0000888"}}'
+done
+i=0
+until [ "$(twins Video)" = "Harbour Walk=1,Quay Walk=1" ] || [ "$i" -gt 15 ]; do
+    i=$((i + 1))
+    sleep 1
+done
+OFFERS=$(api 'Inventory/Schema' | field "json.dumps({c['Key']: c['MediaTypes'] for c in json.load(sys.stdin)['Columns']})")
+EVERY=$(api 'Inventory/Schema' | field "json.dumps([c['Key'] for c in json.load(sys.stdin)['Columns']])")
+SEEN=$(api 'Inventory/Schema' | field "'\n'.join(t['MediaType'] + ' ' + l['Level'] for t in json.load(sys.stdin)['MediaTypes'] for l in t['Levels'])" \
+    | while read -r type level; do
+        curl -sf -X POST "$BASE/Inventory/Columns?level=$level" -H "Authorization: MediaBrowser Token=\"$TOKEN\"" -H "$JSON" \
+            -d "$EVERY" >/dev/null || refused "Inventory/Columns?level=$level"
+        printf '%s ' "$type"
+        api "Inventory/Items?mediaType=$type&level=$level&limit=10000" \
+            | field "' '.join(sorted({'$level.' + k for r in json.load(sys.stdin)['Rows'] for k, v in r['Values'].items() if v is not None and '$type' not in $OFFERS[k]})) or '-'"
+    done)
+check "no column has a value in a tab that does not offer it" \
+    "$(printf '%s\n' "$SEEN" | cut -d' ' -f1 | uniq | paste -sd, -)/$(printf '%s\n' "$SEEN" | grep -v ' -$' | cut -d' ' -f2- | paste -sd' ' - | sed 's/^$/none/')" \
+    "Movie,Series,MusicAlbum,MusicVideo,Video,Book,AudioBook,Photo/none"
+check "a film without a picture still counts its subtitles" \
+    "$(api 'Inventory/Items?mediaType=Movie&search=Radio%20Play' | field "(lambda v: '%s/%s' % (v['subtitleTracks'], v['subtitleLanguages']))(json.load(sys.stdin)['Rows'][0]['Values'])")" "1/eng"
 
 curl -sf -X POST "$BASE/Plugins/$GUID/Configuration" -H "Authorization: MediaBrowser Token=\"$TOKEN\"" -H "$JSON" \
     -d '{"Presets":null,"Expanded":null,"PageSize":100}' >/dev/null || refused "Plugins/$GUID/Configuration"

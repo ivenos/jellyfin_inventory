@@ -42,6 +42,8 @@ The Inventory plugin then appears in the catalog under General. Restart the serv
 | Subtitles | Subtitle tracks, Subtitle languages |
 | Playback | Last played, Last played (all users), Plays, Plays (all users), Fully played, Fully played by |
 
+A tab offers the columns that can have a value in it, and still offers one chosen before. Series, Season and Episode are only in Series, Artists only in Music and Music videos, Authors and Narrators only in Books and Audiobooks. Books and Photos have no Items, Duration, Size/hour, Bitrate, audio, video or subtitle columns, except Resolution and Height for a photo. Music and Audiobooks have no video or subtitle columns, and Books, Audiobooks and Photos no Duplicates.
+
 A film, an episode, a music video or a video kept in several versions opens to them, and shows Mixed where they differ. Duplicates counts the other items of a tab that are the same title: a film, a series, a music video or a video by its TMDb, IMDb or TheTVDB id, an album or a track by its MusicBrainz id, and a season or an episode by its number in the same show. Items Jellyfin groups as versions of one another do not count, and an item without an id stays empty.
 
 ## API
@@ -50,7 +52,7 @@ Nine endpoints under `/Inventory`, all requiring an administrator token. An API 
 
 | Endpoint | Parameters | Answers with |
 | --- | --- | --- |
-| `GET Schema` | `culture` | The populated media types with their levels and whether their rows can go into a collection or a playlist, every column with the operators it can be filtered by and, for quality, its classes in order, the page size, the most conditions `filters` may carry, the interface strings and the culture they were answered in |
+| `GET Schema` | `culture` | The populated media types with their levels and whether their rows can go into a collection or a playlist, every column with the media types it can have a value in and the operators it can be filtered by and, for quality, its classes in order, the page size, the most conditions `filters` may carry, the interface strings and the culture they were answered in |
 | `GET Items` | `mediaType`, `level`, `parentIds`, `columnLevel`, `search`, `filters`, `sortBy`, `descending`, `startIndex`, `limit`, `culture` | One page of rows with the columns they are keyed by, how many rows there are in total, and the size and runtime behind them; `parentIds` returns the whole child set rather than a page |
 | `GET Export` | `mediaType`, `level`, `columnLevel`, `format`, `search`, `filters`, `sortBy`, `descending`, `culture` | Every matching row as a `csv` or `ods` file, less the ones a match above them already accounts for |
 | `POST Columns` | `level`, and the column keys as a JSON array in the body | The stored selection |

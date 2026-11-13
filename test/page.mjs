@@ -25,6 +25,7 @@ async function render(items, mode) {
     const rows = gate();
     let hold = false;
     const late = gate();
+    const music = gate();
     // A tab with a level under it, so its rows carry a control that opens them.
     const openable = JSON.parse(JSON.stringify(items));
     openable.Rows.forEach(function (row) { row.Expandable = true; });
@@ -98,6 +99,9 @@ async function render(items, mode) {
 
                     if (url.startsWith('Inventory/Items')) {
                         if (mode === 'failed' || failing) { return Promise.reject(new Error('no')); }
+                        if (mode === 'columns' && url.includes('mediaType=MusicAlbum')) {
+                            return music.held.then(() => ({ ...items, Columns: schema.Columns.filter((column) => ['name', 'subtitleTracks'].includes(column.Key)) }));
+                        }
                         if (mode === 'stuck' && url.includes('parentIds=')) {
                             return held.held.then(() => items);
                         }
@@ -376,6 +380,36 @@ async function render(items, mode) {
             pager: [page.querySelector('#invPage').textContent, page.querySelector('#invPrev').disabled,
                 page.querySelector('#invNext').disabled].join('/'),
         };
+        window.close();
+        return report;
+    }
+
+    if (mode === 'columns') {
+        const watched = ['series', 'artists', 'authors', 'duplicates', 'videoCodec', 'interlaced', 'height', 'audioCodec', 'subtitleTracks'];
+        const among = (keys) => watched.filter((key) => keys.includes(key)).join(',');
+        const offered = () => among([...page.querySelectorAll('#invGroups input')].map((input) => input.getAttribute('data-key')));
+        const column = () => page.querySelector('#invFilters select');
+        const filterable = () => among([...column().options].map((option) => option.value));
+        const tab = async (type) => {
+            page.querySelector(`.invType[data-type="${type}"]`).dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+            await settle();
+        };
+        click('#invFilterBtn');
+        await settle();
+        const report = { movie: offered(), movieFilter: filterable() };
+        await tab('MusicAlbum');
+        const year = page.querySelector('#invGroups input[data-key="year"]');
+        year.checked = true;
+        year.dispatchEvent(new window.Event('change', { bubbles: true }));
+        await settle();
+        music.open();
+        await settle();
+        report.music = offered();
+        report.musicFilter = filterable();
+        change(column(), 'artists', 'change');
+        await settle();
+        await tab('Movie');
+        report.carried = column().value + '/' + filterable();
         window.close();
         return report;
     }
@@ -1292,7 +1326,7 @@ for (const [prefix, file] of [['one', itemFiles[1]], ['exact', itemFiles[2]]]) {
 }
 
 for (const mode of ['hide', 'export', 'stale', 'overlay', 'hung', 'failed', 'down', 'offline', 'retry', 'stuck', 'beyond',
-    'filter', 'tree', 'twice', 'revisit', 'debounce', 'gone', 'units', 'scroll', 'controls', 'early', 'rtl']) {
+    'filter', 'tree', 'twice', 'revisit', 'debounce', 'gone', 'units', 'scroll', 'controls', 'early', 'rtl', 'columns']) {
     const extra = await render(read(itemFiles[0]), mode);
     for (const [key, value] of Object.entries(extra)) { console.log(`${mode}.${key}=${value}`); }
 }

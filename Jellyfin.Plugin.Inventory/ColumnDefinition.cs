@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using Jellyfin.Data.Enums;
 
 namespace Jellyfin.Plugin.Inventory;
 
@@ -14,6 +15,7 @@ namespace Jellyfin.Plugin.Inventory;
 /// <param name="Sort">Reads what the column is ordered by, where that is not the value shown.</param>
 /// <param name="Source">Where the value comes from.</param>
 /// <param name="Names">Reads the values one by one, where the value lists several.</param>
+/// <param name="MediaTypes">The tabs the column can have a value in, or null for every tab.</param>
 public sealed record ColumnDefinition(
     string Key,
     string Group,
@@ -21,7 +23,8 @@ public sealed record ColumnDefinition(
     Func<InventoryRow, object?> Value,
     Func<InventoryRow, object?>? Sort = null,
     ColumnSource Source = ColumnSource.Item,
-    Func<InventoryRow, IReadOnlyList<string>?>? Names = null)
+    Func<InventoryRow, IReadOnlyList<string>?>? Names = null,
+    IReadOnlyList<BaseItemKind>? MediaTypes = null)
 {
     /// <summary>
     /// Gets a value indicating whether the value lists several, comma separated.

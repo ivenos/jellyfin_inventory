@@ -756,6 +756,7 @@ public sealed partial class InventoryService : IDisposable
 
             // Jellyfin keeps the scale of the reading progress in a book's runtime.
             var timed = kind is not BaseItemKind.Book;
+            var subtitled = kind is not (BaseItemKind.Audio or BaseItemKind.AudioBook);
 
             // Only a book has an author or a narrator, and asking is one query per item.
             var credited = kind is BaseItemKind.Book or BaseItemKind.AudioBook;
@@ -801,7 +802,7 @@ public sealed partial class InventoryService : IDisposable
 
                 if (streamed)
                 {
-                    ApplyStreams(row, _mediaSourceManager.GetMediaStreams(item.Id));
+                    ApplyStreams(row, _mediaSourceManager.GetMediaStreams(item.Id), subtitled);
                 }
 
                 if (fromPath)
@@ -993,7 +994,7 @@ public sealed partial class InventoryService : IDisposable
             var row = at == 0 ? item.Copy() : NewRow(versions[at], roots, libraries);
             if (at > 0)
             {
-                ApplyStreams(row, _mediaSourceManager.GetMediaStreams(versions[at].Id));
+                ApplyStreams(row, _mediaSourceManager.GetMediaStreams(versions[at].Id), true);
             }
 
             row.Name = labels[at] is { } label ? $"{title} - {label}" : item.Name;
@@ -1390,7 +1391,7 @@ public sealed partial class InventoryService : IDisposable
         }
     }
 
-    private void ApplyStreams(InventoryRow row, IReadOnlyList<MediaStream> streams)
+    private void ApplyStreams(InventoryRow row, IReadOnlyList<MediaStream> streams, bool subtitled)
     {
         var video = streams.FirstOrDefault(s => s.Type == MediaStreamType.Video);
         if (video is not null)
@@ -1430,9 +1431,9 @@ public sealed partial class InventoryService : IDisposable
         row.AudioTracks = streams.Count > 0 ? audioStreams.Length : null;
         row.AudioLanguages = Join(audioStreams.Select(s => s.Language));
 
-        var subtitles = streams.Where(s => s.Type == MediaStreamType.Subtitle).ToArray();
-        row.SubtitleTracks = streams.Count > 0 ? subtitles.Length : null;
-        row.SubtitleLanguages = Join(subtitles.Select(s => s.Language));
+        var subtitles = subtitled ? streams.Where(s => s.Type == MediaStreamType.Subtitle).ToArray() : null;
+        row.SubtitleTracks = subtitles is not null && streams.Count > 0 ? subtitles.Length : null;
+        row.SubtitleLanguages = subtitles is null ? null : Join(subtitles.Select(s => s.Language));
 
         row.TotalBitrate = row.Rateable && row.Size is > 0 && row.Duration is > 0
             ? (long?)(row.Size.Value * 8 / row.Duration.Value)

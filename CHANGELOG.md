@@ -12,6 +12,7 @@ All notable changes to this project are documented in this file, in the format o
 
 ### Changed
 
+- Each tab only offers the columns that can have a value in it, in the column picker and in the filters (#19).
 - A film or an episode kept in several versions shows Mixed where its versions differ, rather than what the first of them has.
 - A .strm has no size, rather than the size of the address written in it.
 - A filter on the films, or on the episodes, lists the files of one kept in several versions, so a film with a 4K copy is found by that copy.

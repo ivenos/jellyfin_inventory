@@ -456,6 +456,10 @@
                 return schema.columns.filter(function (column) { return column.Key === key; })[0];
             }
 
+            function inTab(column) {
+                return column.MediaTypes.indexOf(state.type) !== -1;
+            }
+
             // The value box takes the unit the table prints, the server the one it keeps.
             function scale(format) {
                 switch (format) {
@@ -776,6 +780,7 @@
                 var column = picker(t('FilterColumn', 'Column'));
                 var groups = {};
                 schema.columns.forEach(function (offered) {
+                    if (!inTab(offered) && offered.Key !== filter.column) { return; }
                     if (!groups[offered.GroupKey]) {
                         groups[offered.GroupKey] = document.createElement('optgroup');
                         groups[offered.GroupKey].label = offered.Group;
@@ -1016,7 +1021,8 @@
                     if (candidate.MediaType === mediaType) { type = candidate; }
                 });
                 if (!type) { return; }
-                if (mediaType !== state.type) { endPicking(); }
+                var moved = mediaType !== state.type;
+                if (moved) { endPicking(); }
 
                 state.type = mediaType;
                 state.levels = type.Levels;
@@ -1033,6 +1039,7 @@
                 }
                 renderTypes();
                 renderExpandBar();
+                if (moved) { renderFilters(); }
                 load();
             }
 
@@ -1041,14 +1048,16 @@
                 var chosen = columnKeys();
 
                 // Only the ticks move; rebuilding would take the focus off the box just toggled.
-                if (host.childElementCount) {
+                if (host.childElementCount && pickedFor === state.type) {
                     mark(host, chosen);
                     return;
                 }
 
+                pickedFor = state.type;
                 var groups = [];
                 var byKey = {};
                 schema.columns.forEach(function (column) {
+                    if (!inTab(column) && chosen.indexOf(column.Key) === -1) { return; }
                     if (!byKey[column.GroupKey]) {
                         byKey[column.GroupKey] = { label: column.Group, columns: [] };
                         groups.push(byKey[column.GroupKey]);
@@ -1129,6 +1138,7 @@
             var pending = null;
             var outstanding = 0;
             var saving = Promise.resolve();
+            var pickedFor = null;
 
             // The order the table will have once the request lands, so a second change made before
             // it does builds on the first instead of undoing it.
@@ -1139,7 +1149,7 @@
             function saveColumns(keys) {
                 // The picker stands over the table that is drawn, not over the one on its way in.
                 if (columnLevel !== state.level) {
-                    renderColumnPicker();
+                    mark(page.querySelector('#invGroups'), columnKeys());
                     return;
                 }
 

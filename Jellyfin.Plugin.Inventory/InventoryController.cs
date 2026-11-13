@@ -820,6 +820,7 @@ public class InventoryController : ControllerBase
         GroupKey = column.Group,
         Format = column.Format.ToString(),
         column.List,
+        MediaTypes = (column.MediaTypes ?? Hierarchy.All.Select(Hierarchy.Tab)).Select(t => t.ToString()),
         Operators = RowFilter.Operators(column.Format),
         Values = column.Format == ColumnFormat.Quality ? VideoQuality.Names : null
     };

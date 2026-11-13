@@ -38,9 +38,9 @@ sh test/run.sh --keep         # leave the server up to click through
 
 ## Adding a column
 
-- The field on `InventoryRow`, the line that fills it in `InventoryService`, and the entry in `Columns`, with `List: true` if it lists several values.
+- The field on `InventoryRow`, the line that fills it in `InventoryService`, and the entry in `Columns`, with `List: true` if it lists several values and `MediaTypes` if not every tab can fill it.
 - A line in `Fold` if it rolls up to a series, an album or a book, or in `FoldPlayback` or `FoldEveryone` if it is read per user.
-- `column.<key>` in every file under `Strings/` and its English name in the README table, in the row of its group.
+- `column.<key>` in every file under `Strings/` and its English name in the README table, in the row of its group, and below it if not every tab offers it.
 - A column that is not in the README does not exist.
 - Keys are fixed once released.
 
