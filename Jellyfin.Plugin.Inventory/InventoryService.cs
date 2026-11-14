@@ -888,31 +888,35 @@ public sealed partial class InventoryService : IDisposable
         return rows;
     }
 
-    private IReadOnlyList<BaseItem> Items(BaseItemKind kind) => kind == BaseItemKind.Folder ? Books() : _libraryManager.GetItemList(new InternalItemsQuery
-    {
-        IncludeItemTypes = [kind],
-        Recursive = true,
-        IsVirtualItem = false,
-        // Kept wherever the sorted column ties, which is what orders the episodes of a season.
-        OrderBy =
-        [
-            (ItemSortBy.ParentIndexNumber, SortOrder.Ascending),
-            (ItemSortBy.IndexNumber, SortOrder.Ascending),
-            (ItemSortBy.SortName, SortOrder.Ascending)
-        ],
-        DtoOptions = kind == BaseItemKind.AudioBook ? Lean(ItemFields.Settings, ItemFields.ProviderIds) : Lean(ItemFields.ProviderIds)
-    // A trailer or a making of belongs to the film it sits with, not to a row of its own.
-    }).Where(item => item.ExtraType is null).ToArray();
+    private IReadOnlyList<BaseItem> Items(BaseItemKind kind) => kind == BaseItemKind.Folder
+        ? Books()
+        : _libraryManager.GetItemList(new InternalItemsQuery
+        {
+            IncludeItemTypes = [kind],
+            Recursive = true,
+            IsVirtualItem = false,
+            // Kept wherever the sorted column ties, which is what orders the episodes of a season.
+            OrderBy =
+            [
+                (ItemSortBy.ParentIndexNumber, SortOrder.Ascending),
+                (ItemSortBy.IndexNumber, SortOrder.Ascending),
+                (ItemSortBy.SortName, SortOrder.Ascending)
+            ],
+            DtoOptions = kind == BaseItemKind.AudioBook ? Lean(ItemFields.Settings, ItemFields.ProviderIds) : Lean(ItemFields.ProviderIds)
+            // A trailer or a making of belongs to the film it sits with, not to a row of its own.
+        }).Where(item => item.ExtraType is null).ToArray();
 
     private IReadOnlyList<BaseItem> Books()
     {
         var ids = Shared(new Level(BaseItemKind.AudioBook)).Select(r => r.AncestorId).OfType<Guid>().Distinct().ToArray();
-        return ids.Length == 0 ? [] : _libraryManager.GetItemList(new InternalItemsQuery
-        {
-            ItemIds = ids,
-            OrderBy = [(ItemSortBy.SortName, SortOrder.Ascending)],
-            DtoOptions = Lean(ItemFields.Settings)
-        });
+        return ids.Length == 0
+            ? []
+            : _libraryManager.GetItemList(new InternalItemsQuery
+            {
+                ItemIds = ids,
+                OrderBy = [(ItemSortBy.SortName, SortOrder.Ascending)],
+                DtoOptions = Lean(ItemFields.Settings)
+            });
     }
 
     // Jellyfin keeps no item for a folder that holds a single file, which then hangs off the folder above it.
@@ -969,8 +973,8 @@ public sealed partial class InventoryService : IDisposable
         => string.IsNullOrEmpty(album)
             || book.LockedFields.Contains(MetadataField.Name)
             || (book is Folder && !string.Equals(book.Name, Path.GetFileName(book.Path), StringComparison.Ordinal))
-            ? book.Name ?? string.Empty
-            : album;
+                ? book.Name ?? string.Empty
+                : album;
 
     [GeneratedRegex(@"^(?:cd|dis[ck])\s*(\d{1,3})$", RegexOptions.IgnoreCase)]
     private static partial Regex DiscName();

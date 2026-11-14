@@ -1720,7 +1720,13 @@ TRACK_SHELF=$(curl -sf -X POST "$BASE/Collections?name=Inventory%20Tracks&ids=$T
     | field "json.load(sys.stdin)['Id']")
 check "a track jellyfin put into a collection comes out of it again" \
     "$(targets "{\"Kind\":\"Collection\",\"Remove\":true,\"Id\":\"$TRACK_SHELF\",\"Ids\":[\"$TRACK\"]}" | outcome)" "Inventory Tracks/1/0"
-curl -sf -X DELETE "$BASE/Items/$TRACK_SHELF" -H "Authorization: MediaBrowser Token=\"$TOKEN\"" >/dev/null || refused "Items/$TRACK_SHELF" DELETE
+# Jellyfin rewrites the collection's folder after a removal, and a delete that meets it finds the folder not empty.
+i=0
+until curl -sf -X DELETE "$BASE/Items/$TRACK_SHELF" -H "Authorization: MediaBrowser Token=\"$TOKEN\"" >/dev/null; do
+    i=$((i + 1))
+    [ "$i" -lt 5 ] || refused "Items/$TRACK_SHELF" DELETE
+    sleep 1
+done
 
 MIX=$(targets "{\"Kind\":\"Playlist\",\"Name\":\"Inventory Mix\",\"Ids\":[\"$SERIES_ID\",\"$SIGNAL\",\"$BOOK\",\"$PHOTO\"]}")
 MIX_ID=$(printf '%s\n' "$MIX" | field "json.load(sys.stdin)['Id']")
@@ -2382,7 +2388,7 @@ curl -sf --max-time 600 -X POST "$BASE/Library/VirtualFolders?name=Music%20video
 curl -sf -X POST "$BASE/Library/Refresh" -H "Authorization: MediaBrowser Token=\"$TOKEN\"" >/dev/null || refused "Library/Refresh"
 curl -sf -X POST "$BASE/Inventory/Columns?level=Photo" -H "Authorization: MediaBrowser Token=\"$TOKEN\"" -H "$JSON" \
     -d '["name","videoCodec","audioCodec"]' >/dev/null || refused "Inventory/Columns?level=Photo"
-probed() { api "Inventory/Items?mediaType=$1&columnLevel=Photo&limit=1000$3" | field "len([r for r in json.load(sys.stdin)['Rows'] if r['Values'].get('$2')])"; }
+probed() { api "Inventory/Items?mediaType=$1&columnLevel=Photo&limit=1000${3:-}" | field "len([r for r in json.load(sys.stdin)['Rows'] if r['Values'].get('$2')])"; }
 i=0
 until [ "$(probed MusicVideo videoCodec '&level=Version')/$(probed Video videoCodec)/$(probed Movie audioCodec '&search=Radio%20Play')" = "3/2/1" ] \
     || [ "$i" -gt 40 ]; do
