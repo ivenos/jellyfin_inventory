@@ -110,7 +110,8 @@ public sealed class RowFilter
 
     /// <summary>
     /// Tells whether a row meets the condition. An empty cell meets only a negated one or the one
-    /// asking for it, and a cell that reads as mixed meets none, since it may go either way.
+    /// asking for it, a cell that reads as mixed meets none, since it may go either way, and a
+    /// quality such as 720p+ only one asking for at least a class its lowest reaches.
     /// </summary>
     /// <param name="row">The row.</param>
     /// <returns>Whether the row stays.</returns>
@@ -132,6 +133,11 @@ public sealed class RowFilter
         if (blank)
         {
             return Operator is FilterOperator.NotEqual or FilterOperator.NotContains;
+        }
+
+        if (row.QualityVaries && Column.Format == ColumnFormat.Quality)
+        {
+            return Operator == FilterOperator.AtLeast && Compare(row.Quality!) >= 0;
         }
 
         return Operator switch

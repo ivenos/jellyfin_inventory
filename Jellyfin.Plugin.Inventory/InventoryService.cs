@@ -10,6 +10,7 @@ using System.Threading;
 using Jellyfin.Data.Enums;
 using Jellyfin.Database.Implementations.Entities;
 using Jellyfin.Database.Implementations.Enums;
+using MediaBrowser.Controller.Configuration;
 using MediaBrowser.Controller.Dto;
 using MediaBrowser.Controller.Entities;
 using MediaBrowser.Controller.Entities.Audio;
@@ -38,6 +39,7 @@ public sealed partial class InventoryService : IDisposable
     private readonly IUserDataManager _userDataManager;
     private readonly IUserManager _userManager;
     private readonly IPlaylistManager _playlistManager;
+    private readonly IServerConfigurationManager _config;
     private readonly ILogger<InventoryService> _logger;
     private readonly ConcurrentDictionary<Level, Cached> _cache = new();
 
@@ -66,6 +68,7 @@ public sealed partial class InventoryService : IDisposable
     /// <param name="userDataManager">Instance of the <see cref="IUserDataManager"/> interface.</param>
     /// <param name="userManager">Instance of the <see cref="IUserManager"/> interface.</param>
     /// <param name="playlistManager">Instance of the <see cref="IPlaylistManager"/> interface.</param>
+    /// <param name="config">Instance of the <see cref="IServerConfigurationManager"/> interface.</param>
     /// <param name="logger">Instance of the <see cref="ILogger{InventoryService}"/> interface.</param>
     public InventoryService(
         ILibraryManager libraryManager,
@@ -73,6 +76,7 @@ public sealed partial class InventoryService : IDisposable
         IUserDataManager userDataManager,
         IUserManager userManager,
         IPlaylistManager playlistManager,
+        IServerConfigurationManager config,
         ILogger<InventoryService> logger)
     {
         _libraryManager = libraryManager;
@@ -80,6 +84,7 @@ public sealed partial class InventoryService : IDisposable
         _userDataManager = userDataManager;
         _userManager = userManager;
         _playlistManager = playlistManager;
+        _config = config;
         _logger = logger;
 
         _libraryManager.ItemAdded += OnLibraryChanged;
@@ -871,9 +876,11 @@ public sealed partial class InventoryService : IDisposable
         CountDuplicates(kind, items, rows, shows);
 
         var collections = Holders(Collections());
-        foreach (var row in rows)
+        for (var at = 0; at < rows.Count; at++)
         {
+            var row = rows[at];
             row.Collections = Listed(collections[row.Id]);
+            row.SortName = SortName(row.Name, items[at].ForcedSortName);
 
             // Jellyfin keeps genres and collections on an item, not on its other versions.
             foreach (var version in row.Versions)
@@ -881,12 +888,18 @@ public sealed partial class InventoryService : IDisposable
                 version.Genres = row.Genres;
                 version.Collections = row.Collections;
                 version.Duplicates = row.Duplicates;
+                version.SortName = SortName(version.Name, null);
             }
         }
 
         _logger.LogDebug("Built {Count} inventory rows for {Kind} in {Elapsed} ms", rows.Count, kind, watch.ElapsedMilliseconds);
         return rows;
     }
+
+    // Taken from the name the row shows rather than the item's own, which for an episode or a track
+    // leads with its number and for an audiobook is not the album it is shown by.
+    private string SortName(string name, string? forced)
+        => BaseItem.GetSortName(string.IsNullOrEmpty(forced) ? name : forced, true, _config.Configuration);
 
     private IReadOnlyList<BaseItem> Items(BaseItemKind kind) => kind == BaseItemKind.Folder
         ? Books()
@@ -1194,7 +1207,7 @@ public sealed partial class InventoryService : IDisposable
         row.VideoCodec = Common(children, c => c.VideoCodec, mixed, "videoCodec");
         row.VideoProfile = Common(children, c => c.VideoProfile, mixed, "videoProfile");
         row.Resolution = Common(children, c => c.Resolution, mixed, "resolution");
-        row.Quality = Common(children, c => c.Quality, mixed, "quality");
+        row.Quality = Lowest(row, children, mixed);
         row.VideoRange = Common(children, c => c.VideoRange, mixed, "videoRange");
         row.DolbyVision = Common(children, c => c.DolbyVision, mixed, "dolbyVision");
         row.PixelFormat = Common(children, c => c.PixelFormat, mixed, "pixelFormat");
@@ -1485,6 +1498,32 @@ public sealed partial class InventoryService : IDisposable
         }
 
         return null;
+    }
+
+    private static string? Lowest(InventoryRow row, IReadOnlyList<InventoryRow> children, ISet<string> mixed)
+    {
+        if (children.Any(c => c.Mixed?.Contains("quality") == true))
+        {
+            mixed.Add("quality");
+            return null;
+        }
+
+        var known = children.Where(c => c.Quality is not null).ToArray();
+        if (known.Length == 0)
+        {
+            return null;
+        }
+
+        // A file the scan has not read yet could be below the lowest one known.
+        if (known.Length < children.Count)
+        {
+            mixed.Add("quality");
+            return null;
+        }
+
+        var lowest = known.MinBy(c => (VideoQuality.Rank(c.Quality) ?? int.MaxValue, c.Quality!.EndsWith('i') ? 0 : 1))!.Quality;
+        row.QualityVaries = known.Any(c => c.QualityVaries || !string.Equals(c.Quality, lowest, StringComparison.OrdinalIgnoreCase));
+        return lowest;
     }
 
     private static string? Common(

@@ -205,6 +205,9 @@ export function createBackend(data) {
         const blank = cell === null || cell === undefined || cell === '';
         if (filter.op === 'empty' || filter.op === 'notEmpty') { return blank === (filter.op === 'empty'); }
         if (blank) { return filter.op === 'ne' || filter.op === 'notContains'; }
+        if (filter.definition.Format === 'Quality' && String(cell).endsWith('+')) {
+            return filter.op === 'ge' && compare(filter, String(cell).slice(0, -1)) >= 0;
+        }
 
         switch (filter.op) {
             case 'contains': return fold(cell).includes(filter.value);

@@ -14,6 +14,8 @@ All notable changes to this project are documented in this file, in the format o
 
 - Each tab only offers the columns that can have a value in it, in the column picker and in the filters (#19).
 - A film or an episode kept in several versions shows Mixed where its versions differ, rather than what the first of them has.
+- Quality shows the lowest of several qualities with a plus, such as 720p+, instead of Mixed, and a filter for at least that quality finds it.
+- Names sort as in Jellyfin, so The Matrix sorts under M and a sort title set in Jellyfin is used.
 - A .strm has no size, rather than the size of the address written in it.
 - A filter on the films, or on the episodes, lists the files of one kept in several versions, so a film with a 4K copy is found by that copy.
 

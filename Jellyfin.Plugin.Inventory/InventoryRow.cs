@@ -41,6 +41,11 @@ public class InventoryRow
     public string Name { get; set; } = string.Empty;
 
     /// <summary>
+    /// Gets or sets what the name sorts by, as Jellyfin sorts it.
+    /// </summary>
+    public string? SortName { get; set; }
+
+    /// <summary>
     /// Gets or sets the name of the series an episode belongs to.
     /// </summary>
     public string? SeriesName { get; set; }
@@ -314,6 +319,12 @@ public class InventoryRow
     /// Gets or sets the class the resolution falls in, such as 1080p.
     /// </summary>
     public string? Quality { get; set; }
+
+    /// <summary>
+    /// Gets or sets a value indicating whether some of the items below this row are in a higher class
+    /// than <see cref="Quality"/>, which is then the lowest of them.
+    /// </summary>
+    public bool QualityVaries { get; set; }
 
     /// <summary>
     /// Returns a copy, so playback data can be attached per user without touching the shared cache.

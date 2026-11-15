@@ -29,7 +29,7 @@ public static class Columns
 
     private static readonly ColumnDefinition[] _all =
     [
-        new("name", "General", ColumnFormat.Text, r => r.Name),
+        new("name", "General", ColumnFormat.Text, r => r.Name, r => r.SortName ?? r.Name),
         new("series", "General", ColumnFormat.Text, r => r.SeriesName, MediaTypes: [BaseItemKind.Series]),
         new("season", "General", ColumnFormat.Plain, r => r.SeasonNumber, MediaTypes: [BaseItemKind.Series]),
         new("episode", "General", ColumnFormat.Plain, r => r.EpisodeNumber, MediaTypes: [BaseItemKind.Series]),
@@ -55,7 +55,7 @@ public static class Columns
         new("videoProfile", "Video", ColumnFormat.Text, r => r.VideoProfile, MediaTypes: _filmed),
         // Ordered by area, since "960x540" reads as the larger of the two next to "1920x1080".
         new("resolution", "Video", ColumnFormat.Text, r => r.Resolution, r => (long?)r.Width * r.Height, MediaTypes: _pictured),
-        new("quality", "Video", ColumnFormat.Quality, r => r.Quality, r => VideoQuality.Rank(r.Quality), MediaTypes: _filmed),
+        new("quality", "Video", ColumnFormat.Quality, r => r.QualityVaries ? r.Quality + "+" : r.Quality, r => VideoQuality.Rank(r.Quality) + (r.QualityVaries ? 0.5 : 0), MediaTypes: _filmed),
         new("height", "Video", ColumnFormat.Plain, r => r.Height, MediaTypes: _pictured),
         new("videoBitrate", "Video", ColumnFormat.Bitrate, r => r.VideoBitrate, MediaTypes: _filmed),
         new("frameRate", "Video", ColumnFormat.FrameRate, r => r.FrameRate, MediaTypes: _filmed),

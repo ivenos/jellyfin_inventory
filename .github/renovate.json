@@ -4,6 +4,7 @@
   "ignorePaths": [],
   "dependencyDashboard": { "enabled": false },
   "labels": ["dependencies"],
+  "commitMessagePrefix": "fix(deps):",
   "commitMessageAction": "update",
   "minimumReleaseAge": "3 days",
   "minimumReleaseAgeBehaviour": "timestamp-optional",
@@ -41,10 +42,12 @@
     {
       "description": "Test tools reach no user, so they get no changelog line.",
       "matchFileNames": ["test/**", "tests/**"],
+      "commitMessagePrefix": "ci:",
       "postUpgradeTasks": { "commands": [] }
     },
     {
       "matchDepTypes": ["devDependencies"],
+      "commitMessagePrefix": "ci:",
       "postUpgradeTasks": { "commands": [] }
     },
     {

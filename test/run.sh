@@ -615,9 +615,9 @@ DOUBLE=$(api 'Inventory/Items?mediaType=Movie' | identify 'Double Cut (2022)')
 check "and its path, which differs between them, reads as mixed" \
     "$(api 'Inventory/Items?mediaType=Movie&columnLevel=Video' | named 'Double Cut (2022)' path)" "Mixed"
 CUTS_OF=$(api "Inventory/Items?mediaType=Movie&level=Version&parentIds=$DOUBLE&columnLevel=Video")
-check "a film kept in two cuts opens to them, counts them, and holds the resolution they differ in mixed" \
+check "a film kept in two cuts opens to them, counts them, holds the resolution they differ in mixed and the lowest of their qualities with a plus" \
     "$(api 'Inventory/Items?mediaType=Movie&columnLevel=Video' | field "(lambda r: '%s/%s/%s/%s' % (r['Expandable'], r['Values']['children'], r['Values']['resolution'], r['Values']['quality']))([r for r in json.load(sys.stdin)['Rows'] if r['Values']['name']=='Double Cut (2022)'][0])")" \
-    "True/2/Mixed/Mixed"
+    "True/2/Mixed/360p+"
 check "each cut is named after the film and what its file adds, the one it plays by default first" \
     "$(printf '%s\n' "$CUTS_OF" | field "'|'.join(r['Values']['name'] for r in json.load(sys.stdin)['Rows'])")/$(api "Inventory/Items?mediaType=Movie&level=Version&parentIds=$(api 'Inventory/Items?mediaType=Movie' | identify 'Two Cuts (2019)')&columnLevel=Video" \
         | field "'|'.join(r['Values']['name'] for r in json.load(sys.stdin)['Rows'])")" \
@@ -714,12 +714,13 @@ curl -sf -X POST "$BASE/Inventory/Columns?level=MusicVideo" \
     >/dev/null || refused "Inventory/Columns?level=MusicVideo"
 api 'Inventory/Items?mediaType=Series&columnLevel=MusicVideo' > "$WORK/folders.json"
 api 'Inventory/Items?mediaType=Series&level=Episode&columnLevel=MusicVideo' > "$WORK/leaves.json"
-check "every column of a series is the value all its episodes share, mixed where they differ, empty where none has one" \
+check "every column of a series is the value all its episodes share, mixed where they differ, empty where none has one, and its quality the lowest of theirs with a plus" \
     "$(python3 -c "
 import json
 folders = json.load(open('$WORK/folders.json'))['Rows']
 leaves = [r['Values'] for r in json.load(open('$WORK/leaves.json'))['Rows']]
 word = lambda v: None if v is None else str(v).lower()
+order = '144p 240p 360p 384p 404p 480p 540p 576p 720p 1080p 1440p 4K 8K'.split()
 wrong = []
 for folder in folders:
     below = [v for v in leaves if v['series'] == folder['Values']['name']]
@@ -729,6 +730,8 @@ for folder in folders:
         present = [v[key] for v in below if v[key] is not None]
         agreed = len({word(v) for v in present}) == 1 and len(present) == len(below)
         want = None if not present else (present[0] if agreed else 'Mixed')
+        if key == 'quality' and want == 'Mixed' and len(present) == len(below):
+            want = min(present, key=order.index) + '+'
         if word(got) != word(want):
             wrong.append((folder['Values']['name'], key, got, want))
 print('ok' if folders and below and not wrong else wrong)")" "ok"
@@ -893,8 +896,8 @@ check "a film cropped to scope is still the class its width puts it in" \
     "$(printf '%s\n' "$QUALITY" | field "[r['Values']['quality'] for r in json.load(sys.stdin)['Rows'] if r['Values']['name'].startswith(chr(196))][0]")" "1080p"
 check "and one filmed upright is classed by its long side" \
     "$(printf '%s\n' "$QUALITY" | named '=Formula Trap (2024)' quality)" "240p"
-check "quality sorts by class, not by how the text reads" \
-    "$(printf '%s\n' "$QUALITY" | field "','.join(dict.fromkeys(r['Values']['quality'] for r in json.load(sys.stdin)['Rows']))")" "240p,360p,1080p,4K,Mixed"
+check "quality sorts by class, not by how the text reads, and one made of several right after its lowest" \
+    "$(printf '%s\n' "$QUALITY" | field "','.join(dict.fromkeys(r['Values']['quality'] for r in json.load(sys.stdin)['Rows']))")" "240p,360p,360p+,1080p,4K"
 curl -sf -X POST "$BASE/Inventory/Columns?level=MusicVideo" \
     -H "Authorization: MediaBrowser Token=\"$TOKEN\"" -H "$JSON" -d '["name","series","genres"]' >/dev/null || refused "Inventory/Columns?level=MusicVideo"
 GENRES=$(api 'Inventory/Items?mediaType=Movie&columnLevel=MusicVideo')
@@ -948,6 +951,12 @@ check "and a class is held against another by its place among them, not by how i
         | field "json.load(sys.stdin)['TotalCount']")/$(api "Inventory/Items?mediaType=Movie&filters=$(filtered '[{"column":"quality","op":"le","value":"360p"}]')" \
         | field "json.load(sys.stdin)['TotalCount']")/$(api "Inventory/Items?mediaType=Movie&filters=$(filtered '[{"column":"quality","op":"eq","value":"4k"}]')" | names)" \
     "3/2/Night Signal (2023)"
+check "a quality made of several classes meets at least the classes its lowest reaches, and no other condition" \
+    "$(api "Inventory/Items?mediaType=Movie&filters=$(filtered '[{"column":"quality","op":"ge","value":"360p"}]')" \
+        | field "json.load(sys.stdin)['TotalCount']")/$(api "Inventory/Items?mediaType=Movie&filters=$(filtered '[{"column":"quality","op":"le","value":"4K"}]')" \
+        | field "json.load(sys.stdin)['TotalCount']")/$(api "Inventory/Items?mediaType=Movie&filters=$(filtered '[{"column":"quality","op":"eq","value":"360p"}]')" \
+        | names)/$(api "Inventory/Items?mediaType=Movie&filters=$(filtered '[{"column":"quality","op":"ne","value":"1080p"}]')" | field "json.load(sys.stdin)['TotalCount']")" \
+    "6/5/Two Part Feature (2019)/3"
 check "text is held against the value whatever its case" \
     "$(api "Inventory/Items?mediaType=Movie&filters=$(filtered '[{"column":"videoCodec","op":"eq","value":"HEVC"}]')" | names)" "Night Signal (2023)"
 check "a genre is found among the others a film has" \
@@ -989,6 +998,9 @@ BOOKS=$(api 'Inventory/Items?mediaType=AudioBook&level=Folder')
 check "an audiobook in several files is one row, and one alone in its folder or filed loose is its file" \
     "$(printf '%s\n' "$BOOKS" | field "','.join(sorted(r['Values']['name'] for r in json.load(sys.stdin)['Rows']))")" \
     "A Second Story,A Short Story,Loose Tale,The Disc Book,The Long Book"
+check "names sort the way jellyfin sorts them, without the article in front" \
+    "$(api 'Inventory/Items?mediaType=AudioBook&level=Folder&sortBy=name' | field "','.join(r['Values']['name'] for r in json.load(sys.stdin)['Rows'])")" \
+    "The Disc Book,The Long Book,Loose Tale,A Second Story,A Short Story"
 check "and one alone in its folder does not open, though its author's folder holds another" \
     "$(printf '%s\n' "$BOOKS" | field "sorted((r['Values']['name'], r['Expandable'], r['Values']['children']) for r in json.load(sys.stdin)['Rows'] if r['Values']['name'] in ('A Short Story', 'A Second Story'))")" \
     "[('A Second Story', False, None), ('A Short Story', False, None)]"
@@ -1070,6 +1082,11 @@ check "and one edited without a lock does too, since its folder no longer goes b
 edit "$DISC_BOOK" '{"Genres": [], "LockedFields": ["Genres"]}'
 check "while genres emptied and locked stay empty rather than falling back on its files" \
     "$(api 'Inventory/Items?mediaType=AudioBook&level=Folder' | named 'The Renamed Book' genres)" "None"
+HARBOUR=$(api 'Inventory/Items?mediaType=Movie' | identify 'Blue Harbour (2021)')
+edit "$HARBOUR" '{"ForcedSortName": "Zzz"}'
+check "a sort title set in jellyfin takes the place of the name" \
+    "$(api 'Inventory/Items?mediaType=Movie&sortBy=name&descending=true&limit=1' | field "json.load(sys.stdin)['Rows'][0]['Values']['name']")" "Blue Harbour (2021)"
+edit "$HARBOUR" '{"ForcedSortName": ""}'
 COMMA=$(api 'Inventory/Items?mediaType=Movie' | identify 'Night Signal (2023)')
 edit "$COMMA" '{"Genres": ["Crime, Thriller"], "LockedFields": ["Genres"]}'
 check "a name with a comma in it is one value of a list to = and ≠" \
@@ -2305,7 +2322,7 @@ mkdir -p "$WORK/media/shows/Twin Cut (2024)/Season 01"
 cp "$WORK/media/shows/Harbour Lights (2022)/Season 01/Harbour Lights S01E01.mkv" "$WORK/media/shows/Twin Cut (2024)/Season 01/Twin Cut S01E01.mkv"
 cp "$WORK/media/shows/Long Run (2020)/Season 01/Long Run S01E01.mkv" "$WORK/media/shows/Twin Cut (2024)/Season 01/Twin Cut S01E01 - Season 1 Remux.mkv"
 curl -sf -X POST "$BASE/Inventory/Columns?level=Video" -H "Authorization: MediaBrowser Token=\"$TOKEN\"" -H "$JSON" \
-    -d '["name","series","children","duplicates","size","resolution","videoCodec"]' >/dev/null || refused "Inventory/Columns?level=Video"
+    -d '["name","series","children","duplicates","size","resolution","quality","videoCodec"]' >/dev/null || refused "Inventory/Columns?level=Video"
 curl -sf -X POST "$BASE/Library/Refresh" -H "Authorization: MediaBrowser Token=\"$TOKEN\"" >/dev/null || refused "Library/Refresh"
 printf 'waiting for the new shows'
 i=0
@@ -2328,6 +2345,10 @@ check "the episode opens to its files and holds the resolution they differ in mi
     "$(api 'Inventory/Items?mediaType=Series&search=Twin&columnLevel=Video&limit=1000' \
         | field "'|'.join('%s:%s' % (r['Values']['name'], r['Values']['resolution']) for r in json.load(sys.stdin)['Rows'] if r['Expandable'])")" \
     "Season 1:Mixed|Twin Cut:Mixed|Twin Cut S01E01:Mixed"
+check "and the lowest quality of its files with a plus, which its season and its show take on" \
+    "$(api 'Inventory/Items?mediaType=Series&search=Twin&columnLevel=Video&limit=1000' \
+        | field "'|'.join('%s:%s' % (r['Values']['name'], r['Values']['quality']) for r in json.load(sys.stdin)['Rows'] if r['Expandable'])")" \
+    "Season 1:360p+|Twin Cut:360p+|Twin Cut S01E01:360p+"
 check "its files are named after it and what their names add, and weigh what the show does" \
     "$(api "Inventory/Items?mediaType=Series&level=Version&parentIds=$TWIN&columnLevel=Video" | field "(lambda d: '%s/%s' % ('|'.join(r['Values']['name'] for r in d['Rows']), sum(r['Values']['size'] for r in d['Rows'])))(json.load(sys.stdin))")" \
     "Twin Cut S01E01|Twin Cut S01E01 - Season 1 Remux/$(cat "$WORK/media/shows/Twin Cut (2024)/Season 01"/*.mkv | wc -c | tr -d ' ')"

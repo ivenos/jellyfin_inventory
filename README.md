@@ -42,9 +42,11 @@ The Inventory plugin then appears in the catalog under General. Restart the serv
 | Subtitles | Subtitle tracks, Subtitle languages |
 | Playback | Last played, Last played (all users), Plays, Plays (all users), Fully played, Fully played by |
 
+Name sorts as Jellyfin does: by the sort title where one is set, and otherwise without the words the server leaves out, which are The, A and An unless `SortRemoveWords` in its `system.xml` names others.
+
 A tab offers the columns that can have a value in it, and still offers one chosen before. Series, Season and Episode are only in Series, Artists only in Music and Music videos, Authors and Narrators only in Books and Audiobooks. Books and Photos have no Items, Duration, Size/hour, Bitrate, audio, video or subtitle columns, except Resolution and Height for a photo. Music and Audiobooks have no video or subtitle columns, and Books, Audiobooks and Photos no Duplicates.
 
-A film, an episode, a music video or a video kept in several versions opens to them, and shows Mixed where they differ. Duplicates counts the other items of a tab that are the same title: a film, a series, a music video or a video by its TMDb, IMDb or TheTVDB id, an album or a track by its MusicBrainz id, and a season or an episode by its number in the same show. Items Jellyfin groups as versions of one another do not count, and an item without an id stays empty.
+A film, an episode, a music video or a video kept in several versions opens to them, and shows Mixed where they differ. Where the items a row stands for differ in quality, it shows the lowest of them with a plus, such as 720p+. Duplicates counts the other items of a tab that are the same title: a film, a series, a music video or a video by its TMDb, IMDb or TheTVDB id, an album or a track by its MusicBrainz id, and a season or an episode by its number in the same show. Items Jellyfin groups as versions of one another do not count, and an item without an id stays empty.
 
 ## API
 
@@ -62,7 +64,7 @@ Nine endpoints under `/Inventory`, all requiring an administrator token. An API 
 | `POST Targets` | The change as a JSON object in the body | The collection or playlist, how many entries it gained or lost, and how many items could not go into it |
 | `POST Targets/Held` | `Ids` and `All` as `POST Targets` takes them, in the body | The collections that hold any of the items, and the user's playlists that hold what they play |
 
-`filters` is a JSON array of up to 20 conditions, and a row has to meet all of them: `[{"column":"height","op":"ge","value":1080}]`. `op` is one of the operators `Schema` lists for the column, out of `eq`, `ne`, `ge`, `le`, `contains`, `notContains`, `empty` and `notEmpty`, the last two taking no `value`. A value is in the unit `Items` answers in, which is bytes, bytes per hour, seconds or bits per second, a date is `yyyy-MM-dd`, a truth value is `true` or `false`, and a quality is one of the classes `Schema` lists, compared by its place in that list. In a column `Schema` marks as `List`, `eq` and `ne` check each value on its own. An empty cell meets only `ne`, `notContains` and `empty`, and a cell that reads as mixed meets no condition.
+`filters` is a JSON array of up to 20 conditions, and a row has to meet all of them: `[{"column":"height","op":"ge","value":1080}]`. `op` is one of the operators `Schema` lists for the column, out of `eq`, `ne`, `ge`, `le`, `contains`, `notContains`, `empty` and `notEmpty`, the last two taking no `value`. A value is in the unit `Items` answers in, which is bytes, bytes per hour, seconds or bits per second, a date is `yyyy-MM-dd`, a truth value is `true` or `false`, and a quality is one of the classes `Schema` lists, compared by its place in that list. In a column `Schema` marks as `List`, `eq` and `ne` check each value on its own. An empty cell meets only `ne`, `notContains` and `empty`, and a cell that reads as mixed meets no condition. A quality such as 720p+ meets `notEmpty`, and `ge` for a class up to its lowest.
 
 The level `Version` lists every file of a tab: an item kept in one file as itself, and one kept in several once per version, named after the item and what the name of its file adds.
 

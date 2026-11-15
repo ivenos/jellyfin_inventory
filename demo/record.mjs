@@ -221,6 +221,9 @@ for (const [mediaType, tab] of Object.entries(tabs)) {
 
         add('Items', { mediaType, level, filters: filtered(['size', 'ge', 1000000], ['name', 'contains', 'a']) });
         add('Items', { mediaType, level, filters: filtered(['videoCodec', 'ne', 'h264'], ['duration', 'le', 3000]) });
+        for (const op of ['ge', 'le', 'eq', 'ne']) {
+            add('Items', { mediaType, level, filters: filtered(['quality', op, '720p']) });
+        }
 
         for (const format of ['csv', 'ods']) {
             for (const culture of ['en', 'de']) {
