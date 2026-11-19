@@ -99,6 +99,7 @@
   "FilterColumn": "Spalte",
   "FilterCondition": "Bedingung",
   "FilterValue": "Wert",
+  "FilterNotInTab": "Gilt nicht in diesem Tab",
   "op.contains": "enthält",
   "op.notContains": "enthält nicht",
   "op.empty": "ist leer",

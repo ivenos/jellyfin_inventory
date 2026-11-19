@@ -7,10 +7,10 @@ SDK_IMAGE="${SDK_IMAGE:-mcr.microsoft.com/dotnet/sdk:10.0}"
 NODE_IMAGE="${NODE_IMAGE:-node:26-alpine}"
 JSDOM_VERSION="${JSDOM_VERSION:-31.0.1}"
 PORT="${PORT:-8097}"
-# Keyed by port, so a second run on another port cannot tear down the first one.
 CONTAINER="${CONTAINER:-jellyfin-inventory-test-$PORT}"
 WORK="${INVENTORY_TEST_DIR:-$HOME/.cache/jellyfin-inventory-test-$PORT}"
 ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+export ROOT WORK
 BUILD=1
 KEEP=0
 REACHED_END=0
@@ -82,7 +82,6 @@ if not scripts:
     raise SystemExit('configPage.html carries no script block')
 pathlib.Path(sys.argv[2]).write_text('\n'.join(scripts), encoding='utf-8')
 " "$ROOT/Jellyfin.Plugin.Inventory/Configuration/configPage.html" "$WORK/page.js"
-# Nothing else parses the page, and a typo in it leaves an empty dashboard with every check green.
 check "the page script parses" \
     "$(docker run --rm --security-opt label=disable -v "$WORK:/w:ro" "$NODE_IMAGE" \
         node --check /w/page.js >/dev/null 2>&1 && echo ok || echo broken)" "ok"
@@ -90,18 +89,17 @@ check "the page script parses" \
 # Only the tabs that hold something reach the schema, so an empty level would go unnamed.
 check "every tab and every level a tab can hold is named in the strings" \
     "$(python3 -c "
-import json, pathlib, re
-tabs = re.findall(r'^\s*\[(BaseItemKind\.[^\]]+)\]', pathlib.Path('$ROOT/Jellyfin.Plugin.Inventory/Hierarchy.cs').read_text(encoding='utf-8'), re.M)
+import json, pathlib, re, os
+tabs = re.findall(r'^\s*\[(BaseItemKind\.[^\]]+)\]', pathlib.Path(os.environ['ROOT'] + '/Jellyfin.Plugin.Inventory/Hierarchy.cs').read_text(encoding='utf-8'), re.M)
 tabs = [re.findall(r'BaseItemKind\.(\w+)', tab) for tab in tabs]
-strings = json.loads(pathlib.Path('$ROOT/Jellyfin.Plugin.Inventory/Strings/en.json').read_text(encoding='utf-8'))
+strings = json.loads(pathlib.Path(os.environ['ROOT'] + '/Jellyfin.Plugin.Inventory/Strings/en.json').read_text(encoding='utf-8'))
 wanted = {'level.' + k for tab in tabs for k in tab} | {'mediaType.' + (tab[-1] if tab[0] == 'Folder' else tab[0]) for tab in tabs} | {'level.Version'}
 missing = sorted(wanted - set(strings))
 print('ok' if tabs and not missing else missing)")" "ok"
-# CONTRIBUTING puts it the other way round: a column that is not in the README does not exist.
 check "the readme lists exactly the columns there are" \
     "$(python3 -c "
-import json, pathlib, re
-root = pathlib.Path('$ROOT')
+import json, pathlib, re, os
+root = pathlib.Path(os.environ['ROOT'])
 groups = {}
 for key, group in re.findall(r'(?:new|Listing)\(\"([^\"]+)\",\s*([A-Za-z]+|\"[A-Za-z]+\")',
                              (root / 'Jellyfin.Plugin.Inventory/Columns.cs').read_text(encoding='utf-8')):
@@ -115,8 +113,8 @@ print('ok' if listed == groups else [listed, groups])")" "ok"
 
 check "every file names the same jellyfin version" \
     "$(python3 -c "
-import pathlib, re
-root = pathlib.Path('$ROOT')
+import pathlib, re, os
+root = pathlib.Path(os.environ['ROOT'])
 seen = {
     'build.yaml': (r'^targetAbi: \"(\d+\.\d+)', 'build.yaml'),
     'csproj': (r'\"Jellyfin\.\w+\" Version=\"(\d+\.\d+)', 'Jellyfin.Plugin.Inventory/Jellyfin.Plugin.Inventory.csproj'),
@@ -130,8 +128,8 @@ print('ok' if all(v == list(found['build.yaml']) for v in found.values()) and fo
 
 check "the page takes its colors from the theme and sizes nothing by the window" \
     "$(python3 -c "
-import pathlib, re
-html = pathlib.Path('$ROOT/Jellyfin.Plugin.Inventory/Configuration/configPage.html').read_text(encoding='utf-8')
+import pathlib, re, os
+html = pathlib.Path(os.environ['ROOT'] + '/Jellyfin.Plugin.Inventory/Configuration/configPage.html').read_text(encoding='utf-8')
 style = '\n'.join(re.findall(r'<style[^>]*>(.*?)</style>', html, re.S) + re.findall(r'style=\"([^\"]*)\"', html))
 style = re.sub(r'url\(data:[^)]*\)', '', style)
 bare = re.sub(r'var\(--jf-[^()]*(?:\([^()]*\))?[^()]*\)', '', style)
@@ -140,8 +138,8 @@ print('ok' if not loose else loose)")" "ok"
 
 check "the header sticks as a whole, since firefox draws sticky cells low after a wheel scroll" \
     "$(python3 -c "
-import pathlib, re
-html = pathlib.Path('$ROOT/Jellyfin.Plugin.Inventory/Configuration/configPage.html').read_text(encoding='utf-8')
+import pathlib, re, os
+html = pathlib.Path(os.environ['ROOT'] + '/Jellyfin.Plugin.Inventory/Configuration/configPage.html').read_text(encoding='utf-8')
 sticky = re.findall(r'([^{}]+)\{[^{}]*position:\s*sticky', html)
 print('ok' if [s.strip().split()[-1] for s in sticky] == ['thead'] else sticky)")" "ok"
 check "no input asks for the upgrade, which throws on one that already carries the class" \
@@ -158,9 +156,9 @@ check "a release is written into the manifest ahead of the ones already listed, 
     "$(released --checksum 0123456789abcdef0123456789abcdef --changelog='- an older note' >/dev/null \
       && released --checksum 0123456789abcdef0123456789abcdef --changelog='- a note that opens with a dash' >/dev/null \
       && python3 -c "
-import json
-kept = json.load(open('$ROOT/manifest.json'))[0]['versions']
-now = json.load(open('$WORK/manifest.json'))[0]['versions']
+import json, os
+kept = json.load(open(os.environ['ROOT'] + '/manifest.json'))[0]['versions']
+now = json.load(open(os.environ['WORK'] + '/manifest.json'))[0]['versions']
 print('ok' if now[0] == {'version': '99.9.9.0', 'changelog': '- a note that opens with a dash', 'targetAbi': '12.0.0.0',
                          'sourceUrl': 'https://example.invalid/inventory_99.9.9.0.zip',
                          'checksum': '0123456789abcdef0123456789abcdef', 'timestamp': '2099-01-01T00:00:00Z'}
@@ -355,6 +353,16 @@ RECIPE=$(cat <<'FIXTURES'
             "/media/audiobooks/Loose Tale.mp3"
         mkdir -p /media/spare
         $FF -y -loglevel error -f lavfi -i sine=frequency=650:duration=4 -c:a aac "/media/spare/Radio Play (2003).mkv"
+        $FF -y -loglevel error -f lavfi -i testsrc2=size=1920x1080:rate=25:duration=2 \
+            -c:v libx264 -preset ultrafast -crf 40 -pix_fmt yuv420p -flags +ilme+ildct -x264opts interlaced=1 \
+            "/media/spare/Field Order S01E02.mkv"
+        # Dolby Vision once make-dovi.py has marked it, which needs the colors of HDR10 underneath.
+        $FF -y -loglevel error -f lavfi -i testsrc2=size=1920x1080:rate=24:duration=1 \
+            -c:v libx265 -preset ultrafast -crf 40 -pix_fmt yuv420p10le -x265-params log-level=error \
+            -bsf:v hevc_metadata=colour_primaries=9:transfer_characteristics=16:matrix_coefficients=9 -tag:v hvc1 \
+            "/media/spare/Field Order S01E03.mp4"
+        $FF -y -loglevel error -f lavfi -i color=size=64x64:rate=1/3600:duration=90000 \
+            -c:v libx264 -preset ultrafast -crf 40 -pix_fmt yuv420p "/media/spare/Overnight Feed S01E01.mkv"
 FIXTURES
 )
 BOOK_TITLE="The Fixture Manual"
@@ -363,7 +371,7 @@ BOOK_AUTHOR="A. Tester"
 SHELF_TITLE="The Second Shelf"
 # Stamped with what produced them, so editing any of it rebuilds instead of silently reusing.
 STAMP=$(printf '%s\n%s\n%s\n%s\n%s' "$RECIPE" "$BOOK_TITLE" "$BOOK_AUTHOR" "$SHELF_TITLE" "$IMAGE" \
-    | cat - "$ROOT/test/make-book.py" | md5sum | cut -d' ' -f1)
+    | cat - "$ROOT/test/make-book.py" "$ROOT/test/make-dovi.py" | md5sum | cut -d' ' -f1)
 
 if [ "$(cat "$WORK/media/.complete" 2>/dev/null || true)" != "$STAMP" ]; then
     rm -rf "${WORK:?}/media"
@@ -374,6 +382,7 @@ if [ "$(cat "$WORK/media/.complete" 2>/dev/null || true)" != "$STAMP" ]; then
         "$SHELF_TITLE" "$BOOK_AUTHOR"
     docker run --rm --init --security-opt label=disable --user "$(id -u):$(id -g)" \
         -v "$WORK/media:/media" --entrypoint /bin/sh "$IMAGE" -c "$RECIPE"
+    python3 "$ROOT/test/make-dovi.py" "$WORK/media/spare/Field Order S01E03.mp4"
     # Written last, so an interrupted run does not leave half a set that looks complete.
     printf '%s' "$STAMP" > "$WORK/media/.complete"
 fi
@@ -555,8 +564,8 @@ check "while asking for no sort at all is how the table loads" \
 check "every column has a caption rather than falling back to its key" \
     "$(printf '%s\n' "$SCHEMA" | field "all(not c['Label'].startswith('column.') and not c['Group'].startswith('group.') for c in json.load(sys.stdin)['Columns'])")" "True"
 check "the schema names the tabs a column can have a value in" \
-    "$(printf '%s\n' "$SCHEMA" | field "' '.join('%s=%s' % (c['Key'], ','.join(c['MediaTypes'])) for c in json.load(sys.stdin)['Columns'] if c['Key'] in ('name', 'series', 'artists', 'duplicates', 'videoCodec', 'height', 'audioCodec'))")" \
-    "name=Movie,Series,MusicAlbum,MusicVideo,Video,Book,AudioBook,Photo series=Series artists=MusicAlbum,MusicVideo duplicates=Movie,Series,MusicAlbum,MusicVideo,Video videoCodec=Movie,Series,MusicVideo,Video height=Movie,Series,MusicVideo,Video,Photo audioCodec=Movie,Series,MusicAlbum,MusicVideo,Video,AudioBook"
+    "$(printf '%s\n' "$SCHEMA" | field "' '.join('%s=%s' % (c['Key'], ','.join(c['MediaTypes'])) for c in json.load(sys.stdin)['Columns'] if c['Key'] in ('name', 'series', 'playlists', 'artists', 'duplicates', 'videoCodec', 'height', 'audioCodec'))")" \
+    "name=Movie,Series,MusicAlbum,MusicVideo,Video,Book,AudioBook,Photo series=Series playlists=Movie,Series,MusicAlbum,MusicVideo,Video,AudioBook artists=MusicAlbum,MusicVideo duplicates=Movie,Series,MusicAlbum,MusicVideo,Video videoCodec=Movie,Series,MusicVideo,Video height=Movie,Series,MusicVideo,Video,Photo audioCodec=Movie,Series,MusicAlbum,MusicVideo,Video,AudioBook"
 
 # Rows are addressed by name: which row comes first is not something the API promises.
 named() { field "[r['Values']['$2'] for r in json.load(sys.stdin)['Rows'] if r['Values'].get('name')=='$1'][0]"; }
@@ -861,6 +870,11 @@ check "search reaches a row through its path when its name carries nothing" \
     "$(api 'Inventory/Items?mediaType=Series&search=2020' | field "json.load(sys.stdin)['TotalCount']")" "5"
 check "and reports every matching row it found" \
     "$(api 'Inventory/Items?mediaType=Series&search=Long%20Run' | field "json.load(sys.stdin)['TotalCount']")" "5"
+check "a season a search finds below its show names the show, while an episode named after it and a plain listing do not" \
+    "$(api 'Inventory/Items?mediaType=Series&search=Long%20Run&limit=1000' \
+        | field "','.join(sorted('%s=%s' % (r['Values']['name'], r.get('Within')) for r in json.load(sys.stdin)['Rows']))")/$(api \
+        'Inventory/Items?mediaType=Series&level=Season&limit=1000' | field "any('Within' in r for r in json.load(sys.stdin)['Rows'])")" \
+    "Long Run S01E01=None,Long Run S02E01=None,Long Run=None,Season 1=Long Run,Season 2=Long Run/False"
 check "an export adds up to the total the table shows, rather than to the levels put together" \
     "$(curl -sf "$BASE/Inventory/Export?mediaType=Series&format=csv&search=Long%20Run" \
         -H "Authorization: MediaBrowser Token=\"$TOKEN\"" | python3 -c "
@@ -1087,6 +1101,31 @@ edit "$HARBOUR" '{"ForcedSortName": "Zzz"}'
 check "a sort title set in jellyfin takes the place of the name" \
     "$(api 'Inventory/Items?mediaType=Movie&sortBy=name&descending=true&limit=1' | field "json.load(sys.stdin)['Rows'][0]['Values']['name']")" "Blue Harbour (2021)"
 edit "$HARBOUR" '{"ForcedSortName": ""}'
+DOUBLE_CUT=$(api 'Inventory/Items?mediaType=Movie' | identify 'Double Cut (2022)')
+edit "$DOUBLE_CUT" '{"ForcedSortName": "Aaa"}'
+check "and the files of a film kept in several versions sort by its sort title too" \
+    "$(api 'Inventory/Items?mediaType=Movie&level=Version&sortBy=name&limit=1000' | field "','.join([r['Values']['name'][:17] for r in json.load(sys.stdin)['Rows'] if r['Values']['name'][0].isalpha()][:2])")" \
+    "Double Cut (2022),Double Cut (2022)"
+edit "$DOUBLE_CUT" '{"ForcedSortName": ""}'
+SORTED_SHOW=$(api 'Inventory/Items?mediaType=Series' | identify 'Harbour Lights')
+SORTED_SEASON=$(api 'Inventory/Items?mediaType=Series&level=Season&columnLevel=Series&limit=1000' | identify 'Season 2')
+edit "$SORTED_SHOW" '{"ForcedSortName": "Zzz"}'
+edit "$SORTED_SEASON" '{"ForcedSortName": "Aaa"}'
+edit "$LONG_BOOK" '{"ForcedSortName": "Zzz"}'
+first() { api "Inventory/Items?mediaType=$1&sortBy=name&limit=1$2" | field "json.load(sys.stdin)['Rows'][0]['Values']['name']"; }
+check "a sort title set on a series, a season or a book sorts it too" \
+    "$(first Series '&descending=true')/$(first Series '&level=Season')/$(first AudioBook '&level=Folder&descending=true')" \
+    "Harbour Lights/Season 2/Long Book (2020)"
+for sorted in "$SORTED_SHOW" "$SORTED_SEASON" "$LONG_BOOK"; do
+    edit "$sorted" '{"ForcedSortName": ""}'
+done
+edit "$HARBOUR" '{"Name": "_Blue Harbour (2021)"}'
+edit "$(api 'Inventory/Items?mediaType=Movie' | identify 'Night Signal (2023)')" '{"Name": "#Night Signal (2023)"}'
+check "names that open with a sign sort in the byte order jellyfin keeps them in" \
+    "$(api 'Inventory/Items?mediaType=Movie&sortBy=name&limit=1000' | field "','.join(r['Values']['name'][:2] for r in json.load(sys.stdin)['Rows'] if r['Values']['name'][0] in '#=_')")" \
+    "#N,=F,_B"
+edit "$HARBOUR" '{"Name": "Blue Harbour (2021)"}'
+edit "$(api 'Inventory/Items?mediaType=Movie' | identify '#Night Signal (2023)')" '{"Name": "Night Signal (2023)"}'
 COMMA=$(api 'Inventory/Items?mediaType=Movie' | identify 'Night Signal (2023)')
 edit "$COMMA" '{"Genres": ["Crime, Thriller"], "LockedFields": ["Genres"]}'
 check "a name with a comma in it is one value of a list to = and ≠" \
@@ -1399,6 +1438,14 @@ rows = list(csv.reader(io.StringIO(sys.stdin.buffer.read().decode('utf-8-sig')),
 at = rows[0].index('Laufzeit (s)')
 values = [r[at] for r in rows[1:] if r[at]]
 print('ok' if values and any(',' in v for v in values) and not any('.' in v for v in values) else values)")" "ok"
+check "a culture in lower case, the way jellyfin-web sends it, writes its numbers the way that language does too" \
+    "$(curl -sf "$BASE/Inventory/Export?mediaType=Series&level=Episode&format=csv&culture=de-de" \
+        -H "Authorization: MediaBrowser Token=\"$TOKEN\"" | python3 -c "
+import csv, io, sys
+rows = list(csv.reader(io.StringIO(sys.stdin.buffer.read().decode('utf-8-sig')), delimiter=';'))
+at = rows[0].index('Laufzeit (s)') if 'Laufzeit (s)' in rows[0] else None
+values = [r[at] for r in rows[1:] if at is not None and r[at]]
+print('ok' if values and any(',' in v for v in values) and not any('.' in v for v in values) else rows[:2])")" "ok"
 check "a language whose decimal separator no spreadsheet reads writes its numbers the invariant way" \
     "$(curl -sf "$BASE/Inventory/Export?mediaType=Series&level=Episode&format=csv&culture=ar-SA" \
         -H "Authorization: MediaBrowser Token=\"$TOKEN\"" | python3 -c "
@@ -1601,6 +1648,7 @@ check "and its name is worded in the language the browser asks in, by the weight
     "$(menu 'de-DE,de;q=0.9,en;q=0.8')/$(menu 'de;q=0.3, fr;q=0.9')/$(menu 'nl,en-GB;q=0.5')" "Inventar/Inventaire/Inventory"
 check "english asked for first is not passed over for a language further down, nor is one that was ruled out taken" \
     "$(menu 'en-US,en;q=0.9,de;q=0.8')/$(menu 'nl,de;q=0')" "Inventory/Inventory"
+check "a language the plugin does not have is passed over for the next one the browser asks in" "$(menu 'nl,de;q=0.9')" "Inventar"
 
 # The rows are cached per user, so a second administrator has to see his own playback and not
 # the one the first has just written.
@@ -1705,6 +1753,8 @@ check "a series in a collection names it, and its episodes, which are not in it 
         | named 'Harbour Lights S01E01' collections)" "Inventory Shelf 10/None"
 check "and jellyfin holds both in it" \
     "$(api "Items?parentId=$SHELF_ID&userId=$USER_ID" | field "json.load(sys.stdin)['TotalRecordCount']")" "2"
+check "and locks it, as jellyfin-web does, so a collection on TMDb of the same name cannot take it over" \
+    "$(api "Items/$SHELF_ID?userId=$USER_ID" | field "json.load(sys.stdin).get('LockData')")" "True"
 check "the first collection gets the one library jellyfin keeps them in, and sets off no scan of every library, which can empty it" \
     "$(field "len([f for f in json.load(open('$WORK/libraries.json')) if f['CollectionType'] == 'boxsets'])" </dev/null)/$(scanned)" "1/$UNSCANNED"
 check "adding to a collection counts only what it did not hold yet" \
@@ -1724,6 +1774,10 @@ check "a new collection named like one there is goes into that one" \
 refusal() { curl -s -o /dev/null -w '%{http_code}' -X POST "$BASE/Inventory/Targets" -H "Authorization: MediaBrowser Token=\"$TOKEN\"" -H "$JSON" -d "$1"; }
 check "a new collection or playlist named with a dot in front, a folder jellyfin hides, is refused" \
     "$(refusal "{\"Kind\":\"Collection\",\"Name\":\" .hack\",\"Ids\":[\"$BLUE\"]}")/$(refusal "{\"Kind\":\"Playlist\",\"Name\":\"..\",\"Ids\":[\"$BLUE\"]}")" "400/400"
+check "a name with a character jellyfin cannot write into its file is refused, while a tab can stay" \
+    "$(refusal "{\"Kind\":\"Collection\",\"Name\":\"Bell\\u0007Ring\",\"Ids\":[\"$BLUE\"]}")/$(refusal "{\"Kind\":\"Collection\",\"Name\":\"inventory\\tshelf 10\",\"Ids\":[\"$TRACK\"]}")" "400/200"
+check "a new collection or playlist that none of the picked items can go into is refused rather than made empty" \
+    "$(refusal "{\"Kind\":\"Collection\",\"Name\":\"Inventory Nothing\",\"Ids\":[\"$TRACK\",\"$PHOTO\"]}")/$(refusal "{\"Kind\":\"Playlist\",\"Name\":\"Inventory Nothing\",\"Ids\":[\"$PHOTO\"]}")" "400/400"
 check "a collection is found among the others a film is in" \
     "$(api "Inventory/Items?mediaType=Movie&filters=$(filtered '[{"column":"collections","op":"eq","value":"inventory shelf 9"}]')" | names)" \
     "Blue Harbour (2021)"
@@ -1884,6 +1938,10 @@ wait
 check "requests that arrive together add each entry once and lose none" \
     "$(api "Playlists/$RACE/Items?userId=$USER_ID" | field "(lambda ids: '%s/%s' % (len(ids), len(set(ids))))([i['Id'] for i in json.load(sys.stdin)['Items']])")|$(api \
         "Items?parentId=$RACK&userId=$USER_ID" | field "json.load(sys.stdin)['TotalRecordCount']")" "6/6|6"
+ORDER=$(targets "{\"Kind\":\"Playlist\",\"Name\":\"Inventory Order\",\"Ids\":[\"$LONG_RUN\",\"$ALBUM_ID\",\"$DISC_BOOK\"]}" | field "json.load(sys.stdin)['Id']")
+check "a series, an album and a book on two discs go into a playlist in the order their tabs list them" \
+    "$(api "Playlists/$ORDER/Items?userId=$USER_ID" | field "','.join(i['Name'] for i in json.load(sys.stdin)['Items'])")" \
+    "Long Run S01E01,Long Run S02E01,Track 1,Track 2,Disc 1 Part 1,Disc 1 Part 2,Disc 2 Part 1"
 curl -sf -X POST "$BASE/Inventory/Columns?level=Series" \
     -H "Authorization: MediaBrowser Token=\"$TOKEN\"" -H "$JSON" \
     -d '["name","playCount","everyonePlayCount","everyonePlayed"]' >/dev/null || refused "Inventory/Columns?level=Series"
@@ -2016,6 +2074,7 @@ check "and the button counts the conditions that hold" "$(rendered filter.button
 check "while one still waiting for its value asks for nothing" "$(rendered filter.idle)" "0"
 check "an export asks for the level, the columns and the conditions the table is showing" \
     "$(rendered filter.exported)" "true,true,true"
+check "an export of a tab opened to a level below its own writes that level" "$(rendered filter.opened)" "Child"
 check "no more conditions can be added than the server takes" \
     "$(rendered filter.capped)/$(rendered filter.freed)" "true/false"
 check "one that asks whether a cell is empty is sent without a value, and shows no box for one" \
@@ -2349,6 +2408,9 @@ check "and the lowest quality of its files with a plus, which its season and its
     "$(api 'Inventory/Items?mediaType=Series&search=Twin&columnLevel=Video&limit=1000' \
         | field "'|'.join('%s:%s' % (r['Values']['name'], r['Values']['quality']) for r in json.load(sys.stdin)['Rows'] if r['Expandable'])")" \
     "Season 1:360p+|Twin Cut:360p+|Twin Cut S01E01:360p+"
+check "a season and a show take on the size per hour and the bitrate an episode holds mixed" \
+    "$(api "Inventory/Items?mediaType=Series&search=Twin&filters=$(filtered '[{"column":"sizePerHour","op":"empty"}]')" | field "json.load(sys.stdin)['TotalCount']")/$(api \
+        "Inventory/Items?mediaType=Series&search=Twin&filters=$(filtered '[{"column":"totalBitrate","op":"empty"}]')" | field "json.load(sys.stdin)['TotalCount']")" "0/0"
 check "its files are named after it and what their names add, and weigh what the show does" \
     "$(api "Inventory/Items?mediaType=Series&level=Version&parentIds=$TWIN&columnLevel=Video" | field "(lambda d: '%s/%s' % ('|'.join(r['Values']['name'] for r in d['Rows']), sum(r['Values']['size'] for r in d['Rows'])))(json.load(sys.stdin))")" \
     "Twin Cut S01E01|Twin Cut S01E01 - Season 1 Remux/$(cat "$WORK/media/shows/Twin Cut (2024)/Season 01"/*.mkv | wc -c | tr -d ' ')"
@@ -2390,6 +2452,61 @@ done
 check "and the shows taken away leave the tab without the level for files" \
     "$(api 'Inventory/Schema' | field "','.join(l['Level'] for t in json.load(sys.stdin)['MediaTypes'] if t['MediaType']=='Series' for l in t['Levels'])")" \
     "Series,Season,Episode"
+
+echo "== an interlaced episode, dolby vision and a day-long one =="
+mkdir -p "$WORK/media/shows/Field Order (2021)/Season 01" "$WORK/media/shows/Overnight Feed (2021)/Season 01"
+cp "$WORK/media/shows/Harbour Lights (2022)/Season 01/Harbour Lights S01E01.mkv" "$WORK/media/shows/Field Order (2021)/Season 01/Field Order S01E01.mkv"
+cp "$WORK/media/spare/Field Order S01E02.mkv" "$WORK/media/spare/Field Order S01E03.mp4" "$WORK/media/shows/Field Order (2021)/Season 01/"
+cp "$WORK/media/spare/Overnight Feed S01E01.mkv" "$WORK/media/shows/Overnight Feed (2021)/Season 01/"
+curl -sf -X POST "$BASE/Inventory/Columns?level=Video" -H "Authorization: MediaBrowser Token=\"$TOKEN\"" -H "$JSON" \
+    -d '["name","quality","videoRange","duration"]' >/dev/null || refused "Inventory/Columns?level=Video"
+curl -sf -X POST "$BASE/Library/Refresh" -H "Authorization: MediaBrowser Token=\"$TOKEN\"" >/dev/null || refused "Library/Refresh"
+printf 'waiting for the new shows'
+i=0
+until [ "$(api 'Inventory/Items?mediaType=Series&level=Episode&columnLevel=Video&limit=1000' \
+    | field "len([r for r in json.load(sys.stdin)['Rows'] if r['Values']['name'].startswith(('Field Order', 'Overnight Feed')) and r['Values']['quality']])")" = 4 ]; do
+    i=$((i + 1))
+    [ "$i" -gt 40 ] && { echo; echo "the new shows never arrived" >&2; exit 1; }
+    [ $((i % 10)) = 0 ] && curl -sf -X POST "$BASE/Library/Refresh" \
+        -H "Authorization: MediaBrowser Token=\"$TOKEN\"" >/dev/null 2>&1 || true
+    printf '.'
+    sleep 3
+done
+echo
+FIELD=$(api 'Inventory/Items?mediaType=Series&limit=1000' | identify 'Field Order')
+check "an interlaced episode is in an interlaced class, which its season and its show take as the lowest over a progressive one as high" \
+    "$(api 'Inventory/Items?mediaType=Series&level=Episode&columnLevel=Video&limit=1000' \
+        | field "'|'.join(sorted('%s:%s' % (r['Values']['name'], r['Values']['quality']) for r in json.load(sys.stdin)['Rows'] if r['Values']['name'].startswith('Field Order')))")|$(api \
+        "Inventory/Items?mediaType=Series&level=Season&parentIds=$FIELD&columnLevel=Video" | named 'Season 1' quality)|$(api \
+        'Inventory/Items?mediaType=Series&columnLevel=Video&limit=1000' | named 'Field Order' quality)" \
+    "Field Order S01E01:1080p|Field Order S01E02:1080i|Field Order S01E03:1080p|1080i+|1080i+"
+DOLBY=$(filtered '[{"column":"videoRange","op":"contains","value":"dolby vision"}]')
+check "a range is named the way people know it, and a filter and an export take that name" \
+    "$(api "Inventory/Items?mediaType=Series&level=Episode&columnLevel=Video&filters=$DOLBY" \
+        | field "'|'.join('%s:%s' % (r['Values']['name'], r['Values']['videoRange']) for r in json.load(sys.stdin)['Rows'])")|$(curl -sf \
+        "$BASE/Inventory/Export?mediaType=Series&level=Episode&columnLevel=Video&format=csv&filters=$DOLBY" \
+        -H "Authorization: MediaBrowser Token=\"$TOKEN\"" | python3 -c "
+import csv, io, sys
+rows = list(csv.reader(io.StringIO(sys.stdin.buffer.read().decode('utf-8-sig'))))
+print('|'.join(r[rows[0].index('HDR')] for r in rows[1:]))")" \
+    "Field Order S01E03:Dolby Vision (HDR10)|Dolby Vision (HDR10)"
+curl -sf "$BASE/Inventory/Export?mediaType=Series&columnLevel=Video&format=ods&search=Overnight" \
+    -H "Authorization: MediaBrowser Token=\"$TOKEN\"" -o "$WORK/overnight.ods" || refused "Inventory/Export?search=Overnight&format=ods" GET
+check "a runtime past a day is written in the ods in hours past 24" \
+    "$(python3 -c "
+import re, zipfile
+content = zipfile.ZipFile('$WORK/overnight.ods').read('content.xml').decode()
+print(' '.join(sorted({h + 'h=' + clock for h, clock in re.findall(r'office:time-value=\"PT(\d+)H[^\"]*\"><text:p>([^<]*)</text:p>', content)})))")" \
+    "25h=25:00:00"
+rm -rf "$WORK/media/shows/Field Order (2021)" "$WORK/media/shows/Overnight Feed (2021)"
+curl -sf -X POST "$BASE/Library/Refresh" -H "Authorization: MediaBrowser Token=\"$TOKEN\"" >/dev/null || refused "Library/Refresh"
+i=0
+until [ "$(api 'Inventory/Items?mediaType=Series' | field "json.load(sys.stdin)['TotalCount']")" = "3" ] || [ "$i" -gt 40 ]; do
+    i=$((i + 1))
+    [ $((i % 10)) = 0 ] && curl -sf -X POST "$BASE/Library/Refresh" \
+        -H "Authorization: MediaBrowser Token=\"$TOKEN\"" >/dev/null 2>&1 || true
+    sleep 3
+done
 
 mkdir -p "$WORK/media/musicvideos/Signal Song"
 cp "$WORK/media/shows/Harbour Lights (2022)/Season 01/Harbour Lights S01E01.mkv" "$WORK/media/musicvideos/Signal Song/Signal Song - 1080p.mkv"

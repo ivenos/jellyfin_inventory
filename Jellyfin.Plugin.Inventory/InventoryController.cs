@@ -5,6 +5,7 @@ using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using System.Xml;
 using Jellyfin.Data.Enums;
 using Jellyfin.Database.Implementations.Entities;
 using Jellyfin.Plugin.Inventory.Configuration;
@@ -555,6 +556,12 @@ public class InventoryController : ControllerBase
             return BadRequest("A name cannot start with a dot.");
         }
 
+        // Jellyfin writes the name into an XML file, which cannot hold these.
+        if (name?.Any(c => !char.IsSurrogate(c) && !XmlConvert.IsXmlChar(c)) == true)
+        {
+            return BadRequest("A name cannot hold a character Jellyfin cannot save.");
+        }
+
         var user = Caller;
         if (playlist && user is null)
         {
@@ -691,7 +698,12 @@ public class InventoryController : ControllerBase
     }
 
     private static BaseItem[] Playable(BaseItem item, User user, IReadOnlySet<Guid> except)
-        => Playlist.GetPlaylistItems([item], user, new DtoOptions(false)).Where(i => i.SupportsAddingToPlaylist && !except.Contains(i.Id)).ToArray();
+    {
+        var playable = Playlist.GetPlaylistItems([item], user, new DtoOptions(false)).Where(i => i.SupportsAddingToPlaylist && !except.Contains(i.Id));
+
+        // Jellyfin sorts a folder's files by sort name, which leads with the track number but not with a disc only its folder names.
+        return (item is Folder ? InventoryService.InPlayOrder(playable) : playable).ToArray();
+    }
 
     private static Guid[] Linked(Folder target) => target.LinkedChildren.Select(c => c.ItemId).OfType<Guid>().ToArray();
 
@@ -708,6 +720,11 @@ public class InventoryController : ControllerBase
             || string.Equals(Path.GetFileName(c.Path), folder, StringComparison.OrdinalIgnoreCase));
         if (target is null)
         {
+            if (holdable.Length == 0)
+            {
+                return BadRequest("None of the items can go into a collection.");
+            }
+
             if (await _collectionManager.GetCollectionsFolder(false).ConfigureAwait(false) is null)
             {
                 await AddCollectionsLibrary().ConfigureAwait(false);
@@ -716,6 +733,7 @@ public class InventoryController : ControllerBase
             var created = await _collectionManager.CreateCollectionAsync(new CollectionCreationOptions
             {
                 Name = name,
+                IsLocked = true,
                 ItemIdList = holdable.Select(i => i.ToString("N", CultureInfo.InvariantCulture)).ToArray()
             }).ConfigureAwait(false);
             return Ok(Outcome(created.Id, created.Name, holdable.Length, asked - holdable.Length));
@@ -780,6 +798,11 @@ public class InventoryController : ControllerBase
         var fresh = entries.Distinct().Where(i => !held.Contains(i)).ToArray();
         if (target is null)
         {
+            if (fresh.Length == 0)
+            {
+                return BadRequest("None of the items can go into a playlist.");
+            }
+
             var created = await _playlistManager.CreatePlaylist(new PlaylistCreationRequest
             {
                 Name = name,

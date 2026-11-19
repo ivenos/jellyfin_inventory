@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Text.Json.Serialization;
 
 namespace Jellyfin.Plugin.Inventory;
 
@@ -12,8 +13,11 @@ namespace Jellyfin.Plugin.Inventory;
 /// into place by the browser.</param>
 /// <param name="Expandable">Whether the row has a level below it.</param>
 /// <param name="Values">The column values, keyed by column.</param>
+/// <param name="Within">For a row a search found below the top level, the name of the series, album, book or film
+/// it belongs to, unless its own name starts with it.</param>
 public sealed record InventoryRowResult(
     Guid Id,
     Guid? ParentId,
     bool Expandable,
-    IReadOnlyDictionary<string, object?> Values);
+    IReadOnlyDictionary<string, object?> Values,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? Within = null);

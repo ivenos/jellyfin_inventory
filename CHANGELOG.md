@@ -4,32 +4,44 @@ All notable changes to this project are documented in this file, in the format o
 
 ## [Unreleased]
 
+### Breaking changes
+
+- Filters on the HDR column need its new names, such as Dolby Vision (HDR10).
+
 ### Added
 
-- The page keeps its tab, search, filters and sort order in its address, so a reload or a bookmark brings them back (#15).
-- A Duplicates column counts the other films, series, episodes, albums and tracks that are the same title.
-- A film or an episode kept in several versions opens to them, and the new Versions level lists every file on its own.
+- The page address keeps the tab, search, filters and sort order (#15).
+- A Duplicates column counts titles kept more than once.
+- Films, episodes, music videos and videos in several versions open to them.
+- A Versions level lists every file on its own.
 
 ### Changed
 
-- Each tab only offers the columns that can have a value in it, in the column picker and in the filters (#19).
-- A film or an episode kept in several versions shows Mixed where its versions differ, rather than what the first of them has.
-- Quality shows the lowest of several qualities with a plus, such as 720p+, instead of Mixed, and a filter for at least that quality finds it.
-- Names sort as in Jellyfin, so The Matrix sorts under M and a sort title set in Jellyfin is used.
-- A .strm has no size, rather than the size of the address written in it.
-- A filter on the films, or on the episodes, lists the files of one kept in several versions, so a film with a 4K copy is found by that copy.
+- Each tab only offers the columns it can fill (#19).
+- An item in several versions shows Mixed where they differ.
+- Quality shows the lowest with a plus, such as 720p+, instead of Mixed.
+- Names sort by their sort title, and The Matrix sorts under M.
+- A .strm file no longer shows a size.
+- Music and audiobook files show no subtitle count instead of zero.
+- A filter on films or episodes also checks each of their versions.
+- A filter a tab cannot use is dimmed there instead of emptying it.
+- Search results below a show, album or book name it in front.
+- The HDR column shows Dolby Vision, HDR10+ and the like instead of internal names.
 
 ### Fixed
 
-- Filtering with = or ≠ missed a genre, artist, collection or other name that has a comma in it.
-- The first collection made from the table could end up empty, and making it set off a scan of every library.
-- The page kept every earlier visit in memory, which slowed the dashboard down the longer it stayed open.
+- Filters with = or ≠ missed names with a comma in them.
+- The first new collection could end up empty and scan every library.
+- The page kept old visits in memory and slowed the dashboard down.
 - The page numbers below the table follow the interface language.
-- A DVD or Blu-ray folder counted the extras and other files beside it in its size.
-- A track or a photo that Jellyfin put into a collection can be taken out of it again.
-- One name with a broken character stopped search and text filters from working on its tab.
+- DVD and Blu-ray folders counted the files beside them in their size.
+- A track or photo in a collection can be taken out again.
+- One name with a broken character broke search and text filters.
 - The French and Spanish Fully played columns use Jellyfin's word for played.
-- A collection or playlist whose name starts with a dot vanished at the next scan, so such a name is now refused.
+- A collection or playlist starting with a dot vanished, so such names are refused.
+- A new collection took the details and pictures of a TMDb collection.
+- Picking only items that cannot go in made an empty collection or playlist.
+- An audiobook on two discs goes into a playlist in the order it is listed.
 
 ## [1.3.0] - 2026-11-01
 

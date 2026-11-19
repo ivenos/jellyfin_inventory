@@ -38,7 +38,7 @@ sh test/run.sh --keep         # leave the server up to click through
 
 ## Adding a column
 
-- The field on `InventoryRow`, the line that fills it in `InventoryService`, and the entry in `Columns`, with `List: true` if it lists several values and `MediaTypes` if not every tab can fill it.
+- The field on `InventoryRow`, the line that fills it in `InventoryService`, and the entry in `Columns`, made with `Listing` if it lists several values and `MediaTypes` if not every tab can fill it.
 - A line in `Fold` if it rolls up to a series, an album or a book, or in `FoldPlayback` or `FoldEveryone` if it is read per user.
 - `column.<key>` in every file under `Strings/` and its English name in the README table, in the row of its group, and below it if not every tab offers it.
 - A column that is not in the README does not exist.
@@ -47,6 +47,7 @@ sh test/run.sh --keep         # leave the server up to click through
 ## Translations
 
 - `Strings/en.json` is the source. `test/check-strings.py` enforces that every other culture carries exactly its keys.
+- A new language also needs its words in `demo/web/strings.js`, taken from jellyfin-web's `src/strings`.
 - A language is one file named after the culture: `pt-BR.json` for a regional variant, `pt.json` for the language.
 - Take the wording from Jellyfin's own `strings/` where the term there fits.
 - Counts are two-form, `ItemsOne` and `ItemsMany`. A language that needs a separate few or many form needs new keys and a change to the page.
@@ -74,7 +75,7 @@ Everything under `demo/` belongs to one sample library, which the README screens
 
 - A new Jellyfin release moves these together: the `Jellyfin.Controller` and `Jellyfin.Model` versions, `targetAbi` in `build.yaml`, `IMAGE` in `test/run.sh`, and the version named in the README and under Build. `test/run.sh` checks that they agree.
 - `targetAbi` is the floor of the test matrix.
-- The dashboard around the demo is drawn after Jellyfin's own in `demo/web/shell.js` and `demo.css`. It follows a redesign by hand, and `.github/scripts/screenshots.sh` warns when the two differ.
+- The dashboard around the demo is drawn after Jellyfin's own in `demo/web/shell.js` and `demo.css`, in Jellyfin's words from `demo/web/strings.js`. It follows a redesign by hand, and `.github/scripts/screenshots.sh` warns when the two differ.
 - A new .NET release also moves `TargetFramework` in the csproj, `framework` in `build.yaml`, `SDK_IMAGE` in `test/run.sh`, the SDK image in the release workflow and under Build, and `net10.0` in the output path in `test/run.sh`, `demo/serve.sh`, the release workflow and under Build, and the version named under Build and Code style.
 
 ## Commits

@@ -189,10 +189,12 @@ body {
     #demoDrawer {
         transform: translateX(-100%);
         transition: transform .2s;
+        background-image: linear-gradient(rgba(255, 255, 255, .145), rgba(255, 255, 255, .145));
     }
 
     #demoDrawer.open {
         transform: none;
+        box-shadow: 0 0 0 100vmax rgba(0, 0, 0, .5);
     }
 
     #demoMenu {

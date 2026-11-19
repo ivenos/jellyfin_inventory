@@ -36,7 +36,7 @@ public static class Columns
         new("year", "General", ColumnFormat.Plain, r => r.Year),
         Listing("genres", "General", r => r.Genres),
         Listing("collections", "General", r => r.Collections),
-        Listing("playlists", "General", r => r.Playlists, ColumnSource.User),
+        Listing("playlists", "General", r => r.Playlists, ColumnSource.User, mediaTypes: _streamed),
         Listing("artists", "General", r => r.Artists, mediaTypes: [BaseItemKind.MusicAlbum, BaseItemKind.MusicVideo]),
         Listing("authors", "General", r => r.Authors, mediaTypes: [BaseItemKind.Book, BaseItemKind.AudioBook]),
         Listing("narrators", "General", r => r.Narrators, mediaTypes: [BaseItemKind.Book, BaseItemKind.AudioBook]),

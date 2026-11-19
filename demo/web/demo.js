@@ -1,6 +1,7 @@
 import { createBackend } from './backend.js';
 import { exportFile } from './export.js';
 import { drawShell } from './shell.js';
+import { translate, word } from './strings.js';
 
 const view = document.querySelector('#demoView');
 const loading = document.querySelector('#demoLoading');
@@ -21,7 +22,6 @@ const [data, source] = await Promise.all([
     load(view.dataset.page).then((response) => response.text()),
 ]);
 const backend = createBackend(data);
-drawShell(data.Server);
 
 function request(method, target, body) {
     const [path, query] = String(target).split('?');
@@ -56,6 +56,8 @@ for (const culture of cultures) {
 
 picker.value = navigator.languages.flatMap((tag) => [tag, tag.split('-')[0]]).find((tag) => cultures.includes(tag)) ?? 'en';
 document.documentElement.lang = picker.value;
+const name = () => data.Schemas[picker.value].Strings.Title;
+drawShell(data.Server, name());
 
 const parsed = new DOMParser().parseFromString(source, 'text/html').querySelector('#InventoryPage');
 const code = parsed.querySelector('script').textContent;
@@ -73,6 +75,8 @@ page.dispatchEvent(new Event('pageshow'));
 picker.addEventListener('change', () => {
     page.dispatchEvent(new Event('viewhide'));
     document.documentElement.lang = picker.value;
+    translate(name());
+    toast.hidden = true;
     page.dispatchEvent(new Event('pageshow'));
 });
 
@@ -97,13 +101,13 @@ if (window.parent !== window) {
 view.addEventListener('click', (event) => {
     if (event.target.closest('#invBody a')) {
         event.preventDefault();
-        say('On a server this opens the item in Jellyfin.');
+        say(word('OpensItem'));
     }
 });
 
 document.querySelector('#demoDrawer').addEventListener('click', (event) => {
-    if (event.target.closest('#demoDrawer ul > li:not([aria-current])')) { say('This demo has only the Inventory page.'); }
+    if (event.target.closest('#demoDrawer ul > li:not([aria-current])')) { say(word('OnlyPage').replace('{0}', name())); }
 });
 document.querySelectorAll('.demoBar [data-icon="arrowBack"], .demoUser').forEach((node) => {
-    node.addEventListener('click', () => say('This demo has only the Inventory page.'));
+    node.addEventListener('click', () => say(word('OnlyPage').replace('{0}', name())));
 });

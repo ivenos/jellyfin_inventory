@@ -3,7 +3,7 @@
 // collections and playlists. Then asks the server and the demo the same questions, makes the same
 // changes on both, and fails where the answers differ.
 import { readFileSync, readdirSync, writeFileSync } from 'node:fs';
-import { inflateRawSync } from 'node:zlib';
+import { crc32, inflateRawSync } from 'node:zlib';
 import { createBackend } from './web/backend.js';
 import { exportFile } from './web/export.js';
 
@@ -138,7 +138,8 @@ function unzip(bytes) {
         const local = bytes.readUInt32LE(at + 42);
         const start = local + 30 + bytes.readUInt16LE(local + 26) + bytes.readUInt16LE(local + 28);
         const body = bytes.subarray(start, start + bytes.readUInt32LE(at + 20));
-        files[bytes.toString('utf8', at + 46, at + 46 + name)] = (bytes.readUInt16LE(at + 10) ? inflateRawSync(body) : body).toString();
+        const content = bytes.readUInt16LE(at + 10) ? inflateRawSync(body) : body;
+        files[bytes.toString('utf8', at + 46, at + 46 + name)] = crc32(content) === bytes.readUInt32LE(at + 16) ? content.toString() : 'bad checksum';
         at += 46 + name + extra + comment;
     }
 
@@ -150,7 +151,7 @@ async function real(path, params) {
     if (!response.ok) { return `refused ${response.status}`; }
     if (path !== 'Export') { return tidy(await response.json()); }
     const bytes = Buffer.from(await response.arrayBuffer());
-    return params.format === 'ods' ? unzip(bytes) : bytes.toString();
+    return response.headers.get('Content-Disposition') + '\n' + (params.format === 'ods' ? unzip(bytes) : bytes.toString());
 }
 
 async function mine(path, params) {
@@ -158,7 +159,7 @@ async function mine(path, params) {
         const answer = await backend.request('GET', path, params);
         if (path !== 'Export') { return tidy(JSON.parse(JSON.stringify(answer))); }
         const bytes = Buffer.from(await exportFile(answer).arrayBuffer());
-        return params.format === 'ods' ? unzip(bytes) : bytes.toString();
+        return `attachment; filename=${answer.FileName}\n` + (params.format === 'ods' ? unzip(bytes) : bytes.toString());
     } catch (error) {
         return `refused ${error.status}`;
     }
@@ -213,7 +214,7 @@ for (const [mediaType, tab] of Object.entries(tabs)) {
         }
 
         const name0 = String(held[0]?.Values.name ?? 'none');
-        for (const search of ['the', 'THE', 's01', 'mkv', '/media', 'zzz', ' ', name0.slice(0, 6), name0.slice(2, 5), '(20', 'é']) {
+        for (const search of ['the', 'THE', 's01', 'mkv', '/media', 'zzz', ' ', name0.slice(0, 6), name0.slice(2, 5), '(20', 'é', ', ']) {
             add('Items', { mediaType, level, search });
             add('Items', { mediaType, level, search, sortBy: 'size', descending: true, limit: 4, startIndex: 1 });
             add('Items', { mediaType, level, search, filters: filtered(['size', 'ge', 2000000]) });

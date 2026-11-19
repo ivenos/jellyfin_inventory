@@ -73,6 +73,12 @@
       "automerge": true
     },
     {
+      "description": "Runs on releases only, so no pull request check covers it.",
+      "matchPackageNames": ["actions/upload-artifact"],
+      "groupName": "release action",
+      "automerge": false
+    },
+    {
       "matchPackageNames": ["Jellyfin.Controller", "Jellyfin.Model"],
       "enabled": false
     }

@@ -2,15 +2,15 @@
   {
     "guid": "ed020473-559f-42c1-850f-53349b29d838",
     "name": "Inventory",
-    "description": "The Inventory plugin adds one table to the dashboard that lists every item in your libraries with the attributes that matter for storage and quality: size, size per hour of runtime, bitrate, codecs, resolution, HDR and Dolby Vision format, audio layout and languages. Pick the columns you want per media type.",
-    "overview": "A sortable, filterable table of everything in your libraries.",
+    "description": "One table in the dashboard with everything in your libraries, from a whole series down to a single episode. Size, size per hour, bitrate, codecs, resolution, quality, HDR, audio and subtitles. Sort, search and filter on any column, find titles kept twice, export to CSV or ODS, and put picked rows into collections and playlists.",
+    "overview": "One table of everything in your libraries, to sort, search, filter and export.",
     "owner": "ivenos",
     "category": "General",
     "imageUrl": "https://raw.githubusercontent.com/ivenos/jellyfin_inventory/main/.github/assets/thumb.png",
     "versions": [
       {
         "version": "1.3.0.0",
-        "changelog": "## ✨ Added\r\n\r\n- Pick rows and add them to a collection or playlist, or take them out again (#13).\r\n- Collections and Playlists columns.\r\n\r\n## 🔄 Changed\r\n\r\n- The buttons above and below the table are small icons, and CSV and ODS share one export button.\r\n\r\n**Full changelog:** [v1.2.0...v1.3.0](https://github.com/ivenos/jellyfin_inventory/compare/v1.2.0...v1.3.0)\r\n",
+        "changelog": "## ✨ Added\n\n- Pick rows and add them to a collection or playlist, or take them out again (#13).\n- Collections and Playlists columns.\n\n## 🔄 Changed\n\n- The buttons above and below the table are small icons, and CSV and ODS share one export button.\n\n**Full changelog:** [v1.2.0...v1.3.0](https://github.com/ivenos/jellyfin_inventory/compare/v1.2.0...v1.3.0)\n",
         "targetAbi": "12.0.0.0",
         "sourceUrl": "https://github.com/ivenos/jellyfin_inventory/releases/download/v1.3.0/inventory_1.3.0.0.zip",
         "checksum": "d0539120a42a99bd39d9af1fc9f992bc",

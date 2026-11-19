@@ -99,6 +99,7 @@
   "FilterColumn": "Colonna",
   "FilterCondition": "Condizione",
   "FilterValue": "Valore",
+  "FilterNotInTab": "Non si applica in questa scheda",
   "op.contains": "contiene",
   "op.notContains": "non contiene",
   "op.empty": "è vuoto",

@@ -15,7 +15,8 @@ permissions:
   contents: read
 
 concurrency:
-  group: demo-${{ github.ref }}
+  # GitHub cancels a pending run when a newer one queues in the same group.
+  group: demo-${{ (github.event_name == 'push' || github.event_name == 'pull_request') && github.ref || 'latest-release' }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:

@@ -11,7 +11,8 @@
 <a href="https://github.com/ivenos/jellyfin_inventory/releases"><picture><source media="(prefers-color-scheme: dark)" srcset="https://shieldcn.dev/github/downloads/ivenos/jellyfin_inventory.svg?variant=secondary&amp;mode=dark"><img alt="Downloads" src="https://shieldcn.dev/github/downloads/ivenos/jellyfin_inventory.svg?variant=secondary&amp;mode=light"></picture></a>
 <a href="LICENSE"><picture><source media="(prefers-color-scheme: dark)" srcset="https://shieldcn.dev/badge/license-GPL_3.0.svg?variant=secondary&amp;mode=dark"><img alt="License" src="https://shieldcn.dev/badge/license-GPL_3.0.svg?variant=secondary&amp;mode=light"></picture></a>
 
-Inventory is a Jellyfin plugin that puts everything in your libraries into one sortable, searchable and filterable table in the dashboard, from a whole series down to a single episode. It shows where the space has gone, what your files are made of and which titles you keep twice, exports the result as a spreadsheet, and puts the rows you pick into a collection or playlist. The page keeps its tab, search, filters and sort order in its address, so a bookmark or a link opens the table the same way again.
+
+Inventory is a Jellyfin plugin that puts everything in your libraries into one sortable, searchable and filterable table in the dashboard, from a whole series down to a single episode.
 
 <img alt="The movies table, with size, size per hour, bitrate, codec, resolution, HDR and audio" src=".github/assets/movies.png" width="48%">
 <img alt="The series table expanded to episodes, with seasons and series totaled from them" src=".github/assets/series.png" width="48%">
@@ -20,17 +21,28 @@ Inventory is a Jellyfin plugin that puts everything in your libraries into one s
 
 ---
 
+
+## Features
+
+- Where the space has gone: size, size per hour and bitrate.
+- What files are made of: codecs, resolution, HDR, audio and subtitles.
+- Titles kept twice, and items in several versions.
+- Export as CSV or ODS.
+- Picked rows into a collection or playlist, or out again.
+- Tab, search, filters and sort order in the page address.
+
 ## Installation
 
-Requires Jellyfin 12.0 or newer. On anything older, this plugin does not appear in the catalog.
+Requires Jellyfin 12.0 or newer. Older servers do not list this plugin.
 
-Add the repository under Dashboard → Plugins → Repositories:
+1. Add this repository under Dashboard → Plugins → Manage Repositories → New Repository, with any name:
+   ```
+   https://raw.githubusercontent.com/ivenos/jellyfin_inventory/main/manifest.json
+   ```
+2. Install the Inventory plugin from the catalog, under General, and restart Jellyfin.
+3. Open Inventory under Plugins in the dashboard sidebar.
 
-```
-https://raw.githubusercontent.com/ivenos/jellyfin_inventory/main/manifest.json
-```
-
-The Inventory plugin then appears in the catalog under General. Restart the server after installing; the table has its own entry under Plugins in the dashboard sidebar. A manual install is the zip from the [latest release](https://github.com/ivenos/jellyfin_inventory/releases/latest) unpacked into a folder `Inventory` in the `plugins` directory of the server's data directory, which is `/config/plugins` in the Docker image.
+Manual install: unpack the [latest release](https://github.com/ivenos/jellyfin_inventory/releases/latest) into `plugins/Inventory` in Jellyfin's data directory (`/config/plugins` in Docker).
 
 ## Columns
 
@@ -42,37 +54,98 @@ The Inventory plugin then appears in the catalog under General. Restart the serv
 | Subtitles | Subtitle tracks, Subtitle languages |
 | Playback | Last played, Last played (all users), Plays, Plays (all users), Fully played, Fully played by |
 
-Name sorts as Jellyfin does: by the sort title where one is set, and otherwise without the words the server leaves out, which are The, A and An unless `SortRemoveWords` in its `system.xml` names others.
+- Name sorts by the sort title, else without a leading The, A or An.
+- `SortRemoveWords` in the server's `system.xml` changes these words.
+- Each tab offers the columns it can fill, plus any chosen before.
+- A filter on a column the tab cannot fill is dimmed there and does not apply.
+- A search shows the show, album, book or film in front of what it finds below them.
+- Films, episodes, music videos and videos in several versions open to them.
+- Where versions differ, a row shows Mixed.
+- Where quality differs, a row shows the lowest with a plus, such as 720p+.
+- HDR shows SDR, HDR10, HDR10+, HLG or Dolby Vision, with the layer Dolby Vision falls back on in brackets.
+- Duplicates counts other items of the tab with the same title.
 
-A tab offers the columns that can have a value in it, and still offers one chosen before. Series, Season and Episode are only in Series, Artists only in Music and Music videos, Authors and Narrators only in Books and Audiobooks. Books and Photos have no Items, Duration, Size/hour, Bitrate, audio, video or subtitle columns, except Resolution and Height for a photo. Music and Audiobooks have no video or subtitle columns, and Books, Audiobooks and Photos no Duplicates.
+<details>
+<summary>Columns per tab and duplicates in detail</summary>
 
-A film, an episode, a music video or a video kept in several versions opens to them, and shows Mixed where they differ. Where the items a row stands for differ in quality, it shows the lowest of them with a plus, such as 720p+. Duplicates counts the other items of a tab that are the same title: a film, a series, a music video or a video by its TMDb, IMDb or TheTVDB id, an album or a track by its MusicBrainz id, and a season or an episode by its number in the same show. Items Jellyfin groups as versions of one another do not count, and an item without an id stays empty.
+- Series, Season and Episode: Series only.
+- Artists: Music and Music videos only.
+- Authors and Narrators: Books and Audiobooks only.
+- Books and Photos: no Playlists, Items, Duration, Size/hour, Bitrate, audio, video or subtitle columns.
+- Photos keep Resolution and Height.
+- Music and Audiobooks: no video or subtitle columns.
+- Books, Audiobooks and Photos: no Duplicates.
+- Duplicates matches films, series, music videos and videos by TMDb, IMDb or TheTVDB id.
+- Albums and tracks by MusicBrainz id.
+- Seasons and episodes by their number in the same show.
+- Versions of one item do not count. Items without an id stay empty.
+
+</details>
 
 ## API
 
-Nine endpoints under `/Inventory`, all requiring an administrator token. An API key carries no user, so Playlists, Last played, Plays and Fully played are empty for one, and it can change no playlist. `mediaType` names a tab, `level` one of the levels inside it, by default the one the tab is named after, which for `AudioBook` is its files rather than the books in `Folder`; those and the column keys all come from `Schema`.
+<details>
+<summary>Endpoints and parameters</summary>
 
-| Endpoint | Parameters | Answers with |
+- Base path `/Inventory`, with an administrator token.
+- An API key has no user: Playlists, Last played, Plays and Fully played stay empty, and it changes no playlist.
+- `mediaType` names a tab, `level` a level in it. Default: the level the tab is named after.
+- For `AudioBook` that level is its files. The books are `Folder`.
+- Media types, levels and column keys come from `Schema`.
+
+| Endpoint | Parameters | Returns |
 | --- | --- | --- |
-| `GET Schema` | `culture` | The populated media types with their levels and whether their rows can go into a collection or a playlist, every column with the media types it can have a value in and the operators it can be filtered by and, for quality, its classes in order, the page size, the most conditions `filters` may carry, the interface strings and the culture they were answered in |
-| `GET Items` | `mediaType`, `level`, `parentIds`, `columnLevel`, `search`, `filters`, `sortBy`, `descending`, `startIndex`, `limit`, `culture` | One page of rows with the columns they are keyed by, how many rows there are in total, and the size and runtime behind them; `parentIds` returns the whole child set rather than a page |
-| `GET Export` | `mediaType`, `level`, `columnLevel`, `format`, `search`, `filters`, `sortBy`, `descending`, `culture` | Every matching row as a `csv` or `ods` file, less the ones a match above them already accounts for |
-| `POST Columns` | `level`, and the column keys as a JSON array in the body | The stored selection |
+| `GET Schema` | `culture` | Media types with their levels, how far each opens and what their rows can go into; columns with their media types, operators and, for quality, classes in order; page size; most conditions `filters` may carry; interface strings and their culture |
+| `GET Items` | `mediaType`, `level`, `parentIds`, `columnLevel`, `search`, `filters`, `sortBy`, `descending`, `startIndex`, `limit`, `culture` | One page of rows, their columns, the total count, size and runtime; with `parentIds` all children, unpaged |
+| `GET Export` | `mediaType`, `level`, `columnLevel`, `format`, `search`, `filters`, `sortBy`, `descending`, `culture` | Every matching row as `csv` or `ods`, less those a match above already covers |
+| `POST Columns` | `level`, column keys as a JSON array in the body | The stored selection |
 | `POST Expand` | `mediaType`, `level` | The stored level |
-| `POST PageSize` | `size` | The stored number of rows per page |
-| `GET Targets` | | Every collection, and the playlists the user owns or may edit, each with id and name |
-| `POST Targets` | The change as a JSON object in the body | The collection or playlist, how many entries it gained or lost, and how many items could not go into it |
-| `POST Targets/Held` | `Ids` and `All` as `POST Targets` takes them, in the body | The collections that hold any of the items, and the user's playlists that hold what they play |
+| `POST PageSize` | `size` | The stored rows per page |
+| `GET Targets` | | Every collection, and the playlists the user owns or may edit, with id and name |
+| `POST Targets` | The change as a JSON object in the body | The target, how many entries it gained or lost, how many items could not go in |
+| `POST Targets/Held` | The `Ids` and `All` of `POST Targets`, in the body | Collections holding any of the items, the user's playlists holding what they play |
 
-`filters` is a JSON array of up to 20 conditions, and a row has to meet all of them: `[{"column":"height","op":"ge","value":1080}]`. `op` is one of the operators `Schema` lists for the column, out of `eq`, `ne`, `ge`, `le`, `contains`, `notContains`, `empty` and `notEmpty`, the last two taking no `value`. A value is in the unit `Items` answers in, which is bytes, bytes per hour, seconds or bits per second, a date is `yyyy-MM-dd`, a truth value is `true` or `false`, and a quality is one of the classes `Schema` lists, compared by its place in that list. In a column `Schema` marks as `List`, `eq` and `ne` check each value on its own. An empty cell meets only `ne`, `notContains` and `empty`, and a cell that reads as mixed meets no condition. A quality such as 720p+ meets `notEmpty`, and `ge` for a class up to its lowest.
+Filters:
 
-The level `Version` lists every file of a tab: an item kept in one file as itself, and one kept in several once per version, named after the item and what the name of its file adds.
+- `filters` is a JSON array of up to 20 conditions, all must hold: `[{"column":"height","op":"ge","value":1080}]`.
+- `op` is one the column lists in `Schema`: `eq`, `ne`, `ge`, `le`, `contains`, `notContains`, `empty`, `notEmpty`.
+- `empty` and `notEmpty` take no `value`.
+- Values are in the unit `Items` answers in: bytes, bytes per hour, seconds, bits per second.
+- Dates as `yyyy-MM-dd`, truth values as `true` or `false`.
+- A quality is one of the classes in `Schema`, compared by its place there.
+- In a `List` column, `eq` and `ne` check each value on its own.
+- An empty cell meets only `ne`, `notContains` and `empty`.
+- A Mixed cell meets no condition.
+- A quality such as 720p+ meets `notEmpty`, and `ge` up to its lowest class.
 
-`search` is a substring of the name, the series name, the path, an artist, an author or a narrator. On the outermost level it reaches every level of the tab, and `Export` then leaves out a row whose series, season, album or book matched as well. A `csv` names the unit in its header and takes its decimal and field separators from `culture`, an `ods` types its cells.
+Search and export:
 
-The address of the page takes `mediaType`, `search`, `filters`, `sortBy` and `descending` as `Items` does.
+- `search` matches part of a name, series, path, artist, author or narrator.
+- On the outermost level it reaches every level of the tab.
+- A row it finds below the top level names its show, album, book or film in `Within`, unless its own name starts with it.
+- `Export` then leaves out a row whose series, season, album or book matched too.
+- Level `Version` lists every file of a tab: an item in one file once, one in several once per version.
+- A version is named after its item plus what its file name adds.
+- A `csv` names the unit in its header and takes its separators from `culture`. An `ods` types its cells.
+- The page address takes `mediaType`, `search`, `filters`, `sortBy` and `descending`.
+- A condition on a column the tab cannot fill stays in the address but is not sent.
 
-`POST Targets` takes `Kind`, which is `Collection` or `Playlist`, `Remove` as `true` or `false`, the `Id` of an existing target or, when adding, the `Name` of a new one, which cannot start with a dot, and the items as ids in `Ids`. A new collection whose name or folder name matches an existing collection goes into that one. `All` takes every row of a listing as well, given by `MediaType`, `Level`, `Search` and `Filters` as `Items` takes them, less the ids in `Except`, each of which leaves out only itself, and like `Export` leaves out a row whose series, season, album or book matched too. A version goes in and out of either as the item it belongs to. A collection holds what is picked. A playlist holds the episodes, tracks or files of a picked series, album or audiobook, each once and none that is in `Except`. A track or a photo goes into no collection, a photo or an e-book into no playlist.
+Collections and playlists:
+
+- `POST Targets` takes `Kind` (`Collection` or `Playlist`), `Remove` (`true` or `false`) and the item ids in `Ids`.
+- Plus the `Id` of an existing target or, when adding, the `Name` of a new one.
+- A name cannot start with a dot or hold a character Jellyfin cannot save.
+- A new collection with the name or folder name of an existing one goes into that one.
+- A new target none of the items can go into is refused.
+- `All` adds every row of a listing, given by `MediaType`, `Level`, `Search` and `Filters`.
+- Ids in `Except` leave out only themselves.
+- `All` leaves out a row whose series, season, album or book matched too.
+- A version goes in and out as the item it belongs to.
+- A collection holds what is picked.
+- A playlist holds the episodes, tracks or files of a picked series, album or audiobook, in the order of their tab, each once, none from `Except`.
+- Tracks and photos go into no collection, photos and e-books into no playlist.
+
+</details>
 
 ## License
 

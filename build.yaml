@@ -3,12 +3,13 @@ name: "Inventory"
 guid: "ed020473-559f-42c1-850f-53349b29d838"
 targetAbi: "12.0.0.0"
 framework: "net10.0"
-overview: "A sortable, filterable table of everything in your libraries."
+overview: "One table of everything in your libraries, to sort, search, filter and export."
 description: >
-  The Inventory plugin adds one table to the dashboard that lists every item in
-  your libraries with the attributes that matter for storage and quality: size,
-  size per hour of runtime, bitrate, codecs, resolution, HDR and Dolby Vision
-  format, audio layout and languages. Pick the columns you want per media type.
+  One table in the dashboard with everything in your libraries, from a whole
+  series down to a single episode. Size, size per hour, bitrate, codecs,
+  resolution, quality, HDR, audio and subtitles. Sort, search and filter on any
+  column, find titles kept twice, export to CSV or ODS, and put picked rows into
+  collections and playlists.
 category: "General"
 owner: "ivenos"
 artifacts:

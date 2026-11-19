@@ -33,6 +33,7 @@ public sealed partial class InventoryService : IDisposable
 
     private static readonly char[] _delimiters = [' ', '-', '_', '.'];
     private static readonly string[] _discFolders = ["VIDEO_TS", "BDMV"];
+    private static readonly string[] _rates = ["sizePerHour", "totalBitrate"];
 
     private readonly ILibraryManager _libraryManager;
     private readonly IMediaSourceManager _mediaSourceManager;
@@ -341,16 +342,18 @@ public sealed partial class InventoryService : IDisposable
             var order = sortColumn.Sort ?? sortColumn.Value;
             sorted = rows.OrderBy(
                 r => SortKey(order(r)),
-                descending ? NullsLastComparer.Descending : NullsLastComparer.Ascending);
+                NullsLastComparer.For(descending, sortColumn.Key == "name"));
         }
 
         var mixed = Translations.Get(culture, "Mixed");
+        var tops = spanning ? Shared(new Level(levels[0])).DistinctBy(r => r.Id).ToDictionary(r => r.Id, r => r.Name) : null;
         var page = sorted.Skip(startIndex).Take(limit)
             .Select(r => new InventoryRowResult(
                 r.Id,
                 r.ParentId,
                 r.Expandable,
-                columns.ToDictionary(c => c.Key, c => Present(r, c, mixed))));
+                columns.ToDictionary(c => c.Key, c => Present(r, c, mixed)),
+                Within(r, tops)));
 
         return new InventoryPage(
             page,
@@ -375,6 +378,11 @@ public sealed partial class InventoryService : IDisposable
 
     private static object? Present(InventoryRow row, ColumnDefinition column, string mixed)
         => row.Mixed?.Contains(column.Key) == true ? mixed : column.Value(row);
+
+    private static string? Within(InventoryRow row, Dictionary<Guid, string>? tops)
+        => tops is not null && row.AncestorId is { } top && top != row.Id && tops.TryGetValue(top, out var name) && !row.Name.StartsWith(name, StringComparison.Ordinal)
+            ? name
+            : null;
 
     private static bool Covered(InventoryRow row, HashSet<Guid> present, Dictionary<Guid, Guid> parents)
     {
@@ -768,11 +776,7 @@ public sealed partial class InventoryService : IDisposable
             var books = kind == BaseItemKind.AudioBook ? BookFolders(items) : null;
             if (books is not null)
             {
-                items = items
-                    .OrderBy(f => f.ParentIndexNumber ?? DiscNumber(Path.GetDirectoryName(f.Path)) ?? 0)
-                    .ThenBy(f => f.IndexNumber ?? 0)
-                    .ThenBy(f => f.Path, _natural)
-                    .ToArray();
+                items = InPlayOrder(items).ToArray();
             }
 
             foreach (var item in items)
@@ -888,13 +892,24 @@ public sealed partial class InventoryService : IDisposable
                 version.Genres = row.Genres;
                 version.Collections = row.Collections;
                 version.Duplicates = row.Duplicates;
-                version.SortName = SortName(version.Name, null);
+                version.SortName = row.SortName + " " + SortName(version.Name, null);
             }
         }
 
         _logger.LogDebug("Built {Count} inventory rows for {Kind} in {Elapsed} ms", rows.Count, kind, watch.ElapsedMilliseconds);
         return rows;
     }
+
+    /// <summary>
+    /// Orders the files of a book, an album or a show the way their tab lists them: by disc or season, then by track or episode, then by path.
+    /// </summary>
+    /// <param name="files">The files.</param>
+    /// <returns>The files in that order.</returns>
+    public static IEnumerable<BaseItem> InPlayOrder(IEnumerable<BaseItem> files)
+        => files
+            .OrderBy(f => f.ParentIndexNumber ?? DiscNumber(Path.GetDirectoryName(f.Path)) ?? 0)
+            .ThenBy(f => f.IndexNumber ?? 0)
+            .ThenBy(f => f.Path, _natural);
 
     // Taken from the name the row shows rather than the item's own, which for an episode or a track
     // leads with its number and for an audiobook is not the album it is shown by.
@@ -1232,6 +1247,14 @@ public sealed partial class InventoryService : IDisposable
         row.SubtitleTracks = CommonValue(children, c => c.SubtitleTracks, mixed, "subtitleTracks");
 
         row.Rateable = children.All(c => c.Rateable && c.Size.HasValue && c.Duration.HasValue);
+        foreach (var rate in _rates)
+        {
+            if (children.Any(c => c.Mixed?.Contains(rate) == true))
+            {
+                mixed.Add(rate);
+            }
+        }
+
         row.TotalBitrate = row.Rateable && row.Size is > 0 && row.Duration is > 0
             ? (long?)(row.Size.Value * 8 / row.Duration.Value)
             : null;
@@ -1385,6 +1408,25 @@ public sealed partial class InventoryService : IDisposable
         }
     }
 
+    // Jellyfin's own title for a Dolby Vision stream names the layer it falls back on in brackets.
+    private static string? RangeName(MediaStream video) => video.VideoRangeType switch
+    {
+        VideoRangeType.Unknown => null,
+        VideoRangeType.HDR10Plus => "HDR10+",
+        VideoRangeType.DOVI => "Dolby Vision",
+        VideoRangeType.DOVIWithHDR10 => "Dolby Vision (HDR10)",
+        VideoRangeType.DOVIWithHDR10Plus => "Dolby Vision (HDR10+)",
+        VideoRangeType.DOVIWithHLG => "Dolby Vision (HLG)",
+        VideoRangeType.DOVIWithSDR => "Dolby Vision (SDR)",
+        VideoRangeType.DOVIWithEL => "Dolby Vision EL (HDR10)",
+        VideoRangeType.DOVIWithELHDR10Plus => "Dolby Vision EL (HDR10+)",
+
+        // Jellyfin plays a Dolby Vision stream out of spec as its base layer.
+        VideoRangeType.DOVIInvalid when string.Equals(video.ColorTransfer, "arib-std-b67", StringComparison.OrdinalIgnoreCase) => "HLG",
+        VideoRangeType.DOVIInvalid => video.VideoRange == VideoRange.HDR ? "HDR10" : "SDR",
+        _ => video.VideoRangeType.ToString()
+    };
+
     private static bool IsDisc(DirectoryInfo folder) => _discFolders.Contains(folder.Name, StringComparer.OrdinalIgnoreCase);
 
     // Jellyfin names no container for a photo, a book or an audiobook, and keeps a photo's
@@ -1428,7 +1470,7 @@ public sealed partial class InventoryService : IDisposable
             row.Quality = video.Width is > 0 && video.Height is > 0
                 ? VideoQuality.Of(video.Width.Value, video.Height.Value, video.IsInterlaced)
                 : null;
-            row.VideoRange = video.VideoRangeType == VideoRangeType.Unknown ? null : video.VideoRangeType.ToString();
+            row.VideoRange = RangeName(video);
             row.DolbyVision = video.VideoDoViTitle;
         }
 
@@ -1596,13 +1638,20 @@ public sealed partial class InventoryService : IDisposable
     // here rather than by OrderByDescending, which would reverse the nulls along with the values.
     private sealed class NullsLastComparer : IComparer<IComparable?>
     {
+        private static readonly NullsLastComparer[] _all = [new(1, false), new(-1, false), new(1, true), new(-1, true)];
+
         private readonly int _sign;
 
-        private NullsLastComparer(int sign) => _sign = sign;
+        private readonly bool _ordinal;
 
-        public static NullsLastComparer Ascending { get; } = new(1);
+        private NullsLastComparer(int sign, bool ordinal)
+        {
+            _sign = sign;
+            _ordinal = ordinal;
+        }
 
-        public static NullsLastComparer Descending { get; } = new(-1);
+        // Jellyfin's database compares the sort names it folds without a collation, byte by byte.
+        public static NullsLastComparer For(bool descending, bool ordinal) => _all[(descending ? 1 : 0) + (ordinal ? 2 : 0)];
 
         public int Compare(IComparable? x, IComparable? y)
         {
@@ -1620,7 +1669,7 @@ public sealed partial class InventoryService : IDisposable
             // languages this ships with, and digits by their value, or "Season 10" sorts ahead of "Season 2".
 #pragma warning disable CA1309
             return _sign * (x is string a && y is string b
-                ? string.Compare(a, b, CultureInfo.InvariantCulture, CompareOptions.IgnoreCase | CompareOptions.NumericOrdering)
+                ? (_ordinal ? string.CompareOrdinal(a, b) : string.Compare(a, b, CultureInfo.InvariantCulture, CompareOptions.IgnoreCase | CompareOptions.NumericOrdering))
                 : x.CompareTo(y));
 #pragma warning restore CA1309
         }

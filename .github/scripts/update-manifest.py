@@ -16,8 +16,7 @@ parser.add_argument("--timestamp", required=True)
 parser.add_argument("--changelog", default="")
 args = parser.parse_args()
 
-# An empty targetAbi means "every server" to Jellyfin, and an empty checksum fails every install,
-# so a silently empty extraction upstream must not reach the file.
+# An empty targetAbi means "every server" to Jellyfin, and an empty checksum fails every install.
 for name, value, pattern in (
     ("version", args.version, r"^\d+\.\d+\.\d+\.\d+$"),
     ("target-abi", args.target_abi, r"^\d+\.\d+\.\d+\.\d+$"),
@@ -36,8 +35,7 @@ if not packages:
 versions = packages[0].setdefault("versions", [])
 listed = next((v for v in versions if v.get("version") == args.version), None)
 timestamp = listed["timestamp"] if listed and listed.get("checksum", "").lower() == args.checksum.lower() else args.timestamp
-# Older entries stay: a server only sees versions whose targetAbi it satisfies, so leaving
-# them is what keeps installations on an older Jellyfin working.
+# A server only sees the versions whose targetAbi it satisfies.
 versions = [v for v in versions if v.get("version") != args.version]
 versions.append({
     "version": args.version,
@@ -50,7 +48,6 @@ versions.append({
 })
 
 
-# A hand-written entry that is not plain numbers sorts last rather than killing the release job.
 def order(entry):
     parts = entry.get("version", "").split(".")
     return tuple(int(p) for p in parts) if all(p.isdigit() for p in parts) else ()

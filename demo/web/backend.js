@@ -3,6 +3,7 @@
 
 const MAX_PAGE_SIZE = 10000;
 const SEARCHED = ['name', 'series', 'path', 'artists', 'authors', 'narrators'];
+const LISTED = ['artists', 'authors', 'narrators'];
 const FORMATS = { csv: 'text/csv; charset=utf-8', ods: 'application/vnd.oasis.opendocument.spreadsheet' };
 const FILE_NAMES = { Folder: 'audiobook', AudioBook: 'audiobook-files' };
 const VERSION = 'Version';
@@ -220,8 +221,10 @@ export function createBackend(data) {
     }
 
     // Jellyfin gives an item kept in several versions the path of the one it plays by default.
+    // The server searches each person on their own.
     function matches(tab, row, search) {
-        const holds = (values, key) => typeof values[key] === 'string' && fold(values[key]).includes(search);
+        const holds = (values, key) => typeof values[key] === 'string'
+            && (LISTED.includes(key) ? values[key].split(', ') : [values[key]]).some((text) => fold(text).includes(search));
         const versions = row.Level === tab.leaf ? tab.versions.get(row.Id) : undefined;
         return SEARCHED.some((key) => (key === 'path' && versions ? versions.every((version) => holds(version.Values, key)) : holds(row.Values, key)));
     }
@@ -251,14 +254,18 @@ export function createBackend(data) {
         return answer;
     }
 
-    function shown(known, keys, row) {
-        return {
+    function shown(known, keys, row, tab) {
+        const answer = {
             Id: row.Id,
             ParentId: row.ParentId,
             Expandable: row.Expandable,
             Values: Object.fromEntries(keys.map((key) => [
                 key, row.Mixed.includes(key) ? known.Strings.Mixed : row.Values[key]])),
         };
+        let top = null;
+        for (let parent = tab?.byId.get(row.ParentId); parent; parent = tab.byId.get(parent.ParentId)) { top = parent; }
+        if (top && top.Id !== row.Id && !String(row.Values.name).startsWith(top.Values.name)) { answer.Within = top.Values.name; }
+        return answer;
     }
 
     function list(params, topmost, except) {
@@ -320,17 +327,17 @@ export function createBackend(data) {
             : tab.natural[kind];
         const sorted = place ? [...rows].sort((a, b) => place[a.index] - place[b.index]) : rows;
 
-        return { known, tab, kind, keys, parents, rows, counted, sorted };
+        return { known, tab, kind, keys, parents, spanning, rows, counted, sorted };
     }
 
     function items(params) {
-        const { known, keys, parents, rows, counted, sorted } = list(params, false);
+        const { known, tab, keys, parents, spanning, rows, counted, sorted } = list(params, false);
         const start = parents ? 0 : Math.max(0, Number(params.startIndex) || 0);
         const size = Number(params.limit) || chosen.pageSize || known.PageSize;
         const limit = parents ? sorted.length : Math.min(Math.max(size, 1), MAX_PAGE_SIZE);
 
         return {
-            Rows: sorted.slice(start, start + limit).map((row) => shown(known, keys, row)),
+            Rows: sorted.slice(start, start + limit).map((row) => shown(known, keys, row, spanning ? tab : null)),
             TotalCount: rows.length,
             TotalSize: counted.reduce((sum, row) => sum + (row.Values.size ?? 0), 0),
             TotalDuration: round(counted.reduce((sum, row) => sum + (row.Values.duration ?? 0), 0)),
@@ -453,7 +460,9 @@ export function createBackend(data) {
 
     function collect(remove, target, name, picked, asked) {
         const holdable = picked.filter(({ row }) => holds(row, 'Collection')).map(({ row }) => row.Id);
-        target ??= targets.Collection.find((known) => same(validFilename(known.Name), validFilename(name))) ?? create('Collection', name);
+        target ??= targets.Collection.find((known) => same(validFilename(known.Name), validFilename(name)));
+        if (!target && holdable.length === 0) { throw new BadRequest('None of the items can go into a collection.'); }
+        target ??= create('Collection', name);
         const ids = remove ? picked.map(({ row }) => row.Id).filter((id) => target.held.has(id)) : holdable;
         return move('Collection', remove, target, ids, asked - new Set([...holdable, ...ids]).size);
     }
@@ -467,7 +476,9 @@ export function createBackend(data) {
             entries.push(...plays);
         }
 
-        return move('Playlist', remove, target ?? create('Playlist', name), [...new Set(entries)], skipped);
+        const fresh = [...new Set(entries)];
+        if (!target && fresh.length === 0) { throw new BadRequest('None of the items can go into a playlist.'); }
+        return move('Playlist', remove, target ?? create('Playlist', name), fresh, skipped);
     }
 
     function setTargets(params, body) {
@@ -481,6 +492,8 @@ export function createBackend(data) {
         }
 
         if (name === '') { throw new BadRequest('A new target needs a name.'); }
+        if (name?.startsWith('.')) { throw new BadRequest('A name cannot start with a dot.'); }
+        if (/[\u0000-\u0008\u000b\u000c\u000e-\u001f\ufffe\uffff]/.test(name ?? '')) { throw new BadRequest('A name cannot hold a character Jellyfin cannot save.'); }
 
         const target = id === null ? null : targets[kind].find((known) => known.Id === id);
         if (id !== null && !target) { throw new NotFound(`No ${kind} has the id ${id}.`); }

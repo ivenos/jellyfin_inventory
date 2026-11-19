@@ -203,7 +203,7 @@ def added(year, rng):
 
 
 def jpeg(width, height):
-    """A grey picture of that size: per block one bit for no change and one for nothing more."""
+    """A gray picture of that size: per block one bit for no change and one for nothing more."""
     blocks = -(-width // 8) * -(-height // 8)
     table = b"\xff\xc4" + struct.pack(">HB16B", 20, 0, 1, *[0] * 15) + b"\x00"
     return (b"\xff\xd8\xff\xdb" + struct.pack(">HB", 67, 0) + bytes([1] * 64)

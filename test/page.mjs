@@ -6,6 +6,13 @@ const schema = JSON.parse(readFileSync(schemaFile, 'utf8'));
 const source = readFileSync(html, 'utf8');
 const read = (file) => JSON.parse(readFileSync(file, 'utf8'));
 const raised = [];
+const everywhere = { column: 'name', op: 'contains', value: 'a' };
+const videoOnly = { column: 'videoCodec', op: 'contains', value: 'hevc' };
+const bookmark = (type, filters) => '#/configurationpage?name=Inventory&mediaType=' + type + '&filters=' + encodeURIComponent(JSON.stringify(filters));
+const links = {
+    elsewhere: bookmark('MusicAlbum', [everywhere, videoOnly]),
+    capped: bookmark('Movie', Array.from({ length: schema.MaxFilters + 1 }, (_, n) => ({ column: 'name', op: 'contains', value: 'a' + n }))),
+};
 
 function gate() {
     let open;
@@ -46,7 +53,7 @@ async function render(items, mode) {
     // The second visit finds a library that has changed, so a discarded answer is visible.
     const changed = JSON.parse(JSON.stringify(schema));
     changed.MediaTypes.forEach(function (type) { type.Label = 'New ' + type.Label; });
-    const picking = ['toolbar', 'pick', 'scope', 'remove', 'late', 'pages', 'overcount', 'nested'].includes(mode);
+    const picking = ['toolbar', 'pick', 'scope', 'remove', 'late', 'pages', 'overcount', 'nested', 'elsewhere'].includes(mode);
     const toasts = [];
     const targets = {
         Collections: [{ Id: 'c1', Name: 'Classics' }, { Id: 'c2', Name: 'Rainy, Weekend' }],
@@ -65,7 +72,7 @@ async function render(items, mode) {
 
     const dom = new JSDOM(source, {
         runScripts: 'dangerously',
-        url: 'http://localhost/web/index.html' + (mode === 'address' || mode === 'views' ? '#/configurationpage?name=Inventory' : ''),
+        url: 'http://localhost/web/index.html' + (links[mode] ?? (mode === 'address' || mode === 'views' ? '#/configurationpage?name=Inventory' : '')),
         virtualConsole: new VirtualConsole()
             .on('jsdomError', (e) => { if (!e.message.startsWith('Not implemented')) { raised.push(e.message); } }),
         beforeParse(window) {
@@ -113,6 +120,7 @@ async function render(items, mode) {
                         }
 
                         if (mode === 'stuck' || mode === 'filter' || mode === 'tree') { return Promise.resolve(openable); }
+                        if (mode === 'within') { return Promise.resolve({ ...items, Rows: items.Rows.map((row, at) => (at ? row : { ...row, Within: 'Shelf' })) }); }
                         if (picking) { return after('items', paged(url, mode === 'nested' ? openable : items)); }
                         if (shrunk) {
                             const kept = /startIndex=0\b/.test(url) ? items.Rows.slice(0, 2) : [];
@@ -216,6 +224,15 @@ async function render(items, mode) {
     show();
     await settle();
     const waiting = spinning();
+
+    if (mode === 'within') {
+        const rows = [...page.querySelectorAll('#invBody tr')].map((tr) => tr.querySelector('a[href^="#/details"]').closest('td'));
+        const name = items.Rows[0].Values.name;
+        const report = { shown: [rows[0].textContent.trim() === 'Shelf · ' + name, rows[0].querySelector('a').textContent === name,
+            rows.slice(1).every((td) => !td.querySelector('.invWithin'))].join('/') };
+        window.close();
+        return report;
+    }
 
     if (mode === 'stale') {
         show();
@@ -462,6 +479,11 @@ async function render(items, mode) {
         // Expanded one level down, which is the level a filter then lists.
         change(page.querySelector('#invExpand'), '1', 'change');
         await settle();
+        click('#invCsv');
+        await settle();
+        const opened = param(fetched.pop(), 'level');
+        download.open();
+        await settle();
         click('#invFilterBtn');
         await settle();
         const waiting = requests().length;
@@ -473,6 +495,7 @@ async function render(items, mode) {
         await settle();
         const last = new URL(requests().pop(), 'http://localhost/');
         const report = {
+            opened: opened,
             sent: last.searchParams.get('filters'),
             level: 'level=' + last.searchParams.get('level') + '&columnLevel=' + last.searchParams.get('columnLevel'),
             before: before,
@@ -838,6 +861,48 @@ async function render(items, mode) {
         page.querySelector('#invDialogForm').requestSubmit();
         await settle();
     };
+
+    if (mode === 'elsewhere') {
+        const sent = (url) => param(url, 'mediaType') + '|' + (param(url, 'filters') || '-');
+        const button = page.querySelector('#invFilterBtn');
+        const badge = () => button.textContent.trim() + '|' + button.getAttribute('data-count');
+        const rows = () => [...page.querySelectorAll('#invFilters .invFilter')];
+        const dimmed = () => rows().map((row) => row.classList.contains('invIdle') + ':' + (row.querySelector('.invNote')?.textContent ?? '')).join(',');
+        const report = { opened: sent(requests().at(-1)), badge: badge(), kept: decodeURIComponent(window.location.hash) };
+        click('#invFilterBtn');
+        await settle();
+        report.dimmed = dimmed();
+        click('#invCsv');
+        await settle();
+        report.exported = param(fetched.at(-1), 'filters') || '-';
+        click('#invPickBtn');
+        page.querySelector('#invPickPage').click();
+        page.querySelector('#invPickAll').click();
+        click('#invRemoveFrom');
+        await settle();
+        report.held = JSON.parse(posted.at(-1).data).All.Filters || '-';
+        page.querySelector('#invDialog').close();
+        click('#invPickBtn');
+        await tab(0);
+        report.movie = [sent(requests().at(-1)), badge(), dimmed()].join('/');
+        await tab(2);
+        const before = requests().length;
+        rows()[1].querySelector('.invDrop').dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+        await settle();
+        report.dropped = [decodeURIComponent(window.location.hash), requests().length - before, badge()].join('/');
+        window.close();
+        return report;
+    }
+
+    if (mode === 'capped') {
+        const report = {
+            rows: page.querySelectorAll('#invFilters .invFilter').length,
+            sent: JSON.parse(param(requests().at(-1), 'filters')).length,
+            kept: JSON.parse(new URLSearchParams(window.location.hash.split('?')[1]).get('filters')).length,
+        };
+        window.close();
+        return report;
+    }
 
     if (mode === 'toolbar') {
         const menu = page.querySelector('#invExportMenu');
@@ -1338,6 +1403,18 @@ const linked = [{ column: 'size', op: 'ge', value: '2147483648' }, { column: 'du
     { column: 'frameRate', op: 'ge', value: '23.976' },
     { column: 'quality', op: 'ge', value: '720p' }, { column: 'name', op: 'empty' }];
 const wanted = {
+    within: { shown: 'true/true/true' },
+    elsewhere: {
+        opened: 'MusicAlbum|' + JSON.stringify([everywhere]),
+        badge: 'Filters (1)|1',
+        kept: decodeURIComponent(links.elsewhere),
+        dimmed: 'false:,true:' + (schema.Strings.FilterNotInTab ?? 'Does not apply in this tab'),
+        exported: JSON.stringify([everywhere]),
+        held: JSON.stringify([everywhere]),
+        movie: 'Movie|' + JSON.stringify([everywhere, videoOnly]) + '/Filters (2)|2/false:,false:',
+        dropped: decodeURIComponent(bookmark('MusicAlbum', [everywhere])) + '/0/Filters (1)|1',
+    },
+    capped: { rows: String(schema.MaxFilters), sent: String(schema.MaxFilters), kept: String(schema.MaxFilters) },
     switch: { select: 'true' },
     files: { listed: 'Movie/Version/Movie/Version' },
     views: {
@@ -1346,7 +1423,7 @@ const wanted = {
         named: '1,1,1,1',
         gradient: 'true',
         dialog: 'true',
-        released: '3',
+        released: '4',
         tiny: '0.000000465661287308|' + JSON.stringify([{ column: 'size', op: 'le', value: '500' }]),
     },
     searched: { from: 'startIndex=0', drawn: '7/7 items' },

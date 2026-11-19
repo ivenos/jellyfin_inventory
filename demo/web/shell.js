@@ -1,3 +1,5 @@
+import { translate } from './strings.js';
+
 // The dashboard around the page, drawn after Jellyfin's own. Icon shapes are Material Icons (Apache-2.0).
 const ICONS = {
     analytics: 'M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2M9 17H7v-5h2zm4 0h-2v-3h2zm0-5h-2v-2h2zm4 5h-2V7h2z',
@@ -24,28 +26,31 @@ const ICONS = {
 };
 
 const MENU = [
-    ['Server', [['Dashboard', 'dashboard'], ['General', 'settings'], ['Branding', 'palette'], ['Users', 'people'],
-        ['Libraries', 'libraryAdd', true], ['Playback', 'playCircle', true]]],
-    ['Devices', [['Devices', 'devices'], ['Activity', 'analytics']]],
-    ['Live TV', [['Live TV', 'liveTv'], ['DVR', 'dvr']]],
-    ['Plugins', [['Plugins', 'extension'], ['Inventory', 'tableChart']]],
-    ['Advanced', [['Networking', 'lan'], ['API Keys', 'vpnKey'], ['Backups', 'backup'], ['Logs', 'article'],
-        ['Scheduled Tasks', 'schedule']]],
+    ['TabServer', [['TabDashboard', 'dashboard'], ['General', 'settings'], ['HeaderBranding', 'palette'], ['HeaderUsers', 'people'],
+        ['HeaderLibraries', 'libraryAdd', true], ['TitlePlayback', 'playCircle', true]]],
+    ['HeaderDevices', [['HeaderDevices', 'devices'], ['HeaderActivity', 'analytics']]],
+    ['LiveTV', [['LiveTV', 'liveTv'], ['HeaderDVR', 'dvr']]],
+    ['TabPlugins', [['TabPlugins', 'extension'], ['Inventory', 'tableChart']]],
+    ['TabAdvanced', [['TabNetworking', 'lan'], ['HeaderApiKeys', 'vpnKey'], ['HeaderBackups', 'backup'], ['TabLogs', 'article'],
+        ['TabScheduledTasks', 'schedule']]],
 ];
 
 function icon(name) {
     return `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="${ICONS[name]}"/></svg>`;
 }
 
-export function drawShell(server) {
+export function drawShell(server, name = 'Inventory') {
     document.querySelectorAll('[data-icon]').forEach((node) => { node.innerHTML = icon(node.dataset.icon); });
 
     const drawer = document.querySelector('#demoDrawer');
     drawer.innerHTML = `<div class="demoServer"><img src="jellyfin.svg" alt=""><p><strong>Inventory Demo</strong><span>${server.Version}</span></p></div>`
-        + MENU.map(([title, entries]) => `<h3>${title}</h3><ul>` + entries.map(([label, shape, opens]) =>
-            `<li${label === 'Inventory' ? ' aria-current="page"' : ''}>${icon(shape)}<span>${label}</span>`
-            + `${opens ? icon('expandMore') : ''}</li>`).join('') + '</ul>').join('');
+        + MENU.map(([section, entries]) => `<h3 data-word="${section}"></h3><ul>` + entries.map(([key, shape, opens]) => key === 'Inventory'
+            ? `<li aria-current="page">${icon(shape)}<span></span></li>`
+            : `<li>${icon(shape)}<span data-word="${key}"></span>${opens ? icon('expandMore') : ''}</li>`).join('') + '</ul>').join('');
+    translate(name);
 
     document.querySelector('#demoMenu').addEventListener('click', () => drawer.classList.toggle('open'));
-    document.querySelector('#demoView').addEventListener('click', () => drawer.classList.remove('open'));
+    document.addEventListener('click', (event) => {
+        if (!drawer.contains(event.target) && !event.target.closest('#demoMenu')) { drawer.classList.remove('open'); }
+    });
 }

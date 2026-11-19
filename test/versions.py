@@ -26,7 +26,7 @@ floor = (int(abi.group(1)), int(abi.group(2)))
 
 def get(url, headers=None):
     request = urllib.request.Request(url, headers=headers or {})
-    # A hiccup at the registry would otherwise turn every open pull request red.
+    # Docker Hub answers with an error now and then.
     for attempt in range(3):
         try:
             with urllib.request.urlopen(request, timeout=60) as answer:
@@ -49,7 +49,7 @@ while url:
 
 releases = sorted({tuple(int(part) for part in t.split(".")) for t in tags if re.fullmatch(r"\d{1,2}\.\d+", t)})
 tested = ["%d.%d" % r for r in releases if r >= floor]
-# An empty matrix is a workflow that passes without running anything, so a short answer is fatal.
+# GitHub passes a workflow whose matrix is empty without running a job.
 if "%d.%d" % floor not in tested:
     raise SystemExit(f"{REPOSITORY} lists no {floor[0]}.{floor[1]} tag among its {len(tags)}")
 
