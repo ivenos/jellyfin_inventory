@@ -4,6 +4,8 @@ All notable changes to this project are documented in this file, in the format o
 
 ## [Unreleased]
 
+## [1.4.0] - 2026-11-20
+
 ### Breaking changes
 
 - Filters on the HDR column need its new names, such as Dolby Vision (HDR10).
@@ -198,7 +200,8 @@ All notable changes to this project are documented in this file, in the format o
 - Export of the current view as CSV or ODS.
 - English, German, Spanish, French and Italian.
 
-[Unreleased]: https://github.com/ivenos/jellyfin_inventory/compare/v1.3.0...HEAD
+[Unreleased]: https://github.com/ivenos/jellyfin_inventory/compare/v1.4.0...HEAD
+[1.4.0]: https://github.com/ivenos/jellyfin_inventory/compare/v1.3.0...v1.4.0
 [1.3.0]: https://github.com/ivenos/jellyfin_inventory/compare/v1.2.0...v1.3.0
 [1.2.0]: https://github.com/ivenos/jellyfin_inventory/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/ivenos/jellyfin_inventory/compare/v1.0.0...v1.1.0
