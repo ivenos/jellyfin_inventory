@@ -523,14 +523,16 @@ public class InventoryController : ControllerBase
     /// <response code="200">The target, how many entries it gained or lost, and how many of the items
     /// cannot go there.</response>
     /// <response code="400">The kind is not known, the request names both an existing target and a new
-    /// one or neither, the name is empty, starts with a dot or is too long for a folder, the playlist is not the caller's to edit,
-    /// the listing cannot be read, no item was given, or a playlist was asked for without a user.</response>
+    /// one or neither, the name is empty, starts with a dot, holds a character Jellyfin cannot save or is too long for a folder,
+    /// the playlist is not the caller's to edit, the listing cannot be read, no item was given, or a playlist was asked for without a user.</response>
     /// <response code="404">The target does not exist.</response>
+    /// <response code="422">None of the items can go into the new target.</response>
     /// <returns>The outcome.</returns>
     [HttpPost("Targets")]
     [ProducesResponseType(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status422UnprocessableEntity)]
     public async Task<ActionResult<object>> SetTargets([FromBody] TargetRequest? request)
     {
         var playlist = string.Equals(request?.Kind, Hierarchy.Playlist, StringComparison.OrdinalIgnoreCase);
@@ -722,7 +724,7 @@ public class InventoryController : ControllerBase
         {
             if (holdable.Length == 0)
             {
-                return BadRequest("None of the items can go into a collection.");
+                return UnprocessableEntity("None of the items can go into a collection.");
             }
 
             if (await _collectionManager.GetCollectionsFolder(false).ConfigureAwait(false) is null)
@@ -800,7 +802,7 @@ public class InventoryController : ControllerBase
         {
             if (fresh.Length == 0)
             {
-                return BadRequest("None of the items can go into a playlist.");
+                return UnprocessableEntity("None of the items can go into a playlist.");
             }
 
             var created = await _playlistManager.CreatePlaylist(new PlaylistCreationRequest

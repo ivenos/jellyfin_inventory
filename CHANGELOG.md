@@ -42,6 +42,9 @@ All notable changes to this project are documented in this file, in the format o
 - A new collection took the details and pictures of a TMDb collection.
 - Picking only items that cannot go in made an empty collection or playlist.
 - An audiobook on two discs goes into a playlist in the order it is listed.
+- On phones the arrow to the next page slipped onto a line of its own.
+- A failed reload showed its error below a table still full of rows.
+- Screen readers read out the arrow of each dropdown.
 
 ## [1.3.0] - 2026-11-01
 

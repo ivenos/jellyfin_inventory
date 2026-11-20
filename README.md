@@ -40,7 +40,7 @@ Requires Jellyfin 12.0 or newer. Older servers do not list this plugin.
    https://raw.githubusercontent.com/ivenos/jellyfin_inventory/main/manifest.json
    ```
 2. Install the Inventory plugin from the catalog, under General, and restart Jellyfin.
-3. Open Inventory under Plugins in the dashboard sidebar.
+3. Open the Inventory page under Plugins in the dashboard sidebar.
 
 Manual install: unpack the [latest release](https://github.com/ivenos/jellyfin_inventory/releases/latest) into `plugins/Inventory` in Jellyfin's data directory (`/config/plugins` in Docker).
 
@@ -58,7 +58,7 @@ Manual install: unpack the [latest release](https://github.com/ivenos/jellyfin_i
 - `SortRemoveWords` in the server's `system.xml` changes these words.
 - Each tab offers the columns it can fill, plus any chosen before.
 - A filter on a column the tab cannot fill is dimmed there and does not apply.
-- A search shows the show, album, book or film in front of what it finds below them.
+- A search shows the show, album or book in front of what it finds below them.
 - Films, episodes, music videos and videos in several versions open to them.
 - Where versions differ, a row shows Mixed.
 - Where quality differs, a row shows the lowest with a plus, such as 720p+.
@@ -122,7 +122,7 @@ Search and export:
 
 - `search` matches part of a name, series, path, artist, author or narrator.
 - On the outermost level it reaches every level of the tab.
-- A row it finds below the top level names its show, album, book or film in `Within`, unless its own name starts with it.
+- A row it finds below the top level names its show, album or book in `Within`, unless its own name starts with it.
 - `Export` then leaves out a row whose series, season, album or book matched too.
 - Level `Version` lists every file of a tab: an item in one file once, one in several once per version.
 - A version is named after its item plus what its file name adds.
@@ -136,7 +136,7 @@ Collections and playlists:
 - Plus the `Id` of an existing target or, when adding, the `Name` of a new one.
 - A name cannot start with a dot or hold a character Jellyfin cannot save.
 - A new collection with the name or folder name of an existing one goes into that one.
-- A new target none of the items can go into is refused.
+- A new target none of the items can go into is refused with 422.
 - `All` adds every row of a listing, given by `MediaType`, `Level`, `Search` and `Filters`.
 - Ids in `Except` leave out only themselves.
 - `All` leaves out a row whose series, season, album or book matched too.

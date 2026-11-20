@@ -130,6 +130,8 @@
   "SkippedMany": "{0} elementi non possono farne parte.",
   "AlreadyIn": "È già tutto in «{0}».",
   "NothingToRemove": "Nessuno degli elementi selezionati è in una collezione o scaletta.",
+  "NothingFitsCollection": "Nessuno degli elementi selezionati può essere aggiunto a una collezione.",
+  "NothingFitsPlaylist": "Nessuno degli elementi selezionati può essere aggiunto a una scaletta.",
   "TargetsFailed": "Impossibile caricare le collezioni e le scalette.",
   "ChangeFailed": "Impossibile modificare la collezione o la scaletta."
 }

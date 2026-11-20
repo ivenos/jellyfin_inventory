@@ -40,7 +40,7 @@ public class Plugin : BasePlugin<PluginConfiguration>, IHasWebPages
     public override string Name => "Inventory";
 
     /// <inheritdoc />
-    public override string Description => "A sortable, filterable table of everything in your libraries.";
+    public override string Description => "One table of everything in your libraries, to sort, search, filter and export.";
 
     /// <inheritdoc />
     public override Guid Id => Guid.Parse("ed020473-559f-42c1-850f-53349b29d838");

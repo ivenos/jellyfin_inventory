@@ -130,6 +130,8 @@
   "SkippedMany": "{0} items cannot be in it.",
   "AlreadyIn": "Everything is already in \"{0}\".",
   "NothingToRemove": "None of the selected items is in a collection or playlist.",
+  "NothingFitsCollection": "None of the selected items can go into a collection.",
+  "NothingFitsPlaylist": "None of the selected items can go into a playlist.",
   "TargetsFailed": "Could not load the collections and playlists.",
   "ChangeFailed": "Could not change the collection or playlist."
 }

@@ -346,7 +346,7 @@ public sealed partial class InventoryService : IDisposable
         }
 
         var mixed = Translations.Get(culture, "Mixed");
-        var tops = spanning ? Shared(new Level(levels[0])).DistinctBy(r => r.Id).ToDictionary(r => r.Id, r => r.Name) : null;
+        var tops = spanning && levels.Count > 1 ? Shared(new Level(levels[0])).DistinctBy(r => r.Id).ToDictionary(r => r.Id, r => r.Name) : null;
         var page = sorted.Skip(startIndex).Take(limit)
             .Select(r => new InventoryRowResult(
                 r.Id,

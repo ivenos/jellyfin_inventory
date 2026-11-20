@@ -130,6 +130,8 @@
   "SkippedMany": "{0} Einträge können darin nicht enthalten sein.",
   "AlreadyIn": "Alles ist bereits in „{0}“ enthalten.",
   "NothingToRemove": "Keiner der ausgewählten Einträge ist in einer Sammlung oder Wiedergabeliste.",
+  "NothingFitsCollection": "Keiner der ausgewählten Einträge kann zu einer Sammlung hinzugefügt werden.",
+  "NothingFitsPlaylist": "Keiner der ausgewählten Einträge kann zu einer Wiedergabeliste hinzugefügt werden.",
   "TargetsFailed": "Die Sammlungen und Wiedergabelisten konnten nicht geladen werden.",
   "ChangeFailed": "Die Sammlung oder Wiedergabeliste konnte nicht geändert werden."
 }

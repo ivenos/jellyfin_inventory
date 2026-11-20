@@ -17,6 +17,7 @@ const caseless = new Intl.Collator('en', { numeric: true, sensitivity: 'accent' 
 
 class BadRequest extends Error { status = 400; }
 class NotFound extends Error { status = 404; }
+class Unprocessable extends Error { status = 422; }
 
 // Ordinal and case-insensitive, as the server compares: one code unit at a time, and .NET maps no
 // letter outside ASCII onto one inside it, as JavaScript does with the dotless i.
@@ -264,7 +265,7 @@ export function createBackend(data) {
         };
         let top = null;
         for (let parent = tab?.byId.get(row.ParentId); parent; parent = tab.byId.get(parent.ParentId)) { top = parent; }
-        if (top && top.Id !== row.Id && !String(row.Values.name).startsWith(top.Values.name)) { answer.Within = top.Values.name; }
+        if (top && top.Id !== row.Id && tab.levels.length > 1 && !String(row.Values.name).startsWith(top.Values.name)) { answer.Within = top.Values.name; }
         return answer;
     }
 
@@ -461,7 +462,7 @@ export function createBackend(data) {
     function collect(remove, target, name, picked, asked) {
         const holdable = picked.filter(({ row }) => holds(row, 'Collection')).map(({ row }) => row.Id);
         target ??= targets.Collection.find((known) => same(validFilename(known.Name), validFilename(name)));
-        if (!target && holdable.length === 0) { throw new BadRequest('None of the items can go into a collection.'); }
+        if (!target && holdable.length === 0) { throw new Unprocessable('None of the items can go into a collection.'); }
         target ??= create('Collection', name);
         const ids = remove ? picked.map(({ row }) => row.Id).filter((id) => target.held.has(id)) : holdable;
         return move('Collection', remove, target, ids, asked - new Set([...holdable, ...ids]).size);
@@ -477,7 +478,7 @@ export function createBackend(data) {
         }
 
         const fresh = [...new Set(entries)];
-        if (!target && fresh.length === 0) { throw new BadRequest('None of the items can go into a playlist.'); }
+        if (!target && fresh.length === 0) { throw new Unprocessable('None of the items can go into a playlist.'); }
         return move('Playlist', remove, target ?? create('Playlist', name), fresh, skipped);
     }
 

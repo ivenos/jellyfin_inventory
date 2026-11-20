@@ -152,7 +152,7 @@ async function render(items, mode) {
                             Playlists: targets.Playlists && (holds ? targets.Playlists : []),
                         });
                     }
-                    if (answer.fail) { return Promise.reject(new Error('no')); }
+                    if (answer.fail) { return Promise.reject(answer.fail === true ? new Error('no') : answer.fail); }
                     const known = targets.Collections.concat(targets.Playlists || []).filter((target) => target.Id === body.Id)[0];
                     return after('posted', { Id: body.Id || 'n1', Name: known ? known.Name : body.Name, Count: answer.Count, Skipped: answer.Skipped });
                 },
@@ -342,6 +342,7 @@ async function render(items, mode) {
         click('#invNext');
         await settle();
         const stale = page.querySelector('#invPage').textContent.trim();
+        const blank = page.querySelector('#invEmpty').style.display !== 'none';
         failing = false;
         click('#invNext');
         await settle();
@@ -362,7 +363,7 @@ async function render(items, mode) {
         const before = requests().length;
         click('#invNext');
         await settle();
-        const report = { pager: stale, asked: turned, sorted: sorted, revisit: requests().length - before };
+        const report = { pager: stale, blank: blank, asked: turned, sorted: sorted, revisit: requests().length - before };
         window.close();
         return report;
     }
@@ -641,6 +642,10 @@ async function render(items, mode) {
         window.location.hash = '#/configurationpage?name=Inventory';
         await settle();
         report.clicked = kept();
+        window.history.pushState(null, '', '#/configurationpage?name=Inventory');
+        window.document.body.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+        await settle();
+        report.pushed = kept();
         // Any other address of the page gets a view of its own from the web client.
         window.location.hash = '#/configurationpage?name=Inventory&mediaType=Series';
         await settle();
@@ -1018,6 +1023,10 @@ async function render(items, mode) {
         report.dotted = (posted.length - sent) + '/' + page.querySelector('#invName').validationMessage;
         change(page.querySelector('#invName'), '.hack', 'input');
         report.retyped = page.querySelector('#invName').validationMessage;
+        await submit();
+        change(page.querySelector('#invTarget'), 'Collection:c1', 'change');
+        report.switched = page.querySelector('#invName').validationMessage;
+        change(page.querySelector('#invTarget'), 'Playlist:', 'change');
         change(page.querySelector('#invName'), ' Rock $& Mix ', 'input');
         answer.Skipped = 3;
         await submit();
@@ -1032,6 +1041,17 @@ async function render(items, mode) {
         answer.Skipped = 0;
         await submit();
         report.already = toasts.at(-1);
+        click('#invPickBtn');
+        boxes()[0].click();
+        click('#invAddTo');
+        await settle();
+        change(page.querySelector('#invTarget'), 'Playlist:', 'change');
+        change(page.querySelector('#invName'), 'Silence', 'input');
+        answer.fail = { status: 422 };
+        await submit();
+        report.unfit = [toasts.at(-1), picked()].join('/');
+        answer.fail = false;
+        click('#invPickBtn');
 
         const leaving = [];
         click('#invPickBtn');
@@ -1124,6 +1144,12 @@ async function render(items, mode) {
         const before = requests().length;
         await submit();
         report.failed = [toasts.at(-1), dialog.open, pressed(), picked(), requests().length - before].join('/');
+        click('#invAddTo');
+        await settle();
+        change(page.querySelector('#invName'), 'Shelf', 'input');
+        answer.fail = { status: 422 };
+        await submit();
+        report.unfit = [toasts.at(-1), dialog.open, picked()].join('/');
         window.close();
         return report;
     }
@@ -1434,6 +1460,7 @@ const wanted = {
         again: '2/2/true',
         bare: '2/2/true',
         clicked: '2/2/true',
+        pushed: '2/2/true',
         other: 'Movies 7',
         elsewhere: '#/dashboard',
         boxes: 'size ge 2|duration le 0,1|frameRate ge 23,976|quality ge 720p|name empty',
@@ -1470,9 +1497,11 @@ const wanted = {
         blank: '0',
         dotted: '0/A name cannot start with a dot.',
         retyped: '',
+        switched: '',
         tickedBody: JSON.stringify({ Kind: 'Playlist', Remove: false, Id: null, Name: 'Rock $& Mix', Ids: [ids[0], ids[1]], All: null }),
         toast: 'Added 5 items to "Rock $& Mix". 3 items cannot be in it.',
         already: 'Everything is already in "Classics".',
+        unfit: 'None of the selected items can go into a playlist./1 selected',
         leaving: 'false:0:none,false:0:invPickBtn,true,false:invPickBtn,0 selected,false',
     },
     scope: {
@@ -1492,6 +1521,7 @@ const wanted = {
             + '/Removed 1 item from "Road trip".',
         books: 'Collections:New collection,Classics,Rainy, Weekend',
         failed: 'Could not change the collection or playlist./false/true/1 selected/0',
+        unfit: 'None of the selected items can go into a collection./false/1 selected',
     },
     late: {
         unticked: 'false/1 selected',

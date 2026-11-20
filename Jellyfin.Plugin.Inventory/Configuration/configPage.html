@@ -1605,9 +1605,16 @@
                     Dashboard.alert(message);
                     endPicking();
                     load();
-                }).catch(function () {
+                }).catch(function (error) {
                     if (mine !== visit) { return; }
                     finish();
+                    if (error && error.status === 422) {
+                        Dashboard.alert(body.Kind === 'Collection'
+                            ? t('NothingFitsCollection', 'None of the selected items can go into a collection.')
+                            : t('NothingFitsPlaylist', 'None of the selected items can go into a playlist.'));
+                        return;
+                    }
+
                     Dashboard.alert(t('ChangeFailed', 'Could not change the collection or playlist.'));
                 });
             }

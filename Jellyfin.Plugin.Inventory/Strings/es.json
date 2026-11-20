@@ -130,6 +130,8 @@
   "SkippedMany": "{0} elementos no pueden formar parte de ella.",
   "AlreadyIn": "Todo ya está en «{0}».",
   "NothingToRemove": "Ninguno de los elementos seleccionados está en una colección o lista de reproducción.",
+  "NothingFitsCollection": "Ninguno de los elementos seleccionados puede añadirse a una colección.",
+  "NothingFitsPlaylist": "Ninguno de los elementos seleccionados puede añadirse a una lista de reproducción.",
   "TargetsFailed": "No se pudieron cargar las colecciones y listas de reproducción.",
   "ChangeFailed": "No se pudo cambiar la colección o lista de reproducción."
 }

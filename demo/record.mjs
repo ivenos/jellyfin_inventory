@@ -356,6 +356,7 @@ for (const wrong of [
     { Kind: 'Collection', Name: 'Lost', All: { MediaType: 'Nonsense' } }, { Kind: 'Collection', Name: 'Lost', All: { MediaType: 'Movie', Filters: '{' } },
     { Kind: 'Collection', Name: 'Lost', Ids: ['not-an-id'] }, { Kind: 'Collection', Id: missing, Ids: [hope] },
     { Kind: 'Collection', Id: later, Ids: [hope] }, { Kind: 'Playlist', Id: operas, Ids: [hope] },
+    { Kind: 'Collection', Name: ' .hidden', Ids: [hope] }, { Kind: 'Playlist', Name: 'Bell\u0007Ring', Ids: [hope] },
 ]) {
     await both('Targets', wrong);
 }
